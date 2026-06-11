@@ -1,0 +1,151 @@
+import { useNavigate } from 'react-router-dom';
+import { useData } from '../data/DataContext';
+import { useUiState } from '../state/UiState';
+import { computeNodeRollup } from '../domain/rollup';
+import { applyFilter } from '../domain/filter';
+import { formatMoney, formatPct } from '../domain/money';
+import { KpiCard } from '../components/KpiCard';
+import { RagBadge } from '../components/RagBadge';
+import { RagThresholds } from '../components/RagThresholds';
+import { FilterBar } from '../components/FilterBar';
+import { Exceptions } from '../components/Exceptions';
+import { LeagueTable } from '../components/LeagueTable';
+import { BillingFunnel } from '../components/BillingFunnel';
+import { PortfolioSCurve } from '../components/PortfolioSCurve';
+import { nodeBreakdownCsv, nodeBreakdownAoa } from '../domain/exporters';
+import { downloadWorkbook } from '../components/xlsxExport';
+
+export function CommandDashboard({ nodeId }: { nodeId: string }) {
+  const { nodes, projects } = useData();
+  const { rag, filter, filterActive } = useUiState();
+  const navigate = useNavigate();
+
+  // True re-aggregation: filter the project set, then roll up over it.
+  const filtered = applyFilter(projects, nodes, filter, rag);
+  const rollup = computeNodeRollup(nodes, filtered, nodeId, { rag });
+  if (!rollup) return <p>Node not found.</p>;
+  const { totals, children, node } = rollup;
+
+  return (
+    <section>
+      <div className="screen-head">
+        <h1>{node.name}</h1>
+        <div className="head-tools">
+          <button
+            className="btn-ghost no-print"
+            onClick={() => {
+              const csv = nodeBreakdownCsv(rollup);
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `${node.id}-breakdown.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+          >
+            Export CSV
+          </button>
+          <button
+            className="btn-ghost no-print"
+            onClick={() =>
+              void downloadWorkbook(
+                [
+                  { name: 'Summary', aoa: [['Node', node.name], ['Contract', Math.round(rollup.totals.contractValue)], ['Billed', Math.round(rollup.totals.billed)], ['Received', Math.round(rollup.totals.received)], ['Health', rollup.totals.rag]] },
+                  { name: 'Breakdown', aoa: nodeBreakdownAoa(rollup) },
+                ],
+                `${node.id}-breakdown.xlsx`,
+              )
+            }
+          >
+            Export Excel
+          </button>
+          <button className="btn-ghost no-print" onClick={() => window.print()}>Print brief</button>
+          <RagThresholds />
+          <RagBadge rag={totals.rag} />
+        </div>
+      </div>
+
+      <FilterBar />
+      {filterActive && (
+        <p className="muted small filter-note">
+          Filtered view — {totals.projectCount} project{totals.projectCount === 1 ? '' : 's'} match; all figures re-aggregated.
+        </p>
+      )}
+
+      <div className="kpi-grid">
+        <KpiCard label="Projects" value={String(totals.projectCount)} />
+        <KpiCard label="Contract value" value={formatMoney(totals.contractValue)} />
+        <KpiCard label="Billed to date" value={formatMoney(totals.billed)} />
+        <KpiCard label="Received" value={formatMoney(totals.received)} />
+        <KpiCard
+          label="Progress (weighted)"
+          value={formatPct(totals.actualPct)}
+          sub={
+            <span className={totals.slippage < 0 ? 'neg' : 'pos'}>
+              {totals.slippage >= 0 ? '+' : ''}
+              {formatPct(totals.slippage)} vs plan
+            </span>
+          }
+        />
+      </div>
+
+      <div className="card">
+        <h3>Breakdown</h3>
+        <table className="data-table" aria-label="Breakdown">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th className="num">Contract</th>
+              <th className="num">Billed</th>
+              <th className="num">Received</th>
+              <th className="num">Planned</th>
+              <th className="num">Actual</th>
+              <th className="num">Slippage</th>
+              <th>Health</th>
+            </tr>
+          </thead>
+          <tbody>
+            {children.map((c) => (
+              <tr key={c.id} className="row-link" onClick={() => navigate(`/node/${c.id}`)}>
+                <td>{c.name}</td>
+                <td className="num">{formatMoney(c.contractValue)}</td>
+                <td className="num">{formatMoney(c.billed)}</td>
+                <td className="num">{formatMoney(c.received)}</td>
+                <td className="num">{formatPct(c.plannedPct)}</td>
+                <td className="num">{formatPct(c.actualPct)}</td>
+                <td className={`num ${c.slippage < 0 ? 'neg' : 'pos'}`}>
+                  {c.slippage >= 0 ? '+' : ''}
+                  {formatPct(c.slippage)}
+                </td>
+                <td><RagBadge rag={c.rag} /></td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>Total</td>
+              <td className="num">{formatMoney(totals.contractValue)}</td>
+              <td className="num">{formatMoney(totals.billed)}</td>
+              <td className="num">{formatMoney(totals.received)}</td>
+              <td className="num">{formatPct(totals.plannedPct)}</td>
+              <td className="num">{formatPct(totals.actualPct)}</td>
+              <td className={`num ${totals.slippage < 0 ? 'neg' : 'pos'}`}>
+                {totals.slippage >= 0 ? '+' : ''}
+                {formatPct(totals.slippage)}
+              </td>
+              <td><RagBadge rag={totals.rag} /></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div className="panel-grid">
+        <LeagueTable rows={children} />
+        <Exceptions nodeId={nodeId} projects={filtered} />
+      </div>
+      <BillingFunnel totals={totals} />
+      <PortfolioSCurve nodeId={nodeId} projects={filtered} />
+    </section>
+  );
+}

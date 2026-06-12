@@ -5,11 +5,13 @@ import { groupByBill, boqTotal } from '../../domain/boq';
 import { formatMoney } from '../../domain/money';
 import type { BoqItem } from '../../data/types';
 import { BoqImport } from './BoqImport';
+import { BoqWorkflowStrip } from '../../components/BoqWorkflowStrip';
 
 export function BoqRegister({ projectId }: { projectId: string }) {
   const { provider } = useData();
   const [items, setItems] = useState<BoqItem[]>([]);
   const [importing, setImporting] = useState(false);
+  const [locked, setLocked] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -23,11 +25,12 @@ export function BoqRegister({ projectId }: { projectId: string }) {
 
   return (
     <div>
+      <BoqWorkflowStrip projectId={projectId} onChange={setLocked} />
       <div className="section-head">
         <h3>Bill of Quantities</h3>
         <div className="muted">
           {items.length} items · {formatMoney(boqTotal(items))}
-          <button className="btn-ghost" style={{ marginLeft: 12 }} onClick={() => setImporting(true)}>
+          <button className="btn-ghost" style={{ marginLeft: 12 }} disabled={locked} title={locked ? 'BOQ is locked — raise a variation order to edit' : ''} onClick={() => setImporting(true)}>
             Import
           </button>
           <button className="btn-ghost" style={{ marginLeft: 6 }} disabled={items.length === 0}

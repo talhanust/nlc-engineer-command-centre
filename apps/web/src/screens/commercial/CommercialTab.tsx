@@ -5,8 +5,9 @@ import { RarRegister } from './RarRegister';
 import { EpcRegister } from './EpcRegister';
 import { RetentionTab } from './RetentionTab';
 import { ReconciliationTab } from './ReconciliationTab';
-import { SubcontractorsTab } from './SubcontractorsTab';
 import { DistributionsTab } from './DistributionsTab';
+import { DistributionPlanner } from './DistributionPlanner';
+import { ContractorProfiles } from './ContractorProfiles';
 import { AdvancesTab } from './AdvancesTab';
 
 const SUBS = [
@@ -16,7 +17,8 @@ const SUBS = [
   ['recon', 'Reconciliation'],
   ['retention', 'Retention'],
   ['epc', 'Escalation'],
-  ['subs', 'Subcontractors'],
+  ['subs', 'Contractors'],
+  ['planner', 'Distribution planner'],
   ['dist', 'Distributions'],
   ['adv', 'Advances'],
 ] as const;
@@ -45,7 +47,8 @@ export function CommercialTab({ projectId }: { projectId: string }) {
       {sub === 'recon' && <ReconciliationTab projectId={projectId} />}
       {sub === 'retention' && <RetentionTab projectId={projectId} />}
       {sub === 'epc' && <EpcRegister projectId={projectId} />}
-      {sub === 'subs' && <SubcontractorsTab projectId={projectId} />}
+      {sub === 'subs' && <ContractorProfiles projectId={projectId} />}
+      {sub === 'planner' && <DistributionPlanner projectId={projectId} />}
       {sub === 'dist' && <DistributionsTab projectId={projectId} />}
       {sub === 'adv' && <AdvancesTab projectId={projectId} />}
     </div>

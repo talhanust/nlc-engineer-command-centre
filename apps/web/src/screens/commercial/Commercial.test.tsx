@@ -55,6 +55,36 @@ describe('Phase 3 — Commercial tab', () => {
     expect(await screen.findByRole('dialog', { name: /RAR-.* detail/ })).toBeInTheDocument();
   });
 
+  it('allocates BOQ qty in the distribution planner and approves a contract', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'Distribution planner' }));
+    const grid = await screen.findByRole('table', { name: 'Distribution planner' });
+    // open the first BOQ item's allocation editor
+    const expanders = within(grid).getAllByRole('button', { name: /Allocate / });
+    await user.click(expanders[0]);
+    await user.click(screen.getByRole('button', { name: '+ Add allocation' }));
+    // a contracts table should now exist with an approve action
+    expect(await screen.findByRole('table', { name: 'Contracts' })).toBeInTheDocument();
+  });
+
+  it('drives the BOQ lifecycle to locked and gates editing', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    const roleSel = screen.getByLabelText('BOQ acting role');
+    await user.click(screen.getByRole('button', { name: 'Validate (SQS)' }));
+    await user.selectOptions(roleSel, 'pm');
+    await user.click(screen.getByRole('button', { name: 'Endorse (PM)' }));
+    await user.selectOptions(roleSel, 'manager_contracts');
+    await user.click(screen.getByRole('button', { name: 'Verify & lock (Manager Contracts)' }));
+    expect(await screen.findByText('Locked')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Import' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Raise variation order' }));
+    expect(await screen.findByText(/Variation order/)).toBeInTheDocument();
+  });
+
   it('offers Excel export on RAR, advances and distributions registers', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
@@ -150,11 +180,12 @@ describe('Phase 3 #11/#12 — RAR, subs, recovery, EPC, advances, distributions,
     expect((note as HTMLInputElement).value).toBe('Awaiting client sign-off');
   });
 
-  it('adds a subcontractor', async () => {
-    const user = await gotoSub('Subcontractors');
-    await user.type(screen.getByLabelText('Subcontractor name'), 'New Civil Co');
-    await user.type(screen.getByLabelText('Subcontractor trade'), 'Drainage');
-    await user.click(screen.getByRole('button', { name: 'Add subcontractor' }));
+  it('adds a contractor and enforces the PEC award gate', async () => {
+    const user = await gotoSub('Contractors');
+    await screen.findByRole('heading', { name: 'Contractor profiles' });
+    await user.type(screen.getByLabelText('Contractor name'), 'New Civil Co');
+    await user.type(screen.getByLabelText('Contractor trade'), 'Drainage');
+    await user.click(screen.getByRole('button', { name: 'Add contractor' }));
     expect(await screen.findByText('New Civil Co')).toBeInTheDocument();
   });
 

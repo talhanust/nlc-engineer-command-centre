@@ -5,8 +5,9 @@ import {
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
-  ProductionRun, MaterialIssue, Salient, ProjectPhoto,
+  ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval,
 } from './types';
+import type { BoqWorkflowState } from '../domain/boqworkflow';
 import { LocalDataProvider } from './LocalDataProvider';
 
 // Talks to the on-prem backend per FGEHA_NLC_API_Contract.md. Stubbed here;
@@ -88,6 +89,30 @@ export class ApiDataProvider implements DataProvider {
     if (!res.ok) throw new Error(`API ${res.status} importing BOQ`);
     return (await res.json()) as BoqItem[];
   }
+  async getBoqWorkflow(projectId: string): Promise<BoqWorkflowState> {
+    return this.get<BoqWorkflowState>(`/api/projects/${projectId}/boq/workflow`);
+  }
+  async advanceBoqWorkflow(projectId: string, role: string): Promise<BoqWorkflowState> {
+    return this.send<BoqWorkflowState>(`/api/projects/${projectId}/boq/workflow/advance`, 'POST', { role });
+  }
+  async raiseBoqVo(projectId: string): Promise<BoqWorkflowState> {
+    return this.send<BoqWorkflowState>(`/api/projects/${projectId}/boq/workflow/vo`, 'POST', {});
+  }
+  async listAllocations(projectId: string): Promise<Allocation[]> {
+    return (await this.get<{ items: Allocation[] }>(`/api/projects/${projectId}/allocations`)).items;
+  }
+  async upsertAllocation(projectId: string, input: Omit<Allocation, 'id' | 'projectId'> & { id?: string }): Promise<Allocation[]> {
+    return (await this.send<{ items: Allocation[] }>(`/api/projects/${projectId}/allocations`, 'POST', input)).items;
+  }
+  async deleteAllocation(projectId: string, id: string): Promise<Allocation[]> {
+    return (await this.send<{ items: Allocation[] }>(`/api/projects/${projectId}/allocations/${id}`, 'DELETE', {})).items;
+  }
+  async listContractApprovals(projectId: string): Promise<ContractApproval[]> {
+    return (await this.get<{ items: ContractApproval[] }>(`/api/projects/${projectId}/contracts`)).items;
+  }
+  async approveContract(projectId: string, key: string, role: string, value: number): Promise<ContractApproval[]> {
+    return (await this.send<{ items: ContractApproval[] }>(`/api/projects/${projectId}/contracts/approve`, 'POST', { key, role, value })).items;
+  }
   async listIpcs(projectId: string): Promise<Ipc[]> {
     const body = await this.get<{ items: Ipc[] }>(`/api/projects/${projectId}/ipcs`);
     return body.items;
@@ -132,6 +157,9 @@ export class ApiDataProvider implements DataProvider {
   }
   async addSubcontractor(projectId: string, input: { name: string; trade: string }): Promise<Subcontractor> {
     return this.send<Subcontractor>(`/api/projects/${projectId}/subcontractors`, 'POST', input);
+  }
+  async updateSubcontractor(projectId: string, id: string, patch: Partial<Omit<Subcontractor, 'id' | 'projectId'>>): Promise<Subcontractor> {
+    return this.send<Subcontractor>(`/api/projects/${projectId}/subcontractors/${id}`, 'PATCH', patch);
   }
   async listRars(projectId: string): Promise<Rar[]> {
     return (await this.get<{ items: Rar[] }>(`/api/projects/${projectId}/rars`)).items;

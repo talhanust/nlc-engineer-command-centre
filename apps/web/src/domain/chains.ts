@@ -10,14 +10,39 @@ export interface ChainStage {
 
 export const ROLE_LABEL: Record<string, string> = {
   pic: 'Project In-Charge',
+  sqs: 'Senior Quantity Surveyor',
+  qs: 'Quantity Surveyor',
   pm: 'Project Manager',
+  planning_engineer: 'Planning Engineer',
+  procurement_manager: 'Procurement Manager',
+  store_incharge: 'Store In-charge',
+  manager_contracts: 'Manager Contracts (HQ PD)',
+  manager_plan: 'Manager Plan (HQ PD)',
+  manager_procurement: 'Manager Procurement (HQ PD)',
+  manager_preaudit: 'Manager Pre-Audit (HQ PD)',
+  gm_monitoring: 'GM Monitoring',
   pd: 'Project Director',
+  sdo_tech: 'SDO Tech (HQ Engrs)',
+  snr_manager_contracts: 'Senior Manager Contracts',
+  snr_manager_procurement: 'Senior Manager Procurement',
+  manager_plan_engrs: 'Manager Plan (HQ Engrs)',
+  dy_comd_engrs: 'Dy Comd Engineer',
   comd_engrs: 'Comd Engineers',
+  cfo: 'CFO',
   dir_sp: 'Director (Sp)',
   dg: 'Director General',
+  oic: 'OIC NLC',
   preaudit: 'Pre-Audit',
   fm: 'Finance Manager',
   fh: 'Finance HQ',
+};
+
+/** Contract-approval ceilings (PKR) by contract type — Competent Authority by value. */
+export const LABOR_CONTRACT_POWERS: Record<string, number | null> = {
+  pd: 15_000_000, comd_engrs: 30_000_000, dg: 50_000_000,
+};
+export const SUBLET_CONTRACT_POWERS: Record<string, number | null> = {
+  pd: 150_000_000, comd_engrs: 300_000_000, dg: 1_000_000_000, oic: null,
 };
 
 /**

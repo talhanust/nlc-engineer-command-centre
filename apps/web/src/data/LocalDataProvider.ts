@@ -5,10 +5,12 @@ import {
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
-  ProductionRun, MaterialIssue, Salient, ProjectPhoto,
+  ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval,
 } from './types';
 import { itemAmount } from '../domain/boq';
 import { applyAction, computeNet, IPC_PIPELINE } from '../domain/ipc';
+import { INITIAL_BOQ_WORKFLOW, pendingBoqStage, advanceBoq, raiseVo, type BoqWorkflowState } from '../domain/boqworkflow';
+import { ROLE_LABEL } from '../domain/chains';
 import { applyRarAction } from '../domain/rar';
 import { synthSeries } from '../domain/scurve';
 import { DEMAND_CHAIN, checkAdvance } from '../domain/chains';
@@ -194,6 +196,60 @@ export class LocalDataProvider implements DataProvider {
     return rows;
   }
 
+  async getBoqWorkflow(projectId: string): Promise<BoqWorkflowState> {
+    return readJson(boqWfKey(projectId), () => INITIAL_BOQ_WORKFLOW);
+  }
+  async advanceBoqWorkflow(projectId: string, role: string): Promise<BoqWorkflowState> {
+    const cur = readJson<BoqWorkflowState>(boqWfKey(projectId), () => INITIAL_BOQ_WORKFLOW);
+    const stage = pendingBoqStage(cur);
+    const { state, error } = advanceBoq(cur, role);
+    if (error) throw new Error(error);
+    writeJson(boqWfKey(projectId), state);
+    audit(projectId, stage?.action ?? 'advance', 'BOQ', cur.phase === 'vo' ? 'VO' : 'BOQ', `${ROLE_LABEL[role] ?? role}${state.locked ? ' → locked' : ''}`);
+    return state;
+  }
+  async raiseBoqVo(projectId: string): Promise<BoqWorkflowState> {
+    const cur = readJson<BoqWorkflowState>(boqWfKey(projectId), () => INITIAL_BOQ_WORKFLOW);
+    const { state, error } = raiseVo(cur);
+    if (error) throw new Error(error);
+    writeJson(boqWfKey(projectId), state);
+    audit(projectId, 'raise_vo', 'BOQ', 'VO', `VO #${state.voCount} opened for editing`);
+    return state;
+  }
+
+  async listAllocations(projectId: string): Promise<Allocation[]> {
+    return readJson(allocKey(projectId), () => []);
+  }
+  async upsertAllocation(projectId: string, input: Omit<Allocation, 'id' | 'projectId'> & { id?: string }): Promise<Allocation[]> {
+    const all = readJson<Allocation[]>(allocKey(projectId), () => []);
+    if (input.id) {
+      const a = all.find((x) => x.id === input.id);
+      if (a) Object.assign(a, { ...input, id: a.id, projectId });
+    } else {
+      all.push({ id: `alloc-${projectId}-${Date.now()}-${Math.floor(Math.random() * 1000)}`, projectId, boqItemId: input.boqItemId, executionType: input.executionType, contractorId: input.contractorId, qty: input.qty, rate: input.rate });
+    }
+    writeJson(allocKey(projectId), all);
+    return all;
+  }
+  async deleteAllocation(projectId: string, id: string): Promise<Allocation[]> {
+    const all = readJson<Allocation[]>(allocKey(projectId), () => []).filter((a) => a.id !== id);
+    writeJson(allocKey(projectId), all);
+    return all;
+  }
+  async listContractApprovals(projectId: string): Promise<ContractApproval[]> {
+    return readJson(contractKey(projectId), () => []);
+  }
+  async approveContract(projectId: string, key: string, role: string, value: number): Promise<ContractApproval[]> {
+    const all = readJson<ContractApproval[]>(contractKey(projectId), () => []);
+    let rec = all.find((c) => c.key === key);
+    if (!rec) { rec = { key, status: 'draft' }; all.push(rec); }
+    rec.status = 'locked';
+    rec.approvedBy = role;
+    rec.at = new Date().toISOString();
+    writeJson(contractKey(projectId), all);
+    audit(projectId, 'approve', 'Contract', key, `${ROLE_LABEL[role] ?? role} · ${value}`);
+    return all;
+  }
   // ---- Commercial: IPC ----
   async listIpcs(projectId: string): Promise<Ipc[]> {
     return readIpcs(projectId);
@@ -250,6 +306,17 @@ export class LocalDataProvider implements DataProvider {
       trade: sanitize(input.trade),
     };
     all.push(s);
+    writeJson(subKey(projectId), all);
+    return s;
+  }
+  async updateSubcontractor(projectId: string, id: string, patch: Partial<Omit<Subcontractor, 'id' | 'projectId'>>): Promise<Subcontractor> {
+    const all = readJson<Subcontractor[]>(subKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SUBS : []));
+    const s = all.find((x) => x.id === id);
+    if (!s) throw new Error(`Subcontractor ${id} not found`);
+    Object.assign(s, patch);
+    if (patch.name) s.name = sanitize(patch.name);
+    if (patch.owner) s.owner = sanitize(patch.owner);
+    if (patch.address) s.address = sanitize(patch.address);
     writeJson(subKey(projectId), all);
     return s;
   }
@@ -729,6 +796,9 @@ export class LocalDataProvider implements DataProvider {
 // ---- localStorage helpers + seeds ----
 const commentKey = (nodeId: string) => `nlc-ecc.comments.${nodeId}`;
 const boqKey = (pid: string) => `nlc-ecc.boq.${pid}`;
+const boqWfKey = (pid: string) => `nlc-ecc.boqwf.${pid}`;
+const allocKey = (pid: string) => `nlc-ecc.alloc.${pid}`;
+const contractKey = (pid: string) => `nlc-ecc.contracts.${pid}`;
 const ipcKey = (pid: string) => `nlc-ecc.ipcs.${pid}`;
 const subKey = (pid: string) => `nlc-ecc.subs.${pid}`;
 const rarKey = (pid: string) => `nlc-ecc.rars.${pid}`;
@@ -825,9 +895,9 @@ function readJson<T>(key: string, seed: () => T): T {
 }
 
 const SEED_SUBS: Subcontractor[] = [
-  { id: 'sub-proj-f14f15-1', projectId: 'proj-f14f15', name: 'Frontier Works Org (FWO)', trade: 'Earthworks' },
-  { id: 'sub-proj-f14f15-2', projectId: 'proj-f14f15', name: 'Sardar & Sons', trade: 'Bituminous works' },
-  { id: 'sub-proj-f14f15-3', projectId: 'proj-f14f15', name: 'Reliable Construction', trade: 'RCC structures' },
+  { id: 'sub-proj-f14f15-1', projectId: 'proj-f14f15', name: 'Frontier Works Org (FWO)', trade: 'Earthworks', kind: 'sublet', owner: 'FWO', cnic: '—', pecCategory: 'C-A', enlistment: 'NLC/EN/001', address: 'Rawalpindi', contact: '051-000000', performanceSecurity: 50_000_000 },
+  { id: 'sub-proj-f14f15-2', projectId: 'proj-f14f15', name: 'Sardar & Sons', trade: 'Bituminous works', kind: 'sublet', owner: 'A. Sardar', cnic: '37405-0000000-0', pecCategory: 'C-3', enlistment: 'NLC/EN/014', address: 'Islamabad', contact: '051-111111', performanceSecurity: 12_000_000 },
+  { id: 'sub-proj-f14f15-3', projectId: 'proj-f14f15', name: 'Reliable Construction', trade: 'RCC structures', kind: 'labor', owner: 'M. Reliable', cnic: '61101-0000000-0', pecCategory: 'C-5', enlistment: 'NLC/EN/031', address: 'Taxila', contact: '051-222222', performanceSecurity: 5_000_000 },
 ];
 
 const SEED_RARS: Rar[] = [

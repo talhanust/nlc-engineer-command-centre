@@ -1,4 +1,5 @@
 // The data layer is abstracted behind one interface so the SAME React app
+import type { BoqWorkflowState } from '../domain/boqworkflow';
 // runs two ways: ApiDataProvider against the on-prem backend, or
 // LocalDataProvider (client-only) for the static GitHub Pages demo.
 
@@ -86,6 +87,36 @@ export interface Subcontractor {
   projectId: string;
   name: string;
   trade: string;
+  // Profile (optional; populated in the Contractor profiles screen)
+  kind?: 'labor' | 'sublet';
+  owner?: string;
+  cnic?: string;
+  pecCategory?: string; // e.g. C-A, C-1 … C-6
+  enlistment?: string;  // NLC enlistment ref
+  address?: string;
+  contact?: string;
+  performanceSecurity?: number;
+}
+
+/** Distribution planner: how a BOQ item's contract quantity is executed. */
+export type ExecutionType = 'labor' | 'sublet' | 'nlc_direct';
+
+export interface Allocation {
+  id: string;
+  projectId: string;
+  boqItemId: string;
+  executionType: ExecutionType;
+  contractorId?: string; // labor/sublet contractor (subcontractor pool)
+  qty: number;
+  rate: number; // contractor rate (PKR/unit); 0 for nlc_direct
+}
+
+/** Per-contract finalisation status, keyed `${executionType}:${contractorId}`. */
+export interface ContractApproval {
+  key: string;
+  status: 'draft' | 'locked';
+  approvedBy?: string;
+  at?: string;
 }
 
 export type RarStatus = 'draft' | 'submitted' | 'verified' | 'approved' | 'marked_payment' | 'paid';
@@ -379,6 +410,15 @@ export interface DataProvider {
     projectId: string,
     items: Array<Pick<BoqItem, 'billNo' | 'code' | 'description' | 'unit' | 'qty' | 'rate'>>,
   ): Promise<BoqItem[]>;
+  getBoqWorkflow(projectId: string): Promise<BoqWorkflowState>;
+  advanceBoqWorkflow(projectId: string, role: string): Promise<BoqWorkflowState>;
+  raiseBoqVo(projectId: string): Promise<BoqWorkflowState>;
+  // Distribution planner — allocations + contracts
+  listAllocations(projectId: string): Promise<Allocation[]>;
+  upsertAllocation(projectId: string, input: Omit<Allocation, 'id' | 'projectId'> & { id?: string }): Promise<Allocation[]>;
+  deleteAllocation(projectId: string, id: string): Promise<Allocation[]>;
+  listContractApprovals(projectId: string): Promise<ContractApproval[]>;
+  approveContract(projectId: string, key: string, role: string, value: number): Promise<ContractApproval[]>;
   listIpcs(projectId: string): Promise<Ipc[]>;
   createIpc(projectId: string, input: { period: string; gross: number }): Promise<Ipc>;
   transitionIpc(projectId: string, ipcNo: string, action: string): Promise<Ipc>;
@@ -386,6 +426,7 @@ export interface DataProvider {
   // Commercial — subcontractors, RAR, recovery, EPC, advances, distributions
   listSubcontractors(projectId: string): Promise<Subcontractor[]>;
   addSubcontractor(projectId: string, input: { name: string; trade: string }): Promise<Subcontractor>;
+  updateSubcontractor(projectId: string, id: string, patch: Partial<Omit<Subcontractor, 'id' | 'projectId'>>): Promise<Subcontractor>;
   listRars(projectId: string): Promise<Rar[]>;
   createRar(
     projectId: string,

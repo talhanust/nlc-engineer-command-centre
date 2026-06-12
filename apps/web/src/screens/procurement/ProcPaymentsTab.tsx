@@ -3,6 +3,7 @@ import { useData } from '../../data/DataContext';
 import { formatMoney } from '../../domain/money';
 import { pendingStage, ROLE_LABEL } from '../../domain/chains';
 import { ChainProgress } from './ProcurementTab';
+import { PaymentDetailModal } from '../../components/PaymentDetailModal';
 import type { ProcPayment, ProcChainType, PurchaseOrder } from '../../data/types';
 
 const CHAINS: { value: ProcChainType; label: string }[] = [
@@ -14,6 +15,7 @@ const CHAINS: { value: ProcChainType; label: string }[] = [
 export function ProcPaymentsTab({ projectId, role }: { projectId: string; role: string }) {
   const { provider } = useData();
   const [pays, setPays] = useState<ProcPayment[]>([]);
+  const [detailPay, setDetailPay] = useState<ProcPayment | null>(null);
   const [pos, setPos] = useState<PurchaseOrder[]>([]);
   const [refId, setRefId] = useState('');
   const [amount, setAmount] = useState('');
@@ -38,6 +40,7 @@ export function ProcPaymentsTab({ projectId, role }: { projectId: string; role: 
 
   return (
     <div>
+      {detailPay && <PaymentDetailModal payment={detailPay} onClose={() => setDetailPay(null)} />}
       <div className="section-head"><h3>Procurement payments</h3><span className="muted">{pays.length} payments</span></div>
       <div className="card create-row">
         <select aria-label="Payment chain" value={chainType} onChange={(e) => setChainType(e.target.value as ProcChainType)}>
@@ -59,7 +62,12 @@ export function ProcPaymentsTab({ projectId, role }: { projectId: string; role: 
           const canAct = ps?.role === role;
           return (
             <div className="card" key={p.id}>
-              <div className="section-head"><strong>{p.paymentNo}</strong><span className="muted">{formatMoney(p.amount)}</span></div>
+              <div className="section-head"><strong>{p.paymentNo}</strong>
+                <div className="head-tools">
+                  <span className="muted">{formatMoney(p.amount)}</span>
+                  <button className="btn-ghost" aria-label={`Details for ${p.paymentNo}`} onClick={() => setDetailPay(p)}>Details</button>
+                </div>
+              </div>
               <ChainProgress chainType={p.chainType} currentStage={p.currentStage} />
               <div className="modal-actions">
                 {ps ? (

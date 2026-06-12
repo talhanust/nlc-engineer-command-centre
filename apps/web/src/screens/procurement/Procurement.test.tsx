@@ -21,6 +21,14 @@ async function open() {
 }
 
 describe('Phase 6 — procurement', () => {
+  it('opens the demand detail modal with items + history', async () => {
+    const user = await open();
+    await user.click(screen.getByRole('tab', { name: 'Demands' }));
+    await user.click(await screen.findByRole('button', { name: 'Details for DMD-01' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Demand DMD-01 detail' });
+    expect(within(dialog).getByRole('table', { name: 'Demand items' })).toBeInTheDocument();
+  });
+
   it('shows the seeded demand in the PD inbox and advances it', async () => {
     const user = await open();
     const inbox = await screen.findByRole('table', { name: 'Approval inbox' });

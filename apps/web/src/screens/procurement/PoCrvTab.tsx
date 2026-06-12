@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { PoDetailModal } from '../../components/PoDetailModal';
 import { useData } from '../../data/DataContext';
 import { formatMoney } from '../../domain/money';
 import { isFinal } from '../../domain/chains';
@@ -9,6 +10,7 @@ export function PoCrvTab({ projectId }: { projectId: string }) {
   const [demands, setDemands] = useState<Demand[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [pos, setPos] = useState<PurchaseOrder[]>([]);
+  const [detailPo, setDetailPo] = useState<PurchaseOrder | null>(null);
   const [crvs, setCrvs] = useState<Crv[]>([]);
   const [demandId, setDemandId] = useState('');
   const [supplierId, setSupplierId] = useState('');
@@ -46,6 +48,7 @@ export function PoCrvTab({ projectId }: { projectId: string }) {
 
   return (
     <div>
+      {detailPo && <PoDetailModal projectId={projectId} po={detailPo} onClose={() => setDetailPo(null)} />}
       <div className="section-head"><h3>Purchase orders</h3><span className="muted">{pos.length} POs</span></div>
       <div className="card create-row">
         <select aria-label="PO demand" value={demandId} onChange={(e) => setDemandId(e.target.value)}>
@@ -62,7 +65,7 @@ export function PoCrvTab({ projectId }: { projectId: string }) {
       {pos.length > 0 && (
         <table className="data-table" aria-label="Purchase orders">
           <thead><tr><th>PO</th><th>Supplier</th><th className="num">Value</th><th>Status</th></tr></thead>
-          <tbody>{pos.map((p) => (<tr key={p.id}><td>{p.poNo}</td><td>{supName(p.supplierId)}</td><td className="num">{formatMoney(p.totalValue)}</td><td>{p.status}</td></tr>))}</tbody>
+          <tbody>{pos.map((p) => (<tr key={p.id}><td>{p.poNo} <button className="btn-ghost" style={{ marginLeft: 6, padding: '1px 7px' }} aria-label={`Details for ${p.poNo}`} onClick={() => setDetailPo(p)}>Details</button></td><td>{supName(p.supplierId)}</td><td className="num">{formatMoney(p.totalValue)}</td><td>{p.status}</td></tr>))}</tbody>
         </table>
       )}
 

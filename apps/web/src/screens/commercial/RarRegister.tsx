@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
+import { RarDetailModal } from '../../components/RarDetailModal';
+import { downloadWorkbook } from '../../components/xlsxExport';
 import { formatMoney } from '../../domain/money';
 import { nextRarTransition, RAR_STATUS_LABEL } from '../../domain/rar';
 import { useBulkSelection } from '../../components/useBulkSelection';
@@ -9,6 +11,7 @@ import type { Rar, Subcontractor, Ipc, RarIpcLink } from '../../data/types';
 export function RarRegister({ projectId }: { projectId: string }) {
   const { provider } = useData();
   const [rars, setRars] = useState<Rar[]>([]);
+  const [detailRar, setDetailRar] = useState<Rar | null>(null);
   const [subs, setSubs] = useState<Subcontractor[]>([]);
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
   const [links, setLinks] = useState<RarIpcLink[]>([]);
@@ -81,9 +84,17 @@ export function RarRegister({ projectId }: { projectId: string }) {
 
   return (
     <div>
+      {detailRar && <RarDetailModal projectId={projectId} rar={detailRar} onClose={() => setDetailRar(null)} />}
       <div className="section-head">
         <h3>RAR register</h3>
-        <span className="muted">{rars.length} certificates</span>
+        <div className="head-tools">
+          <span className="muted">{rars.length} certificates</span>
+          <button className="btn-ghost" disabled={rars.length === 0}
+            onClick={() => void downloadWorkbook([{ name: 'RAR register', aoa: [
+              ['RAR', 'Period', 'Subcontractor', 'Status', 'Gross', 'Net payable'],
+              ...rars.map((r) => [r.rarNo, r.period, subName(r.subcontractorId), r.status, Math.round(r.gross), Math.round(r.netPayable)]),
+            ] }], `${projectId}-rar-register.xlsx`)}>Export Excel</button>
+        </div>
       </div>
 
       {rars.length > 0 && (() => {
@@ -155,7 +166,10 @@ export function RarRegister({ projectId }: { projectId: string }) {
                       onChange={() => sel.toggle(rar.rarNo)}
                     />
                   </td>
-                  <td>{rar.rarNo}</td>
+                  <td>{rar.rarNo}
+                    <button className="btn-ghost" style={{ marginLeft: 8, padding: '1px 7px' }} aria-label={`Details for ${rar.rarNo}`}
+                      onClick={() => setDetailRar(rar)}>Details</button>
+                  </td>
                   <td>{rar.period}</td>
                   <td>{subName(rar.subcontractorId)}</td>
                   <td><span className={`status-pill st-${rar.status}`}>{RAR_STATUS_LABEL[rar.status]}</span></td>

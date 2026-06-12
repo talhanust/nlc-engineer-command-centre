@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
+import { downloadWorkbook } from '../../components/xlsxExport';
 import { formatMoney } from '../../domain/money';
 import type { Advance, Subcontractor } from '../../data/types';
 
@@ -50,7 +51,14 @@ export function AdvancesTab({ projectId }: { projectId: string }) {
     <div>
       <div className="section-head">
         <h3>Advances</h3>
-        <span className="muted">{advances.length} entries</span>
+        <div className="head-tools">
+          <span className="muted">{advances.length} entries</span>
+          <button className="btn-ghost" disabled={advances.length === 0}
+            onClick={() => void downloadWorkbook([{ name: 'Advances', aoa: [
+              ['Date', 'Kind', 'Direction', 'Subcontractor', 'Amount'],
+              ...advances.map((a) => [a.dated, KIND_LABEL[a.kind], DIR_LABEL[a.direction], subName(a.subcontractorId), Math.round(a.amount)]),
+            ] }], `${projectId}-advances.xlsx`)}>Export Excel</button>
+        </div>
       </div>
       <div className="card create-row">
         <select aria-label="Advance kind" value={kind} onChange={(e) => setKind(e.target.value as Advance['kind'])}>

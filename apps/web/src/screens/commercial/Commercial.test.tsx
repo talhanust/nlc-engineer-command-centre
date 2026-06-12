@@ -32,6 +32,41 @@ describe('Phase 3 — Commercial tab', () => {
     expect(within(table).getByText('IPC-03')).toBeInTheDocument();
   });
 
+  it('opens the IPC detail modal with waterfall + audit trail', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByRole('heading', { name: 'Bill of Quantities' });
+    await user.click(screen.getByRole('tab', { name: 'IPC register' }));
+    await screen.findByRole('table', { name: 'IPC register' });
+    await user.click(screen.getByRole('button', { name: 'Details for IPC-03' }));
+    const dialog = await screen.findByRole('dialog', { name: 'IPC-03 detail' });
+    expect(within(dialog).getByRole('table', { name: 'IPC detail deductions' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: 'Audit trail' })).toBeInTheDocument();
+  });
+
+  it('opens the RAR detail modal', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByRole('heading', { name: 'Bill of Quantities' });
+    await user.click(screen.getByRole('tab', { name: 'RAR & recovery' }));
+    const btns = await screen.findAllByRole('button', { name: /Details for RAR-/ });
+    const btn = btns[0];
+    await user.click(btn);
+    expect(await screen.findByRole('dialog', { name: /RAR-.* detail/ })).toBeInTheDocument();
+  });
+
+  it('offers Excel export on RAR, advances and distributions registers', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByRole('heading', { name: 'Bill of Quantities' });
+    await user.click(screen.getByRole('tab', { name: 'RAR & recovery' }));
+    expect(await screen.findByRole('button', { name: 'Export Excel' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Advances' }));
+    expect(await screen.findByRole('button', { name: 'Export Excel' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Distributions' }));
+    expect(await screen.findByRole('button', { name: 'Export Excel' })).toBeInTheDocument();
+  });
+
   it('advances an IPC through its pipeline', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');

@@ -5,11 +5,13 @@ import { formatMoney } from '../../domain/money';
 import { nextTransition, IPC_STATUS_LABEL, computeNet } from '../../domain/ipc';
 import { computeDeductions, DEFAULT_DEDUCTION_SETTINGS } from '../../domain/deductions';
 import { useBulkSelection } from '../../components/useBulkSelection';
+import { IpcDetailModal } from '../../components/IpcDetailModal';
 import type { Ipc } from '../../data/types';
 
 export function IpcRegister({ projectId }: { projectId: string }) {
   const { provider } = useData();
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
+  const [detailIpc, setDetailIpc] = useState<Ipc | null>(null);
   const [period, setPeriod] = useState('');
   const [gross, setGross] = useState('');
   const [busy, setBusy] = useState(false);
@@ -76,6 +78,7 @@ export function IpcRegister({ projectId }: { projectId: string }) {
 
   return (
     <div>
+      {detailIpc && <IpcDetailModal projectId={projectId} ipc={detailIpc} onClose={() => setDetailIpc(null)} />}
       <div className="section-head">
         <h3>IPC register</h3>
         <div className="head-tools">
@@ -152,6 +155,8 @@ export function IpcRegister({ projectId }: { projectId: string }) {
                       {openIpc === ipc.ipcNo ? '▾' : '▸'}
                     </button>
                     <span>{ipc.ipcNo}</span>
+                    <button className="btn-ghost" style={{ marginLeft: 8, padding: '1px 7px' }} aria-label={`Details for ${ipc.ipcNo}`}
+                      onClick={() => setDetailIpc(ipc)}>Details</button>
                   </td>
                   <td>{ipc.period}</td>
                   <td><span className={`status-pill st-${ipc.status}`}>{IPC_STATUS_LABEL[ipc.status]}</span></td>

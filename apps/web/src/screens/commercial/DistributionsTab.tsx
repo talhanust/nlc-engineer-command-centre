@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { formatMoney } from '../../domain/money';
 import { DistributionDonut } from '../../components/CategoryCharts';
+import { downloadWorkbook } from '../../components/xlsxExport';
 import type { BoqItem, Distribution, DistributionMode, Subcontractor } from '../../data/types';
 
 export function DistributionsTab({ projectId }: { projectId: string }) {
@@ -45,7 +46,20 @@ export function DistributionsTab({ projectId }: { projectId: string }) {
     <div>
       <div className="section-head">
         <h3>Distributions &amp; allocations</h3>
-        <span className="muted">{coverage}% of items assigned</span>
+        <div className="head-tools">
+          <span className="muted">{coverage}% of items assigned</span>
+          <button className="btn-ghost" disabled={items.length === 0}
+            onClick={() => {
+              const subName = (id?: string) => subs.find((s) => s.id === id)?.name ?? '—';
+              void downloadWorkbook([{ name: 'Distributions', aoa: [
+                ['Code', 'Description', 'Mode', 'Subcontractor', 'Allocated qty', 'Total qty'],
+                ...items.map((it) => {
+                  const d = dists[it.id];
+                  return [it.code, it.description, d?.mode ?? 'unassigned', subName(d?.subcontractorId), d?.allocatedQty ?? 0, it.qty];
+                }),
+              ] }], `${projectId}-distributions.xlsx`);
+            }}>Export Excel</button>
+        </div>
       </div>
       {items.length > 0 && (() => {
         const counts = { Unassigned: 0, 'Self-execute': 0, Sublet: 0 };

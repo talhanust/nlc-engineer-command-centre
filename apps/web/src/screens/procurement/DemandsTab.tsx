@@ -3,6 +3,7 @@ import { useData } from '../../data/DataContext';
 import { formatMoney } from '../../domain/money';
 import { pendingStage, ROLE_LABEL } from '../../domain/chains';
 import { ChainProgress } from './ProcurementTab';
+import { DemandDetailModal } from '../../components/DemandDetailModal';
 import type { BoqItem, Demand, DemandItem, DemandType } from '../../data/types';
 
 const TYPE_LABEL: Record<DemandType, string> = {
@@ -12,6 +13,7 @@ const TYPE_LABEL: Record<DemandType, string> = {
 export function DemandsTab({ projectId, role }: { projectId: string; role: string }) {
   const { provider } = useData();
   const [demands, setDemands] = useState<Demand[]>([]);
+  const [detailDemand, setDetailDemand] = useState<Demand | null>(null);
   const [boq, setBoq] = useState<BoqItem[]>([]);
   const [type, setType] = useState<DemandType>('material');
   const [justification, setJustification] = useState('');
@@ -59,6 +61,7 @@ export function DemandsTab({ projectId, role }: { projectId: string; role: strin
 
   return (
     <div>
+      {detailDemand && <DemandDetailModal demand={detailDemand} onClose={() => setDetailDemand(null)} />}
       <div className="section-head"><h3>Demands</h3><span className="muted">{demands.length} demands</span></div>
 
       <div className="card">
@@ -103,7 +106,10 @@ export function DemandsTab({ projectId, role }: { projectId: string; role: strin
             <div className="card" key={d.id}>
               <div className="section-head">
                 <strong>{d.demandNo} · {TYPE_LABEL[d.type]}</strong>
-                <span className="muted">{formatMoney(d.totalEstimated)}</span>
+                <div className="head-tools">
+                  <span className="muted">{formatMoney(d.totalEstimated)}</span>
+                  <button className="btn-ghost" aria-label={`Details for ${d.demandNo}`} onClick={() => setDetailDemand(d)}>Details</button>
+                </div>
               </div>
               <p className="muted small">{d.justification}</p>
               <ChainProgress chainType={d.chainType} currentStage={d.currentStage} />

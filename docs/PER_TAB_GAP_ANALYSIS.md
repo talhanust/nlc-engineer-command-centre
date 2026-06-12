@@ -21,9 +21,9 @@ Legend: ✓ in app · ➕ added this pass · ✗ still missing
 ## Execution
 - ✓ Schedule + **Gantt**, ➕schedule baseline import; lookahead; S-curve (+➕import, ➕zoom),
   editable monthly actuals; production runs + material issues + reconciliation; resources
-- ✗ Period mapping (map IPC/RAR periods → schedule months; divergence coverage)
+- ➕ Period mapping (IPC period → schedule month, coverage %, **twin S-curve** physical vs financial)
 - ✗ Resource histogram / S-curve combined (execRsCombinedChart)
-- ✗ Twin S-curve divergence band annotation
+- ➕ Twin S-curve (physical actual vs financial billed) via period mapping
 
 ## Mapping
 - ✓ BOQ→WBS, BOQ→material coverage

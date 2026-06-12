@@ -5,7 +5,7 @@ import {
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
-  ProductionRun, MaterialIssue, Salient,
+  ProductionRun, MaterialIssue, Salient, ProjectPhoto,
 } from './types';
 import { LocalDataProvider } from './LocalDataProvider';
 
@@ -28,6 +28,33 @@ export class ApiDataProvider implements DataProvider {
   async listProjects(): Promise<Project[]> {
     const body = await this.get<{ items: Project[] }>('/api/projects');
     return body.items;
+  }
+  async createProject(input: { pdHqId: string; name: string; clientName: string; contractValue: string; plannedPct: number; actualPct: number }): Promise<Project> {
+    return this.send<Project>('/api/projects', 'POST', input);
+  }
+  async updateProject(projectId: string, patch: Partial<Project>): Promise<Project> {
+    return this.send<Project>(`/api/projects/${projectId}`, 'PATCH', patch);
+  }
+  async archiveProject(projectId: string): Promise<void> {
+    await this.send(`/api/projects/${projectId}/archive`, 'POST', {});
+  }
+  async restoreProject(projectId: string): Promise<void> {
+    await this.send(`/api/projects/${projectId}/restore`, 'POST', {});
+  }
+  async listArchivedProjects(): Promise<Project[]> {
+    return (await this.get<{ items: Project[] }>('/api/projects?archived=1')).items;
+  }
+  async addPdHq(name: string): Promise<OrgNode> {
+    return this.send<OrgNode>('/api/nodes/pd-hq', 'POST', { name });
+  }
+  async listPhotos(projectId: string): Promise<ProjectPhoto[]> {
+    return (await this.get<{ items: ProjectPhoto[] }>(`/api/projects/${projectId}/photos`)).items;
+  }
+  async addPhoto(projectId: string, input: { url: string; caption: string; dated: string }): Promise<ProjectPhoto> {
+    return this.send<ProjectPhoto>(`/api/projects/${projectId}/photos`, 'POST', input);
+  }
+  async deletePhoto(projectId: string, id: string): Promise<void> {
+    await this.send(`/api/projects/${projectId}/photos/${id}`, 'DELETE', {});
   }
 
   async listComments(nodeId: string): Promise<NodeComment[]> {
@@ -150,6 +177,12 @@ export class ApiDataProvider implements DataProvider {
   }
   async setDistribution(projectId: string, dist: Distribution): Promise<Distribution> {
     return this.send<Distribution>(`/api/projects/${projectId}/distributions`, 'PUT', dist);
+  }
+  async replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>): Promise<ScheduleActivity[]> {
+    return (await this.send<{ items: ScheduleActivity[] }>(`/api/projects/${projectId}/schedule`, 'PUT', { rows })).items;
+  }
+  async importScurve(projectId: string, points: MonthlySeriesPoint[]): Promise<MonthlySeriesPoint[]> {
+    return (await this.send<{ items: MonthlySeriesPoint[] }>(`/api/projects/${projectId}/scurve`, 'PUT', { points })).items;
   }
   async listSchedule(projectId: string): Promise<ScheduleActivity[]> {
     return (await this.get<{ items: ScheduleActivity[] }>(`/api/projects/${projectId}/schedule`)).items;

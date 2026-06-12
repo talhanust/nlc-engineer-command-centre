@@ -1,5 +1,5 @@
 import {
-  ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
+  ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, Brush,
 } from 'recharts';
 import type { CashFlowMonth } from '../domain/finance';
 import { ChartCard, chartPalette } from './chartUtils';
@@ -22,6 +22,7 @@ export function CashFlowChart({ months }: { months: CashFlowMonth[] }) {
           <Bar dataKey="inflow" name="Inflow" fill={c.success} radius={[3, 3, 0, 0]} maxBarSize={16} />
           <Bar dataKey="outflow" name="Outflow" fill={c.danger} radius={[3, 3, 0, 0]} maxBarSize={16} />
           <Line type="monotone" dataKey="cumNet" name="Cumulative net" stroke={c.primary} strokeWidth={2.6} dot={false} />
+          {months.length > 8 && <Brush dataKey="month" height={16} stroke={c.muted} travellerWidth={8} />}
         </ComposedChart>
       </ResponsiveContainer>
     </ChartCard>

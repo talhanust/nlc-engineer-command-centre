@@ -1,5 +1,5 @@
 import {
-  ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Brush,
 } from 'recharts';
 import type { MonthlySeriesPoint } from '../data/types';
 import type { WeightedPoint } from '../domain/scurve';
@@ -27,6 +27,7 @@ export function SCurveChart({ points, title }: { points: Point[]; title?: string
           <Legend iconType="plainline" />
           <Area type="monotone" dataKey="planned" name="Planned" stroke={c.signal} strokeWidth={2} strokeDasharray="5 4" fill="url(#plannedFill)" />
           <Line type="monotone" dataKey="actual" name="Actual" stroke={c.primary} strokeWidth={2.6} dot={{ r: 2.5 }} connectNulls={false} />
+          {points.length > 8 && <Brush dataKey="month" height={18} stroke={c.muted} travellerWidth={8} />}
         </ComposedChart>
       </ResponsiveContainer>
     </ChartCard>

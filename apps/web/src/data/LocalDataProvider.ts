@@ -5,7 +5,7 @@ import {
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
-  ProductionRun, MaterialIssue, Salient,
+  ProductionRun, MaterialIssue, Salient, ProjectPhoto,
 } from './types';
 import { itemAmount } from '../domain/boq';
 import { applyAction, computeNet, IPC_PIPELINE } from '../domain/ipc';
@@ -45,16 +45,110 @@ const NODES: OrgNode[] = [
   ...SEED.map((s): OrgNode => ({ id: s.id, name: s.name, type: 'project', parentId: s.pdHqId })),
 ];
 
+const COORDS: Record<string, { lat: number; lng: number; location: string }> = {
+  'proj-f14f15': { lat: 33.69, lng: 73.06, location: 'Islamabad' },
+  'proj-bahria': { lat: 33.72, lng: 73.18, location: 'Bahria Enclave, Islamabad' },
+  'proj-e12': { lat: 33.70, lng: 72.95, location: 'E-12, Islamabad' },
+  'proj-rwp-ring': { lat: 33.60, lng: 73.04, location: 'Rawalpindi' },
+  'proj-m2-rehab': { lat: 32.93, lng: 73.72, location: 'M-2 Motorway' },
+  'proj-swat-expr': { lat: 34.80, lng: 72.36, location: 'Swat' },
+  'proj-khi-water': { lat: 24.86, lng: 67.00, location: 'Karachi' },
+  'proj-gwadar': { lat: 25.13, lng: 62.32, location: 'Gwadar' },
+};
 const PROJECTS: Project[] = SEED.map((s) => ({
   id: s.id, pdHqId: s.pdHqId, clientName: s.client,
   contractValue: s.cv, billedToDate: s.billed, receivedToDate: s.received,
   plannedPct: s.planned, actualPct: s.actual,
+  lat: COORDS[s.id]?.lat, lng: COORDS[s.id]?.lng, location: COORDS[s.id]?.location,
 }));
 
 export class LocalDataProvider implements DataProvider {
   readonly mode = 'local' as const;
-  async listNodes(): Promise<OrgNode[]> { return NODES; }
-  async listProjects(): Promise<Project[]> { return PROJECTS; }
+  async listNodes(): Promise<OrgNode[]> {
+    const nodes = readJson<OrgNode[]>(nodesKey, () => NODES);
+    const archived = new Set(this.readProjectsRaw().filter((p) => p.archived).map((p) => p.id));
+    return nodes.filter((n) => !(n.type === 'project' && archived.has(n.id)));
+  }
+  async listProjects(): Promise<Project[]> {
+    return this.readProjectsRaw().filter((p) => !p.archived);
+  }
+  private readProjectsRaw(): Project[] {
+    return readJson<Project[]>(projectsKey, () => PROJECTS);
+  }
+  async listArchivedProjects(): Promise<Project[]> {
+    return this.readProjectsRaw().filter((p) => p.archived);
+  }
+
+  async createProject(input: {
+    pdHqId: string; name: string; clientName: string;
+    contractValue: string; plannedPct: number; actualPct: number;
+  }): Promise<Project> {
+    const nodes = readJson<OrgNode[]>(nodesKey, () => NODES);
+    const projects = this.readProjectsRaw();
+    const slug = input.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'project';
+    let id = `proj-${slug}`;
+    let n = 2;
+    while (nodes.some((x) => x.id === id) || projects.some((x) => x.id === id)) id = `proj-${slug}-${n++}`;
+    const node: OrgNode = { id, name: sanitize(input.name), type: 'project', parentId: input.pdHqId };
+    const project: Project = {
+      id, pdHqId: input.pdHqId, clientName: sanitize(input.clientName),
+      contractValue: input.contractValue, billedToDate: '0', receivedToDate: '0',
+      plannedPct: input.plannedPct, actualPct: input.actualPct,
+    };
+    nodes.push(node); projects.push(project);
+    writeJson(nodesKey, nodes); writeJson(projectsKey, projects);
+    audit(id, 'create', 'Project', node.name, `under ${input.pdHqId}`);
+    return project;
+  }
+
+  async updateProject(projectId: string, patch: Partial<Project>): Promise<Project> {
+    const projects = this.readProjectsRaw();
+    const p = projects.find((x) => x.id === projectId);
+    if (!p) throw new Error(`Project ${projectId} not found`);
+    Object.assign(p, patch);
+    if (patch.clientName) p.clientName = sanitize(patch.clientName);
+    writeJson(projectsKey, projects);
+    audit(projectId, 'update', 'Project', projectId, Object.keys(patch).join(', '));
+    return p;
+  }
+
+  async archiveProject(projectId: string): Promise<void> {
+    const projects = this.readProjectsRaw();
+    const p = projects.find((x) => x.id === projectId);
+    if (p) { p.archived = true; writeJson(projectsKey, projects); audit(projectId, 'archive', 'Project', projectId); }
+  }
+  async restoreProject(projectId: string): Promise<void> {
+    const projects = this.readProjectsRaw();
+    const p = projects.find((x) => x.id === projectId);
+    if (p) { p.archived = false; writeJson(projectsKey, projects); audit(projectId, 'restore', 'Project', projectId); }
+  }
+
+  async addPdHq(name: string): Promise<OrgNode> {
+    const nodes = readJson<OrgNode[]>(nodesKey, () => NODES);
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 16) || 'pd';
+    let id = `pd-${slug}`;
+    let n = 2;
+    while (nodes.some((x) => x.id === id)) id = `pd-${slug}-${n++}`;
+    const node: OrgNode = { id, name: sanitize(name), type: 'pd_hq', parentId: 'hq-engrs' };
+    nodes.push(node);
+    writeJson(nodesKey, nodes);
+    return node;
+  }
+
+  async listPhotos(projectId: string): Promise<ProjectPhoto[]> {
+    return readJson(photoKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_PHOTOS : []));
+  }
+  async addPhoto(projectId: string, input: { url: string; caption: string; dated: string }): Promise<ProjectPhoto> {
+    const all = readJson<ProjectPhoto[]>(photoKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_PHOTOS : []));
+    const photo: ProjectPhoto = { id: `ph-${projectId}-${Date.now()}`, projectId, url: input.url.trim(), caption: sanitize(input.caption), dated: input.dated };
+    all.unshift(photo);
+    writeJson(photoKey(projectId), all);
+    return photo;
+  }
+  async deletePhoto(projectId: string, id: string): Promise<void> {
+    const all = readJson<ProjectPhoto[]>(photoKey(projectId), () => []);
+    writeJson(photoKey(projectId), all.filter((p) => p.id !== id));
+  }
 
   async listComments(nodeId: string): Promise<NodeComment[]> {
     return readComments(nodeId);
@@ -280,6 +374,21 @@ export class LocalDataProvider implements DataProvider {
   // ---- Execution & baselines ----
   async listSchedule(projectId: string): Promise<ScheduleActivity[]> {
     return readJson(schedKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SCHEDULE : []));
+  }
+  async replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>): Promise<ScheduleActivity[]> {
+    const acts: ScheduleActivity[] = rows.map((r, i) => ({
+      id: `act-${projectId}-${i + 1}`, projectId,
+      activityId: sanitize(r.activityId), name: sanitize(r.name), wbs: sanitize(r.wbs),
+      durationDays: r.durationDays, plannedStart: r.plannedStart, plannedFinish: r.plannedFinish, isMilestone: r.isMilestone,
+    }));
+    writeJson(schedKey(projectId), acts);
+    audit(projectId, 'import', 'Schedule', `${acts.length} activities`);
+    return acts;
+  }
+  async importScurve(projectId: string, points: MonthlySeriesPoint[]): Promise<MonthlySeriesPoint[]> {
+    writeJson(seriesKey(projectId), points);
+    audit(projectId, 'import', 'S-curve', `${points.length} months`);
+    return points;
   }
   async listMonthlySeries(projectId: string): Promise<MonthlySeriesPoint[]> {
     return readJson(seriesKey(projectId), () => {
@@ -619,6 +728,8 @@ const advKey = (pid: string) => `nlc-ecc.advances.${pid}`;
 const distKey = (pid: string) => `nlc-ecc.dists.${pid}`;
 const schedKey = (pid: string) => `nlc-ecc.sched.${pid}`;
 const seriesKey = (pid: string) => `nlc-ecc.series.${pid}`;
+const nodesKey = 'nlc-ecc.nodes';
+const projectsKey = 'nlc-ecc.projects';
 const resKey = (pid: string) => `nlc-ecc.resources.${pid}`;
 const wbsKey = (pid: string) => `nlc-ecc.boqwbs.${pid}`;
 const matKey = (pid: string) => `nlc-ecc.boqmat.${pid}`;
@@ -634,6 +745,13 @@ const hireKey = (pid: string) => `nlc-ecc.hires.${pid}`;
 const prodKey = (pid: string) => `nlc-ecc.production.${pid}`;
 const issueKey = (pid: string) => `nlc-ecc.materialIssues.${pid}`;
 const salientKey = (pid: string) => `nlc-ecc.salients.${pid}`;
+const photoKey = (pid: string) => `nlc-ecc.photos.${pid}`;
+
+const SEED_PHOTOS: ProjectPhoto[] = [
+  { id: 'ph-proj-f14f15-1', projectId: 'proj-f14f15', url: 'https://picsum.photos/seed/nlc-earthworks/640/420', caption: 'Earthworks & subgrade — Sector F-15', dated: '2026-03-18' },
+  { id: 'ph-proj-f14f15-2', projectId: 'proj-f14f15', url: 'https://picsum.photos/seed/nlc-culvert/640/420', caption: 'Box culvert RD 12+000', dated: '2026-04-22' },
+  { id: 'ph-proj-f14f15-3', projectId: 'proj-f14f15', url: 'https://picsum.photos/seed/nlc-paving/640/420', caption: 'Asphalt wearing course laydown', dated: '2026-05-26' },
+];
 
 const SEED_SALIENTS: Salient[] = [
   { id: 'sal-proj-f14f15-1', projectId: 'proj-f14f15', label: 'Client', value: 'FGEHA' },

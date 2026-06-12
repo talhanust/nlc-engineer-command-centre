@@ -23,6 +23,19 @@ export interface Project {
   /** Physical progress, 0..100. */
   plannedPct: number;
   actualPct: number;
+  archived?: boolean;
+  /** Geolocation (for the portfolio map). */
+  lat?: number;
+  lng?: number;
+  location?: string;
+}
+
+export interface ProjectPhoto {
+  id: string;
+  projectId: string;
+  url: string;
+  caption: string;
+  dated: string;
 }
 
 export interface NodeComment {
@@ -343,6 +356,21 @@ export interface DataProvider {
   readonly mode: 'api' | 'local';
   listNodes(): Promise<OrgNode[]>;
   listProjects(): Promise<Project[]>;
+  // Project & org lifecycle
+  createProject(input: {
+    pdHqId: string; name: string; clientName: string;
+    contractValue: string; plannedPct: number; actualPct: number;
+  }): Promise<Project>;
+  updateProject(projectId: string, patch: Partial<Pick<Project,
+    'clientName' | 'contractValue' | 'billedToDate' | 'receivedToDate' | 'plannedPct' | 'actualPct' | 'lat' | 'lng' | 'location'>>): Promise<Project>;
+  archiveProject(projectId: string): Promise<void>;
+  restoreProject(projectId: string): Promise<void>;
+  listArchivedProjects(): Promise<Project[]>;
+  addPdHq(name: string): Promise<OrgNode>;
+  // Progress photo gallery
+  listPhotos(projectId: string): Promise<ProjectPhoto[]>;
+  addPhoto(projectId: string, input: { url: string; caption: string; dated: string }): Promise<ProjectPhoto>;
+  deletePhoto(projectId: string, id: string): Promise<void>;
   listComments(nodeId: string): Promise<NodeComment[]>;
   addComment(nodeId: string, body: string): Promise<NodeComment>;
   // Commercial — BOQ + IPC
@@ -376,6 +404,8 @@ export interface DataProvider {
   setDistribution(projectId: string, dist: Distribution): Promise<Distribution>;
   // Execution & baselines
   listSchedule(projectId: string): Promise<ScheduleActivity[]>;
+  replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>): Promise<ScheduleActivity[]>;
+  importScurve(projectId: string, points: MonthlySeriesPoint[]): Promise<MonthlySeriesPoint[]>;
   listMonthlySeries(projectId: string): Promise<MonthlySeriesPoint[]>;
   setMonthlyActual(projectId: string, month: string, actual: number): Promise<MonthlySeriesPoint[]>;
   listResources(projectId: string): Promise<Resource[]>;

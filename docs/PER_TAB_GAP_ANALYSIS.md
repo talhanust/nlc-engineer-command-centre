@@ -13,8 +13,8 @@ Legend: ✓ in app · ➕ added this pass · ✗ still missing
 - ✓ BOQ (paste/CSV/➕xlsx import, ➕Excel export), IPC register + pipeline, RAR + recovery,
   retention timeline, reconciliation, escalation calculator + EPC, advances, distributions, subs
 - ➕ IPC deduction waterfall (WHT bands); bulk register editor
-- ✗ Entity **detail modals** (openIPCDetail/openRARDetail/openSubDetail) with full audit trail per doc
-- ✗ Register exports for RAR / advances / distributions (IPC + BOQ done)
+- ➕ Entity **detail modals** — IPC (waterfall+recovery+audit), RAR (recovery+audit) done; sub detail ✗
+- ➕ Register exports for RAR / advances / distributions (IPC + BOQ already done)
 - ✗ Secured-account flows (secured client receipts, secured sub-disbursements)
 - ✗ Vetting modal workflow; client-receipt posting against IPCs
 
@@ -38,7 +38,7 @@ Legend: ✓ in app · ➕ added this pass · ✗ still missing
 ## Procurement
 - ✓ Demands (3 types, item builder, BOQ picker), six approval chains, inbox, financial powers,
   POs, CRVs (over-receipt), payments, suppliers, machinery hires + utilisation
-- ✗ Demand/PO/payment **detail views**; issue-PO-from-demand modal; supplier detail
+- ➕ Demand, **PO** and **payment** detail views (items/chain/history/CRVs/audit) done; issue-PO-from-demand modal ✗
 
 ## Settings / Admin
 - ✓ Currency format, backup/restore, financial-powers editor, **access matrix**, audit log,

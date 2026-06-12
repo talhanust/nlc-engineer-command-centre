@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../data/DataContext';
 import { useUiState } from '../state/UiState';
@@ -14,23 +15,32 @@ import { BillingFunnel } from '../components/BillingFunnel';
 import { PortfolioSCurve } from '../components/PortfolioSCurve';
 import { nodeBreakdownCsv, nodeBreakdownAoa } from '../domain/exporters';
 import { downloadWorkbook } from '../components/xlsxExport';
+import { NewProjectModal } from '../components/NewProjectModal';
+import { PakistanMap } from '../components/PakistanMap';
+import { descendantProjectIds } from '../domain/org';
 
 export function CommandDashboard({ nodeId }: { nodeId: string }) {
   const { nodes, projects } = useData();
   const { rag, filter, filterActive } = useUiState();
   const navigate = useNavigate();
+  const [newProject, setNewProject] = useState(false);
 
   // True re-aggregation: filter the project set, then roll up over it.
   const filtered = applyFilter(projects, nodes, filter, rag);
   const rollup = computeNodeRollup(nodes, filtered, nodeId, { rag });
   if (!rollup) return <p>Node not found.</p>;
   const { totals, children, node } = rollup;
+  const canAddProject = node.type === 'pd_hq' || node.type === 'hq_engrs' || node.type === 'hq';
 
   return (
     <section>
+      {newProject && <NewProjectModal defaultPdHq={node.type === 'pd_hq' ? node.id : undefined} onClose={() => setNewProject(false)} />}
       <div className="screen-head">
         <h1>{node.name}</h1>
         <div className="head-tools">
+          {canAddProject && (
+            <button className="btn no-print" onClick={() => setNewProject(true)}>+ New project</button>
+          )}
           <button
             className="btn-ghost no-print"
             onClick={() => {
@@ -146,6 +156,11 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
       </div>
       <BillingFunnel totals={totals} />
       <PortfolioSCurve nodeId={nodeId} projects={filtered} />
+      {(() => {
+        const ids = new Set(descendantProjectIds(nodes, nodeId));
+        const located = projects.filter((p) => ids.has(p.id) && typeof p.lat === 'number');
+        return located.length > 0 ? <PakistanMap projects={located} title="Portfolio map" /> : null;
+      })()}
     </section>
   );
 }

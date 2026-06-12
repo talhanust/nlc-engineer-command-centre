@@ -1,4 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom';
+import { useState } from 'react';
 import { useData } from '../data/DataContext';
 import { nodeById } from '../domain/org';
 import { formatMoney, formatPct, toNum } from '../domain/money';
@@ -7,24 +8,29 @@ import { useUiState } from '../state/UiState';
 import { KpiCard } from '../components/KpiCard';
 import { RagBadge } from '../components/RagBadge';
 import { SalientsCard } from '../components/SalientsCard';
+import { ProgressEditor } from '../components/ProgressEditor';
 import { CommercialTab } from './commercial/CommercialTab';
 import { ExecutionTab } from './execution/ExecutionTab';
 import { MappingTab } from './mapping/MappingTab';
 import { FinancialTab } from './financial/FinancialTab';
 import { ProcurementTab } from './procurement/ProcurementTab';
+import { PhotoGallery } from '../components/PhotoGallery';
+import { PakistanMap } from '../components/PakistanMap';
+import { LocationEditor } from '../components/LocationEditor';
 
-const TABS = ['executive', 'commercial', 'execution', 'mapping', 'procurement', 'financial'] as const;
+const TABS = ['executive', 'commercial', 'execution', 'mapping', 'procurement', 'financial', 'gallery'] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABEL: Record<Tab, string> = {
   executive: 'Executive', commercial: 'Commercial', execution: 'Execution',
-  mapping: 'Mapping', procurement: 'Procurement', financial: 'Financial',
+  mapping: 'Mapping', procurement: 'Procurement', financial: 'Financial', gallery: 'Gallery',
 };
 
 export function ProjectView({ nodeId }: { nodeId: string }) {
-  const { nodes, projects } = useData();
+  const { nodes, projects, provider, refresh } = useData();
   const { rag } = useUiState();
   const navigate = useNavigate();
   const { tab } = useParams();
+  const [editProgress, setEditProgress] = useState(false);
   const active: Tab = (TABS as readonly string[]).includes(tab ?? '') ? (tab as Tab) : 'executive';
 
   const node = nodeById(nodes, nodeId);
@@ -32,15 +38,27 @@ export function ProjectView({ nodeId }: { nodeId: string }) {
   if (!node || !project) return <p>Project not found.</p>;
   const slippage = project.actualPct - project.plannedPct;
 
+  async function archive() {
+    if (!confirm(`Archive ${node!.name}? It will be hidden from the tree (restore in Settings).`)) return;
+    await provider.archiveProject(nodeId);
+    await refresh();
+    navigate('/node/hq-nlc');
+  }
+
   return (
     <section>
+      {editProgress && <ProgressEditor project={project} onClose={() => setEditProgress(false)} onSaved={refresh} />}
       <div className="screen-head">
         <div>
           <h1>{node.name}</h1>
           {/* FGEHA etc. shown here as the project's CLIENT, not app branding. */}
           <div className="muted">Client: {project.clientName}</div>
         </div>
-        <RagBadge rag={ragForSlippage(slippage, rag)} />
+        <div className="head-tools">
+          <button className="btn no-print" onClick={() => setEditProgress(true)}>Update progress</button>
+          <button className="btn-ghost no-print" onClick={archive}>Archive</button>
+          <RagBadge rag={ragForSlippage(slippage, rag)} />
+        </div>
       </div>
 
       <div className="tabs" role="tablist">
@@ -76,8 +94,13 @@ export function ProjectView({ nodeId }: { nodeId: string }) {
             />
           </div>
           <SalientsCard projectId={nodeId} />
+          <div className="panel-grid">
+            <LocationEditor project={project} onSaved={refresh} />
+            <PakistanMap projects={[project]} title="Project location" height={260} />
+          </div>
         </>
       )}
+      {active === 'gallery' && <PhotoGallery projectId={nodeId} />}
 
       {active === 'commercial' && <CommercialTab projectId={nodeId} />}
       {active === 'execution' && <ExecutionTab projectId={nodeId} />}

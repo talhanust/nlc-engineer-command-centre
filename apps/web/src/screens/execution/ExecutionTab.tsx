@@ -4,6 +4,7 @@ import { SCurveChart } from '../../components/SCurveChart';
 import { GanttChart } from '../../components/GanttChart';
 import { lookahead, type LookaheadStatus } from '../../domain/lookahead';
 import { ProductionTab } from './ProductionTab';
+import { BaselineImport } from '../../components/BaselineImport';
 import type { MonthlySeriesPoint, ScheduleActivity, Resource, ResourceClass } from '../../data/types';
 
 const SUB = ['schedule', 'lookahead', 'scurve', 'production', 'resources'] as const;
@@ -84,6 +85,8 @@ function Lookahead({ projectId }: { projectId: string }) {
 function Schedule({ projectId }: { projectId: string }) {
   const { provider } = useData();
   const [acts, setActs] = useState<ScheduleActivity[]>([]);
+  const [importing, setImporting] = useState(false);
+  function load() { provider.listSchedule(projectId).then(setActs); }
   useEffect(() => {
     let a = true;
     provider.listSchedule(projectId).then((x) => a && setActs(x));
@@ -91,9 +94,15 @@ function Schedule({ projectId }: { projectId: string }) {
   }, [provider, projectId]);
   return (
     <div>
-      <div className="section-head"><h3>Schedule / WBS</h3><span className="muted">{acts.length} activities</span></div>
+      {importing && <BaselineImport projectId={projectId} kind="schedule" onClose={() => setImporting(false)} onDone={load} />}
+      <div className="section-head"><h3>Schedule / WBS</h3>
+        <div className="head-tools">
+          <span className="muted">{acts.length} activities</span>
+          <button className="btn-ghost" onClick={() => setImporting(true)}>Import baseline</button>
+        </div>
+      </div>
       {acts.length === 0 ? (
-        <p className="muted">No schedule baseline yet.</p>
+        <p className="muted">No schedule baseline yet. Use <strong>Import baseline</strong> to upload an .xlsx or paste activities.</p>
       ) : (
         <>
           <GanttChart activities={acts} />
@@ -118,6 +127,8 @@ function Schedule({ projectId }: { projectId: string }) {
 function SCurve({ projectId }: { projectId: string }) {
   const { provider } = useData();
   const [series, setSeries] = useState<MonthlySeriesPoint[]>([]);
+  const [importing, setImporting] = useState(false);
+  function load() { provider.listMonthlySeries(projectId).then(setSeries); }
   useEffect(() => {
     let a = true;
     provider.listMonthlySeries(projectId).then((s) => a && setSeries(s));
@@ -133,7 +144,10 @@ function SCurve({ projectId }: { projectId: string }) {
 
   return (
     <div>
-      <div className="section-head"><h3>Progress S-curve</h3></div>
+      {importing && <BaselineImport projectId={projectId} kind="scurve" onClose={() => setImporting(false)} onDone={load} />}
+      <div className="section-head"><h3>Progress S-curve</h3>
+        <button className="btn-ghost" onClick={() => setImporting(true)}>Import baseline</button>
+      </div>
       <SCurveChart points={series} />
       <div className="card">
         <h3>Monthly actuals (cumulative %)</h3>

@@ -1,5 +1,6 @@
 import { useEffect, useState, Fragment } from 'react';
 import { useData } from '../../data/DataContext';
+import { downloadWorkbook } from '../../components/xlsxExport';
 import { formatMoney } from '../../domain/money';
 import { nextTransition, IPC_STATUS_LABEL, computeNet } from '../../domain/ipc';
 import { computeDeductions, DEFAULT_DEDUCTION_SETTINGS } from '../../domain/deductions';
@@ -77,7 +78,13 @@ export function IpcRegister({ projectId }: { projectId: string }) {
     <div>
       <div className="section-head">
         <h3>IPC register</h3>
-        <span className="muted">{ipcs.length} certificates</span>
+        <div className="head-tools">
+          <span className="muted">{ipcs.length} certificates</span>
+          <button className="btn-ghost" onClick={() => void downloadWorkbook([{ name: 'IPC register', aoa: [
+            ['IPC', 'Period', 'Status', 'Gross', 'Net payable', 'Cumulative'],
+            ...ipcs.map((i) => [i.ipcNo, i.period, i.status, Math.round(i.gross), Math.round(i.netPayable), Math.round(i.cumGross)]),
+          ] }], `${projectId}-ipc-register.xlsx`)}>Export Excel</button>
+        </div>
       </div>
 
       <div className="card create-row">

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useData } from '../../data/DataContext';
+import { downloadWorkbook } from '../../components/xlsxExport';
 import { groupByBill, boqTotal } from '../../domain/boq';
 import { formatMoney } from '../../domain/money';
 import type { BoqItem } from '../../data/types';
@@ -28,6 +29,13 @@ export function BoqRegister({ projectId }: { projectId: string }) {
           {items.length} items · {formatMoney(boqTotal(items))}
           <button className="btn-ghost" style={{ marginLeft: 12 }} onClick={() => setImporting(true)}>
             Import
+          </button>
+          <button className="btn-ghost" style={{ marginLeft: 6 }} disabled={items.length === 0}
+            onClick={() => void downloadWorkbook([{ name: 'BOQ', aoa: [
+              ['Bill', 'Code', 'Description', 'Unit', 'Qty', 'Rate', 'Amount'],
+              ...items.map((it) => [it.billNo, it.code, it.description, it.unit, it.qty, it.rate, Math.round(it.amount)]),
+            ] }], `${projectId}-boq.xlsx`)}>
+            Export Excel
           </button>
         </div>
       </div>

@@ -16,9 +16,60 @@ export function Settings() {
       <h1>Settings</h1>
       <DisplaySettings />
       <BackupRestore />
+      <OrgAdmin />
       <PowersEditor />
       <AccessMatrixEditor />
       <AuditLog />
+    </div>
+  );
+}
+
+function OrgAdmin() {
+  const { provider, refresh } = useData();
+  const [archived, setArchived] = useState<import('../data/types').Project[]>([]);
+  const [pdName, setPdName] = useState('');
+  const [msg, setMsg] = useState('');
+
+  async function reload() {
+    setArchived(await provider.listArchivedProjects());
+  }
+  useEffect(() => { void reload(); /* eslint-disable-next-line */ }, [provider]);
+
+  async function addPd() {
+    if (!pdName.trim()) return;
+    await provider.addPdHq(pdName.trim());
+    setPdName(''); setMsg('PD HQ added.'); await refresh();
+  }
+  async function restore(id: string) {
+    await provider.restoreProject(id);
+    await refresh(); await reload();
+  }
+
+  return (
+    <div className="card">
+      <h3>Organisation</h3>
+      <p className="muted small">Add a PD HQ, or restore an archived project.</p>
+      <div className="create-row">
+        <input aria-label="New PD HQ name" placeholder="New PD HQ name" value={pdName} onChange={(e) => setPdName(e.target.value)} />
+        <button className="btn" onClick={addPd}>Add PD HQ</button>
+        {msg && <span className="pos small" role="status">{msg}</span>}
+      </div>
+      <div className="section-head" style={{ marginTop: 14 }}><h3>Archived projects</h3><span className="muted">{archived.length}</span></div>
+      {archived.length === 0 ? (
+        <p className="muted small">No archived projects.</p>
+      ) : (
+        <table className="data-table" aria-label="Archived projects">
+          <tbody>
+            {archived.map((p) => (
+              <tr key={p.id}>
+                <td>{p.id}</td>
+                <td>{p.clientName}</td>
+                <td style={{ width: 90 }}><button className="btn-ghost" onClick={() => restore(p.id)}>Restore</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

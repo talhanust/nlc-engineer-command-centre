@@ -86,6 +86,19 @@ describe('Phase 4 — execution', () => {
     const table = await screen.findByRole('table', { name: 'Material issues' });
     expect(within(table).getByText('M-STEEL')).toBeInTheDocument();
   });
+
+  it('imports a schedule baseline by paste', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-bahria/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Schedule / WBS' }));
+    await user.click(screen.getByRole('button', { name: 'Import baseline' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Import schedule baseline' });
+    await user.type(within(dialog).getByLabelText('schedule paste'), 'A-100\tEarthworks\t1.1\t2025-09-01\t2025-12-15');
+    await user.click(within(dialog).getByRole('button', { name: 'Parse pasted text' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Apply baseline' }));
+    expect(await screen.findByRole('img', { name: 'Gantt chart' })).toBeInTheDocument();
+  });
 });
 
 describe('Phase 4 — mapping', () => {

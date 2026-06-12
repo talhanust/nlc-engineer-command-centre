@@ -279,6 +279,12 @@ export class ApiDataProvider implements DataProvider {
   async listAudit(): Promise<AuditEntry[]> {
     return (await this.get<{ items: AuditEntry[] }>(`/api/audit`)).items;
   }
+  async getPeriodMap(projectId: string): Promise<Record<string, string>> {
+    return (await this.get<{ map: Record<string, string> }>(`/api/projects/${projectId}/period-map`)).map;
+  }
+  async setPeriodMapping(projectId: string, ipcNo: string, month: string): Promise<Record<string, string>> {
+    return (await this.send<{ map: Record<string, string> }>(`/api/projects/${projectId}/period-map`, 'PUT', { ipcNo, month })).map;
+  }
   async listProductionRuns(projectId: string): Promise<ProductionRun[]> {
     return (await this.get<{ items: ProductionRun[] }>(`/api/projects/${projectId}/production`)).items;
   }

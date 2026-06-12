@@ -656,6 +656,16 @@ export class LocalDataProvider implements DataProvider {
     return readAudit();
   }
 
+  async getPeriodMap(projectId: string): Promise<Record<string, string>> {
+    return readJson(periodMapKey(projectId), () => ({}));
+  }
+  async setPeriodMapping(projectId: string, ipcNo: string, month: string): Promise<Record<string, string>> {
+    const map = readJson<Record<string, string>>(periodMapKey(projectId), () => ({}));
+    if (month) map[ipcNo] = month; else delete map[ipcNo];
+    writeJson(periodMapKey(projectId), map);
+    return map;
+  }
+
   async listSalients(projectId: string): Promise<Salient[]> {
     return readJson(salientKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SALIENTS : []));
   }
@@ -746,6 +756,7 @@ const prodKey = (pid: string) => `nlc-ecc.production.${pid}`;
 const issueKey = (pid: string) => `nlc-ecc.materialIssues.${pid}`;
 const salientKey = (pid: string) => `nlc-ecc.salients.${pid}`;
 const photoKey = (pid: string) => `nlc-ecc.photos.${pid}`;
+const periodMapKey = (pid: string) => `nlc-ecc.periodMap.${pid}`;
 
 const SEED_PHOTOS: ProjectPhoto[] = [
   { id: 'ph-proj-f14f15-1', projectId: 'proj-f14f15', url: 'https://picsum.photos/seed/nlc-earthworks/640/420', caption: 'Earthworks & subgrade — Sector F-15', dated: '2026-03-18' },

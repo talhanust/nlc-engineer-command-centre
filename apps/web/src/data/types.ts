@@ -449,6 +449,9 @@ export interface DataProvider {
   deleteSalient(projectId: string, id: string): Promise<void>;
   // Audited reverse
   reverseIpc(projectId: string, ipcNo: string): Promise<Ipc>;
+  // Period mapping (IPC period -> schedule month)
+  getPeriodMap(projectId: string): Promise<Record<string, string>>;
+  setPeriodMapping(projectId: string, ipcNo: string, month: string): Promise<Record<string, string>>;
   // Audit
   listAudit(): Promise<AuditEntry[]>;
 }

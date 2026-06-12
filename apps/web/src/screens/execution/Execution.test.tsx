@@ -87,6 +87,19 @@ describe('Phase 4 — execution', () => {
     expect(within(table).getByText('M-STEEL')).toBeInTheDocument();
   });
 
+  it('maps IPC periods to schedule months with a twin S-curve', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Period mapping' }));
+    expect(await screen.findByRole('table', { name: 'Period mapping' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Twin S-curve' })).toBeInTheDocument();
+    // change a mapping
+    const selects = screen.getAllByLabelText(/Month for IPC-/);
+    await user.selectOptions(selects[0], 'Apr-26');
+    expect((selects[0] as HTMLSelectElement).value).toBe('Apr-26');
+  });
+
   it('imports a schedule baseline by paste', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-bahria/execution');

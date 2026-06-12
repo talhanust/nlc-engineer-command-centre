@@ -5,11 +5,12 @@ import { GanttChart } from '../../components/GanttChart';
 import { lookahead, type LookaheadStatus } from '../../domain/lookahead';
 import { ProductionTab } from './ProductionTab';
 import { BaselineImport } from '../../components/BaselineImport';
+import { PeriodMappingTab } from './PeriodMappingTab';
 import type { MonthlySeriesPoint, ScheduleActivity, Resource, ResourceClass } from '../../data/types';
 
-const SUB = ['schedule', 'lookahead', 'scurve', 'production', 'resources'] as const;
+const SUB = ['schedule', 'lookahead', 'scurve', 'periodmap', 'production', 'resources'] as const;
 type Sub = (typeof SUB)[number];
-const LABEL: Record<Sub, string> = { schedule: 'Schedule / WBS', lookahead: 'Lookahead', scurve: 'S-curve & progress', production: 'Production & materials', resources: 'Resources' };
+const LABEL: Record<Sub, string> = { schedule: 'Schedule / WBS', lookahead: 'Lookahead', scurve: 'S-curve & progress', periodmap: 'Period mapping', production: 'Production & materials', resources: 'Resources' };
 
 export function ExecutionTab({ projectId }: { projectId: string }) {
   const [sub, setSub] = useState<Sub>('scurve');
@@ -25,6 +26,7 @@ export function ExecutionTab({ projectId }: { projectId: string }) {
       {sub === 'schedule' && <Schedule projectId={projectId} />}
       {sub === 'lookahead' && <Lookahead projectId={projectId} />}
       {sub === 'scurve' && <SCurve projectId={projectId} />}
+      {sub === 'periodmap' && <PeriodMappingTab projectId={projectId} />}
       {sub === 'production' && <ProductionTab projectId={projectId} />}
       {sub === 'resources' && <Resources projectId={projectId} />}
     </div>

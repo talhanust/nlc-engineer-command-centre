@@ -55,6 +55,6 @@ Missing vs spec (program of work):
 5. **Execution approval chain + overheads** ✅ (baseline cycle Planning Engineer→PM→Manager Plan HQ PD→PD→Manager Plan HQ Engrs→Comd Engineer→lock, amend re-runs; planned indirect/overhead lines vs actuals booked from Financial overhead payments, by month + variance).
 6. **Mapping approval + material recovery linkage** ✅ (mapping approval PM→PD→lock + amend; material issued→recovered→balance-to-recover per contractor, editable recovery, recovered from RAR/final bill).
 7. **Procurement v2 + Inventory/POL/Fixed-Assets + Maintenance**.
-8. **HR tab + roll-up**.
+8. **HR tab + roll-up** ✅ (per-node HR postings by category with sanctioned/posted/vacancy; roll-up rules — projects & HQ PD & HQ Engrs include own; HQ NLC shows own but excludes it from the roll-up; branch-dashboard roll-up card by category).
 9. **Progress-update workflow as single source**.
 10. **Backend wiring** (api → Postgres + OIDC/RBAC) to enforce all chains server-side.

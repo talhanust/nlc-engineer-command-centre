@@ -5,12 +5,14 @@ import { GanttChart } from '../../components/GanttChart';
 import { lookahead, type LookaheadStatus } from '../../domain/lookahead';
 import { ProductionTab } from './ProductionTab';
 import { BaselineImport } from '../../components/BaselineImport';
+import { ScheduleWorkflowStrip } from '../../components/ScheduleWorkflowStrip';
 import { PeriodMappingTab } from './PeriodMappingTab';
+import { OverheadsTab } from './OverheadsTab';
 import type { MonthlySeriesPoint, ScheduleActivity, Resource, ResourceClass } from '../../data/types';
 
-const SUB = ['schedule', 'lookahead', 'scurve', 'periodmap', 'production', 'resources'] as const;
+const SUB = ['schedule', 'lookahead', 'scurve', 'periodmap', 'overheads', 'production', 'resources'] as const;
 type Sub = (typeof SUB)[number];
-const LABEL: Record<Sub, string> = { schedule: 'Schedule / WBS', lookahead: 'Lookahead', scurve: 'S-curve & progress', periodmap: 'Period mapping', production: 'Production & materials', resources: 'Resources' };
+const LABEL: Record<Sub, string> = { schedule: 'Schedule / WBS', lookahead: 'Lookahead', scurve: 'S-curve & progress', periodmap: 'Period mapping', overheads: 'Overheads', production: 'Production & materials', resources: 'Resources' };
 
 export function ExecutionTab({ projectId }: { projectId: string }) {
   const [sub, setSub] = useState<Sub>('scurve');
@@ -27,6 +29,7 @@ export function ExecutionTab({ projectId }: { projectId: string }) {
       {sub === 'lookahead' && <Lookahead projectId={projectId} />}
       {sub === 'scurve' && <SCurve projectId={projectId} />}
       {sub === 'periodmap' && <PeriodMappingTab projectId={projectId} />}
+      {sub === 'overheads' && <OverheadsTab projectId={projectId} />}
       {sub === 'production' && <ProductionTab projectId={projectId} />}
       {sub === 'resources' && <Resources projectId={projectId} />}
     </div>
@@ -88,6 +91,7 @@ function Schedule({ projectId }: { projectId: string }) {
   const { provider } = useData();
   const [acts, setActs] = useState<ScheduleActivity[]>([]);
   const [importing, setImporting] = useState(false);
+  const [locked, setLocked] = useState(false);
   function load() { provider.listSchedule(projectId).then(setActs); }
   useEffect(() => {
     let a = true;
@@ -97,10 +101,11 @@ function Schedule({ projectId }: { projectId: string }) {
   return (
     <div>
       {importing && <BaselineImport projectId={projectId} kind="schedule" onClose={() => setImporting(false)} onDone={load} />}
+      <ScheduleWorkflowStrip projectId={projectId} onChange={setLocked} />
       <div className="section-head"><h3>Schedule / WBS</h3>
         <div className="head-tools">
           <span className="muted">{acts.length} activities</span>
-          <button className="btn-ghost" onClick={() => setImporting(true)}>Import baseline</button>
+          <button className="btn-ghost" disabled={locked} title={locked ? 'Baseline locked — amend to edit' : ''} onClick={() => setImporting(true)}>Import baseline</button>
         </div>
       </div>
       {acts.length === 0 ? (

@@ -12,29 +12,35 @@ export const IPC_PIPELINE: IpcStatus[] = [
 ];
 
 export const IPC_STATUS_LABEL: Record<IpcStatus, string> = {
-  draft: 'Draft',
-  submitted: 'Submitted',
+  draft: 'Generated (SQS)',
+  submitted: 'Submitted to consultant',
   vetted: 'Vetted',
   forwarded_to_client: 'With client',
-  approved: 'Approved',
-  paid_pending_ack: 'Paid (ack pending)',
-  paid: 'Paid',
+  approved: 'Approved (client)',
+  paid_pending_ack: 'Receipt pending',
+  paid: 'Receipt confirmed',
 };
 
 interface Transition {
   action: string;
   label: string;
   to: IpcStatus;
+  role: string;
 }
 
 const TRANSITIONS: Partial<Record<IpcStatus, Transition>> = {
-  draft: { action: 'submit', label: 'Submit', to: 'submitted' },
-  submitted: { action: 'vet', label: 'Vet', to: 'vetted' },
-  vetted: { action: 'forward', label: 'Forward to client', to: 'forwarded_to_client' },
-  forwarded_to_client: { action: 'approve', label: 'Mark approved', to: 'approved' },
-  approved: { action: 'ack', label: 'Mark paid (pending ack)', to: 'paid_pending_ack' },
-  paid_pending_ack: { action: 'pay', label: 'Confirm paid', to: 'paid' },
+  draft: { action: 'submit', label: 'Validate & submit', to: 'submitted', role: 'pm' },
+  submitted: { action: 'vet', label: 'Mark vetted', to: 'vetted', role: 'pm' },
+  vetted: { action: 'forward', label: 'Submit to client', to: 'forwarded_to_client', role: 'pm' },
+  forwarded_to_client: { action: 'approve', label: 'Mark approved', to: 'approved', role: 'pm' },
+  approved: { action: 'ack', label: 'Record receipt', to: 'paid_pending_ack', role: 'fm' },
+  paid_pending_ack: { action: 'pay', label: 'Confirm receipt', to: 'paid', role: 'fm' },
 };
+
+/** Role responsible for the action available at this status. */
+export function transitionRole(status: IpcStatus): string | null {
+  return TRANSITIONS[status]?.role ?? null;
+}
 
 export function nextTransition(status: IpcStatus): Transition | null {
   return TRANSITIONS[status] ?? null;

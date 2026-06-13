@@ -100,6 +100,34 @@ describe('Phase 4 — execution', () => {
     expect((selects[0] as HTMLSelectElement).value).toBe('Apr-26');
   });
 
+  it('drives the baseline approval cycle to locked and gates import', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Schedule / WBS' }));
+    await screen.findByText('Baseline approval');
+    const roleSel = screen.getByLabelText('Baseline acting role');
+    for (const [r, label] of [
+      ['pm', 'Validate (PM)'], ['manager_plan', 'Scrutinise (Manager Plan HQ PD)'],
+      ['pd', 'Endorse (PD)'], ['manager_plan_engrs', 'Tech-check (Manager Plan HQ Engrs)'],
+      ['comd_engrs', 'Approve & lock (Comd Engineer)'],
+    ] as const) {
+      await user.selectOptions(roleSel, r);
+      await user.click(screen.getByRole('button', { name: label }));
+    }
+    expect(await screen.findByText('Locked')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Import baseline' })).toBeDisabled();
+  });
+
+  it('shows overheads planned vs actual', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Overheads' }));
+    expect(await screen.findByRole('table', { name: 'Overhead planned vs actual' })).toBeInTheDocument();
+    expect(screen.getByText('Light-vehicle POL')).toBeInTheDocument();
+  });
+
   it('imports a schedule baseline by paste', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-bahria/execution');
@@ -124,6 +152,25 @@ describe('Phase 4 — mapping', () => {
     const select = within(row).getByLabelText('WBS for I-201') as HTMLSelectElement;
     await user.selectOptions(select, 'A-3000');
     await waitFor(() => expect(select.value).toBe('A-3000'));
+  });
+
+  it('drives the mapping approval to locked', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/mapping');
+    await screen.findByText('Mapping approval');
+    const roleSel = screen.getByLabelText('Mapping acting role');
+    await user.click(screen.getByRole('button', { name: 'Validate (PM)' }));
+    await user.selectOptions(roleSel, 'pd');
+    await user.click(screen.getByRole('button', { name: 'Approve & lock (PD)' }));
+    expect(await screen.findByText('Locked')).toBeInTheDocument();
+  });
+
+  it('shows material recovery by contractor', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/mapping');
+    await screen.findByText('Mapping approval');
+    await user.click(screen.getByRole('tab', { name: 'Material recovery' }));
+    expect(await screen.findByRole('table', { name: 'Material recovery by contractor' })).toBeInTheDocument();
   });
 });
 

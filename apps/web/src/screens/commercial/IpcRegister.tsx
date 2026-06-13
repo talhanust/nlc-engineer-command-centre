@@ -5,6 +5,7 @@ import { formatMoney } from '../../domain/money';
 import { nextTransition, IPC_STATUS_LABEL, computeNet } from '../../domain/ipc';
 import { computeDeductions, DEFAULT_DEDUCTION_SETTINGS } from '../../domain/deductions';
 import { useBulkSelection } from '../../components/useBulkSelection';
+import { ROLE_LABEL } from '../../domain/chains';
 import { IpcDetailModal } from '../../components/IpcDetailModal';
 import type { Ipc } from '../../data/types';
 
@@ -164,7 +165,7 @@ export function IpcRegister({ projectId }: { projectId: string }) {
                   <td className="num">{formatMoney(ipc.netPayable)}</td>
                   <td className="num">{formatMoney(ipc.cumGross)}</td>
                   <td>
-                    {t ? <button className="btn-ghost" onClick={() => advance(ipc)}>{t.label}</button> : <span className="muted small">—</span>}
+                    {t ? <button className="btn-ghost" title={`Responsible: ${ROLE_LABEL[t.role] ?? t.role}`} onClick={() => advance(ipc)}>{t.label}</button> : <span className="muted small">—</span>}
                     {ipc.status !== 'draft' && (
                       <button className="btn-ghost" style={{ marginLeft: 6 }} aria-label={`Reverse ${ipc.ipcNo}`} title="Reverse last transition (audited)" onClick={() => reverse(ipc)}>↶</button>
                     )}

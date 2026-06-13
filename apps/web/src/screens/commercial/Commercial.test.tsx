@@ -50,9 +50,11 @@ describe('Phase 3 — Commercial tab', () => {
     await screen.findByRole('heading', { name: 'Bill of Quantities' });
     await user.click(screen.getByRole('tab', { name: 'RAR & recovery' }));
     const btns = await screen.findAllByRole('button', { name: /Details for RAR-/ });
-    const btn = btns[0];
-    await user.click(btn);
-    expect(await screen.findByRole('dialog', { name: /RAR-.* detail/ })).toBeInTheDocument();
+    await user.click(btns[0]);
+    const dialog = await screen.findByRole('dialog', { name: /RAR-.* detail/ });
+    expect(within(dialog).getByRole('table', { name: 'RAR payment computation' })).toBeInTheDocument();
+    await user.click(within(dialog).getByLabelText('Final bill'));
+    expect(await within(dialog).findByText(/Issue payment authority \(CFO\)/)).toBeInTheDocument();
   });
 
   it('allocates BOQ qty in the distribution planner and approves a contract', async () => {
@@ -103,9 +105,9 @@ describe('Phase 3 — Commercial tab', () => {
     await screen.findByRole('heading', { name: 'Bill of Quantities' });
     await user.click(screen.getByRole('tab', { name: 'IPC register' }));
     const table = await screen.findByRole('table', { name: 'IPC register' });
-    // IPC-03 is seeded as 'vetted' → next action "Forward to client".
+    // IPC-03 is seeded as 'vetted' → next action "Submit to client".
     const row = within(table).getByText('IPC-03').closest('tr')! as HTMLElement;
-    await user.click(within(row).getByRole('button', { name: 'Forward to client' }));
+    await user.click(within(row).getByRole('button', { name: 'Submit to client' }));
     await waitFor(() => expect(within(row).getByText('With client')).toBeInTheDocument());
   });
 
@@ -206,8 +208,8 @@ describe('Phase 3 #11/#12 — RAR, subs, recovery, EPC, advances, distributions,
     await user.click(screen.getByRole('button', { name: 'New EPC' }));
     const table = await screen.findByRole('table', { name: 'EPC register' });
     const row = within(table).getByText('EPC-01').closest('tr')! as HTMLElement;
-    await user.click(within(row).getByRole('button', { name: 'Submit' }));
-    await waitFor(() => expect(within(row).getByText('Submitted')).toBeInTheDocument());
+    await user.click(within(row).getByRole('button', { name: 'Validate & submit' }));
+    await waitFor(() => expect(within(row).getByText('Submitted to consultant')).toBeInTheDocument());
   });
 
   it('assigns a BOQ item to a subcontractor in distributions', async () => {

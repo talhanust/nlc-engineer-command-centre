@@ -393,6 +393,18 @@ export interface OverheadLine {
   plannedCost: number;
 }
 
+/** Progress update: QS enters executed qty per BOQ item/period; PM validates. */
+export interface ProgressUpdate {
+  id: string;
+  projectId: string;
+  boqItemId: string;
+  period: string;
+  executedQty: number;
+  status: 'draft' | 'validated';
+  enteredBy?: string;
+  validatedBy?: string;
+}
+
 /** HR posting per org node (project or HQ level). */
 export interface HrPosting {
   id: string;
@@ -582,6 +594,10 @@ export interface DataProvider {
   setPeriodMapping(projectId: string, ipcNo: string, month: string): Promise<Record<string, string>>;
   // Audit
   listAudit(): Promise<AuditEntry[]>;
+  // Progress updates (QS enter → PM validate) — single source of physical progress
+  listProgress(projectId: string): Promise<ProgressUpdate[]>;
+  upsertProgress(projectId: string, input: { boqItemId: string; period: string; executedQty: number; role: string; id?: string }): Promise<ProgressUpdate[]>;
+  validateProgress(projectId: string, id: string, role: string): Promise<ProgressUpdate[]>;
   // HR postings (per org node) + roll-up
   listHr(nodeId: string): Promise<HrPosting[]>;
   upsertHr(nodeId: string, input: Omit<HrPosting, 'id' | 'nodeId'> & { id?: string }): Promise<HrPosting[]>;

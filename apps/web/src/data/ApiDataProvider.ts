@@ -6,7 +6,7 @@ import {
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
   ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval, OverheadLine,
-  InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting,
+  InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, ProgressUpdate,
 } from './types';
 import type { BoqWorkflowState } from '../domain/boqworkflow';
 import type { BaselineWorkflowState } from '../domain/schedulebaseline';
@@ -338,6 +338,15 @@ export class ApiDataProvider implements DataProvider {
   }
   async listInventory(projectId: string): Promise<InventoryItem[]> {
     return (await this.get<{ items: InventoryItem[] }>(`/api/projects/${projectId}/inventory`)).items;
+  }
+  async listProgress(projectId: string): Promise<ProgressUpdate[]> {
+    return (await this.get<{ items: ProgressUpdate[] }>(`/api/projects/${projectId}/progress`)).items;
+  }
+  async upsertProgress(projectId: string, input: { boqItemId: string; period: string; executedQty: number; role: string; id?: string }): Promise<ProgressUpdate[]> {
+    return (await this.send<{ items: ProgressUpdate[] }>(`/api/projects/${projectId}/progress`, 'POST', input)).items;
+  }
+  async validateProgress(projectId: string, id: string, role: string): Promise<ProgressUpdate[]> {
+    return (await this.send<{ items: ProgressUpdate[] }>(`/api/projects/${projectId}/progress/${id}/validate`, 'POST', { role })).items;
   }
   async listHr(nodeId: string): Promise<HrPosting[]> {
     return (await this.get<{ items: HrPosting[] }>(`/api/nodes/${nodeId}/hr`)).items;

@@ -6,7 +6,7 @@ import {
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
   ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval, OverheadLine,
-  InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting,
+  InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, ProgressUpdate,
 } from './types';
 import { itemAmount } from '../domain/boq';
 import { applyAction, computeNet, IPC_PIPELINE } from '../domain/ipc';
@@ -907,6 +907,31 @@ export class LocalDataProvider implements DataProvider {
     return state;
   }
 
+  async listProgress(projectId: string): Promise<ProgressUpdate[]> {
+    return readJson(progressKey(projectId), () => []);
+  }
+  async upsertProgress(projectId: string, input: { boqItemId: string; period: string; executedQty: number; role: string; id?: string }): Promise<ProgressUpdate[]> {
+    const all = readJson<ProgressUpdate[]>(progressKey(projectId), () => []);
+    if (input.id) {
+      const u = all.find((x) => x.id === input.id);
+      if (u && u.status === 'draft') { u.executedQty = input.executedQty; u.period = input.period; }
+    } else {
+      all.push({ id: `prog-${projectId}-${Date.now()}`, projectId, boqItemId: input.boqItemId, period: input.period, executedQty: input.executedQty, status: 'draft', enteredBy: input.role });
+    }
+    writeJson(progressKey(projectId), all);
+    audit(projectId, 'enter', 'Progress', input.boqItemId, `${input.executedQty} (${ROLE_LABEL[input.role] ?? input.role})`);
+    return all;
+  }
+  async validateProgress(projectId: string, id: string, role: string): Promise<ProgressUpdate[]> {
+    if (role !== 'pm') throw new Error('Only the PM can validate progress.');
+    const all = readJson<ProgressUpdate[]>(progressKey(projectId), () => []);
+    const u = all.find((x) => x.id === id);
+    if (!u) throw new Error('Progress update not found.');
+    u.status = 'validated'; u.validatedBy = role;
+    writeJson(progressKey(projectId), all);
+    audit(projectId, 'validate', 'Progress', u.boqItemId, `${u.executedQty} validated`);
+    return all;
+  }
   async listHr(nodeId: string): Promise<HrPosting[]> {
     return readJson(hrKey(nodeId), () => SEED_HR[nodeId] ?? []);
   }
@@ -1006,6 +1031,7 @@ const polKey = (pid: string) => `nlc-ecc.pol.${pid}`;
 const faKey = (pid: string) => `nlc-ecc.fixedassets.${pid}`;
 const maintKey = (pid: string) => `nlc-ecc.maintenance.${pid}`;
 const hrKey = (nodeId: string) => `nlc-ecc.hr.${nodeId}`;
+const progressKey = (pid: string) => `nlc-ecc.progress.${pid}`;
 const SEED_HR: Record<string, HrPosting[]> = {
   'proj-f14f15': [
     { id: 'hr-f14-1', nodeId: 'proj-f14f15', category: 'Engineers', sanctioned: 12, posted: 10 },

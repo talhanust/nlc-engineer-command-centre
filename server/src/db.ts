@@ -1,17 +1,33 @@
 import { Pool, QueryResultRow } from 'pg';
 
 /**
- * Single shared connection pool. Connection params come from the environment
- * (see .env.example). The schema lives in the `fnpc` search_path.
+ * Single shared connection pool.
+ *
+ * Render (and most managed Postgres hosts) inject a single DATABASE_URL and
+ * require TLS. When DATABASE_URL is present we use it and enable SSL; locally
+ * we fall back to discrete PG* vars (see .env.example). Set PGSSL=disable to
+ * force-disable TLS (e.g. a local server without certificates).
  */
-export const pool = new Pool({
-  host: process.env.PGHOST ?? 'localhost',
-  port: Number(process.env.PGPORT ?? 5432),
-  database: process.env.PGDATABASE ?? 'fnpc',
-  user: process.env.PGUSER ?? 'fnpc_app',
-  password: process.env.PGPASSWORD ?? '',
-  max: Number(process.env.PG_POOL_MAX ?? 10),
-});
+const useUrl = !!process.env.DATABASE_URL;
+const sslEnabled = useUrl ? process.env.PGSSL !== 'disable' : process.env.PGSSL === 'require';
+
+export const pool = new Pool(
+  useUrl
+    ? {
+        connectionString: process.env.DATABASE_URL,
+        max: Number(process.env.PG_POOL_MAX ?? 10),
+        ssl: sslEnabled ? { rejectUnauthorized: false } : undefined,
+      }
+    : {
+        host: process.env.PGHOST ?? 'localhost',
+        port: Number(process.env.PGPORT ?? 5432),
+        database: process.env.PGDATABASE ?? 'fnpc',
+        user: process.env.PGUSER ?? 'fnpc_app',
+        password: process.env.PGPASSWORD ?? '',
+        max: Number(process.env.PG_POOL_MAX ?? 10),
+        ssl: sslEnabled ? { rejectUnauthorized: false } : undefined,
+      },
+);
 
 /** Thin typed query helper. */
 export async function query<T extends QueryResultRow>(

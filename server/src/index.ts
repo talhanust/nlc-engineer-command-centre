@@ -11,6 +11,22 @@ import { demandsRouter } from './routes/demands';
 const app = express();
 app.use(express.json({ limit: '8mb' }));
 
+// CORS — allow the SPA origin(s) listed in CORS_ORIGIN (comma-separated).
+// Defaults to '*' for easy first-deploy; set it to the GitHub Pages URL in prod.
+const corsOrigins = (process.env.CORS_ORIGIN ?? '*').split(',').map((s) => s.trim());
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const origin = req.header('Origin');
+  const allow = corsOrigins.includes('*') ? '*' : (origin && corsOrigins.includes(origin) ? origin : '');
+  if (allow) {
+    res.setHeader('Access-Control-Allow-Origin', allow);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-User, Authorization');
+  }
+  if (req.method === 'OPTIONS') { res.sendStatus(204); return; }
+  next();
+});
+
 // Health check (unauthenticated).
 app.get('/api/health', (_req: Request, res: Response) => res.json({ ok: true }));
 

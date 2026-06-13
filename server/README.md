@@ -66,3 +66,30 @@ src/
     rollup.ts         access-scoped node roll-up
     demands.ts        approval-chain advance primitive
 ```
+
+## Deploying to Render
+
+This repo includes a Blueprint at `render.yaml` that provisions the API + a
+managed Postgres together.
+
+1. Push the repo to GitHub.
+2. Render Dashboard → **New → Blueprint** → select this repo → **Apply**.
+   It creates `nlc-ecc-api` (web) and `nlc-ecc-db` (Postgres) and wires
+   `DATABASE_URL` automatically.
+3. On first deploy the **pre-deploy command** (`node scripts/migrate.js`)
+   loads `db/schema.sql` (only if not already present) and seeds a demo admin
+   user `demo` (because `SEED_DEV_USER=1`).
+4. Set **`CORS_ORIGIN`** on the web service to your SPA origin
+   (e.g. `https://<user>.github.io`). It's left blank in the Blueprint so you
+   can fill it in the dashboard.
+5. Verify: `GET https://<service>.onrender.com/api/health` → `{ "ok": true }`.
+   Authenticated calls need the dev header `X-User: demo` until SSO lands.
+
+**Notes**
+- Free web services sleep after 15 min idle (cold start ~30–60 s); free
+  Postgres expires after 30 days — upgrade to a paid instance for anything
+  persistent.
+- `region` for the web service and the database **must match**.
+- The `X-User` header is a development stand-in. Before real production use,
+  replace `authenticate()` with OIDC/SAML token validation and remove
+  `SEED_DEV_USER`.

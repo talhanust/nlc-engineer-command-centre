@@ -172,7 +172,7 @@ export class LocalDataProvider implements DataProvider {
     const all = readComments(nodeId);
     all.unshift(c);
     try {
-      localStorage.setItem(commentKey(nodeId), JSON.stringify(all));
+      store.setItem(commentKey(nodeId), JSON.stringify(all));
     } catch {
       /* ignore */
     }
@@ -1114,9 +1114,28 @@ const SEED_ISSUES: MaterialIssue[] = [
   { id: 'mi-proj-f14f15-2', projectId: 'proj-f14f15', dated: '2026-05-30', materialCode: 'M-CEM', qty: 6500, issuedTo: 'Box culvert RD 12+000', contractorId: 'sub-proj-f14f15-2', rate: 1150, recovered: 0 },
 ];
 
+// ---- Pluggable key-value store (localStorage by default; remote in api mode) ----
+export interface KvStore {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
+const memStore = new Map<string, string>();
+const fallbackStore: KvStore = {
+  getItem: (k) => (memStore.has(k) ? memStore.get(k)! : null),
+  setItem: (k, v) => void memStore.set(k, v),
+  removeItem: (k) => void memStore.delete(k),
+};
+
+let store: KvStore = typeof localStorage !== 'undefined' ? localStorage : fallbackStore;
+
+/** Swap the backing store (used by api mode to point at the remote KV). */
+export function setKvStore(s: KvStore): void { store = s; }
+
 function writeJson(key: string, value: unknown): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    store.setItem(key, JSON.stringify(value));
   } catch {
     /* ignore */
   }
@@ -1126,7 +1145,7 @@ function writeJson(key: string, value: unknown): void {
 const AUDIT_KEY = 'nlc-ecc.audit';
 function readAudit(): AuditEntry[] {
   try {
-    const raw = localStorage.getItem(AUDIT_KEY);
+    const raw = store.getItem(AUDIT_KEY);
     return raw ? (JSON.parse(raw) as AuditEntry[]) : [];
   } catch {
     return [];
@@ -1145,7 +1164,7 @@ function audit(projectId: string, action: string, entity: string, ref: string, d
 /** Read JSON from localStorage, seeding (and persisting) a default if absent. */
 function readJson<T>(key: string, seed: () => T): T {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = store.getItem(key);
     if (raw) return JSON.parse(raw) as T;
   } catch {
     /* ignore */
@@ -1224,7 +1243,7 @@ const SEED_DEMANDS: Demand[] = [
 
 function readBoq(projectId: string): BoqItem[] {
   try {
-    const raw = localStorage.getItem(boqKey(projectId));
+    const raw = store.getItem(boqKey(projectId));
     if (raw) return JSON.parse(raw) as BoqItem[];
   } catch {
     /* ignore */
@@ -1245,7 +1264,7 @@ function readBoq(projectId: string): BoqItem[] {
 
 function readIpcs(projectId: string): Ipc[] {
   try {
-    const raw = localStorage.getItem(ipcKey(projectId));
+    const raw = store.getItem(ipcKey(projectId));
     if (raw) return JSON.parse(raw) as Ipc[];
   } catch {
     /* ignore */
@@ -1273,7 +1292,7 @@ const SEED_IPCS: Ipc[] = [
 
 function readComments(nodeId: string): NodeComment[] {
   try {
-    const raw = localStorage.getItem(commentKey(nodeId));
+    const raw = store.getItem(commentKey(nodeId));
     return raw ? (JSON.parse(raw) as NodeComment[]) : [];
   } catch {
     return [];

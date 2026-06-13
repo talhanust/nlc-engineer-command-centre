@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { makeDataProvider } from './ApiDataProvider';
+import { makeDataProvider, initDataBackend } from './ApiDataProvider';
 import type { DataProvider, OrgNode, Project } from './types';
 
 interface DataState {
@@ -19,6 +19,7 @@ export function DataContextProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   async function load() {
+    await initDataBackend();
     const [n, p] = await Promise.all([provider.listNodes(), provider.listProjects()]);
     setNodes(n);
     setProjects(p);

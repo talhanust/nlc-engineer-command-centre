@@ -10,17 +10,26 @@ import {
 } from './types';
 import type { BoqWorkflowState } from '../domain/boqworkflow';
 import type { BaselineWorkflowState } from '../domain/schedulebaseline';
-import { LocalDataProvider } from './LocalDataProvider';
+import { LocalDataProvider, setKvStore } from './LocalDataProvider';
+import { RemoteKvStore } from './RemoteKvStore';
 
 // Talks to the on-prem backend per FGEHA_NLC_API_Contract.md. Stubbed here;
 // the full build maps each method to a contract endpoint, sends the AD/SSO
 // token, and surfaces the standard error envelope + 409 optimistic-lock.
 export class ApiDataProvider implements DataProvider {
   readonly mode = 'api' as const;
-  constructor(private baseUrl: string) {}
+  constructor(private baseUrl: string, private authUser = 'demo') {}
+
+  /** Shared headers — dev auth stand-in (X-User) until SSO lands. */
+  private headers(json = false): Record<string, string> {
+    return {
+      ...(json ? { 'Content-Type': 'application/json' } : {}),
+      ...(this.authUser ? { 'X-User': this.authUser } : {}),
+    };
+  }
 
   private async get<T>(path: string): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, { credentials: 'include' });
+    const res = await fetch(`${this.baseUrl}${path}`, { credentials: 'include', headers: this.headers() });
     if (!res.ok) throw new Error(`API ${res.status} on ${path}`);
     return (await res.json()) as T;
   }
@@ -67,7 +76,7 @@ export class ApiDataProvider implements DataProvider {
     const res = await fetch(`${this.baseUrl}/api/nodes/${nodeId}/comments`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.headers(true),
       body: JSON.stringify({ body }),
     });
     if (!res.ok) throw new Error(`API ${res.status} adding comment`);
@@ -85,7 +94,7 @@ export class ApiDataProvider implements DataProvider {
     const res = await fetch(`${this.baseUrl}/api/projects/${projectId}/boq`, {
       method: 'PUT',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.headers(true),
       body: JSON.stringify({ items }),
     });
     if (!res.ok) throw new Error(`API ${res.status} importing BOQ`);
@@ -123,7 +132,7 @@ export class ApiDataProvider implements DataProvider {
     const res = await fetch(`${this.baseUrl}/api/projects/${projectId}/ipcs`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.headers(true),
       body: JSON.stringify(input),
     });
     if (!res.ok) throw new Error(`API ${res.status} creating IPC`);
@@ -133,7 +142,7 @@ export class ApiDataProvider implements DataProvider {
     const res = await fetch(`${this.baseUrl}/api/projects/${projectId}/ipcs/${ipcNo}/transitions`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.headers(true),
       body: JSON.stringify({ action }),
     });
     if (!res.ok) throw new Error(`API ${res.status} transitioning IPC`);
@@ -144,7 +153,7 @@ export class ApiDataProvider implements DataProvider {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method,
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.headers(true),
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`API ${res.status} on ${path}`);
@@ -430,9 +439,24 @@ export class ApiDataProvider implements DataProvider {
 
   // Build-time selection: VITE_DATA_MODE = 'api' | 'local' (default local).
 export function makeDataProvider(): DataProvider {
-  const mode = import.meta.env.VITE_DATA_MODE ?? 'local';
-  if (mode === 'api') {
-    return new ApiDataProvider(import.meta.env.VITE_API_BASE_URL ?? '');
-  }
+  // Both modes run the same provider logic; api mode swaps the backing store
+  // to the remote KV (hydrated by initDataBackend before first use).
   return new LocalDataProvider();
+}
+
+/**
+ * In api mode, point the provider's store at the backend document API and
+ * hydrate it. Call once during app bootstrap before reading data. A no-op in
+ * local mode. Returns the active mode for diagnostics.
+ */
+export async function initDataBackend(): Promise<'api' | 'local'> {
+  const mode = (import.meta.env.VITE_DATA_MODE ?? 'local') as 'api' | 'local';
+  if (mode === 'api') {
+    const base = import.meta.env.VITE_API_BASE_URL ?? '';
+    const user = import.meta.env.VITE_API_USER ?? 'demo';
+    const remote = new RemoteKvStore(base, user);
+    await remote.hydrate();
+    setKvStore(remote);
+  }
+  return mode;
 }

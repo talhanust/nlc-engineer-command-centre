@@ -393,6 +393,59 @@ export interface OverheadLine {
   plannedCost: number;
 }
 
+/** HR posting per org node (project or HQ level). */
+export interface HrPosting {
+  id: string;
+  nodeId: string;
+  category: string; // Engineers, Surveyors, Operators, Admin, etc.
+  sanctioned: number;
+  posted: number;
+}
+
+/** Inventory: integral or hired plant/equipment/vehicles + utilisation. */
+export interface InventoryItem {
+  id: string;
+  projectId: string;
+  kind: 'plant' | 'equipment' | 'vehicle';
+  ownership: 'integral' | 'hired';
+  name: string;
+  regNo: string;
+  status: 'operational' | 'idle' | 'breakdown';
+  utilizationPct: number;
+}
+
+/** POL (fuel) ledger: procured vs issued vs ideal-vs-actual consumption. */
+export interface PolRecord {
+  id: string;
+  projectId: string;
+  month: string;
+  fuel: 'diesel' | 'petrol';
+  procured: number;     // litres
+  issued: number;       // litres
+  idealConsumption: number;  // litres per running
+  actualConsumption: number; // litres per running
+}
+
+export interface FixedAsset {
+  id: string;
+  projectId: string;
+  category: string;
+  description: string;
+  value: number;
+  acquired: string;
+}
+
+/** Maintenance request workflow: PM validate → Manager Procurement approve → FM pay. */
+export interface MaintenanceRequest {
+  id: string;
+  projectId: string;
+  reqNo: string;
+  asset: string;
+  description: string;
+  estCost: number;
+  stageIndex: number;
+}
+
 /** Project salients — editable key facts shown on the executive tab. */
 export interface Salient {
   id: string;
@@ -529,4 +582,19 @@ export interface DataProvider {
   setPeriodMapping(projectId: string, ipcNo: string, month: string): Promise<Record<string, string>>;
   // Audit
   listAudit(): Promise<AuditEntry[]>;
+  // HR postings (per org node) + roll-up
+  listHr(nodeId: string): Promise<HrPosting[]>;
+  upsertHr(nodeId: string, input: Omit<HrPosting, 'id' | 'nodeId'> & { id?: string }): Promise<HrPosting[]>;
+  deleteHr(nodeId: string, id: string): Promise<HrPosting[]>;
+  listAllHr(): Promise<HrPosting[]>;
+  // Procurement — inventory / POL / fixed assets / maintenance
+  listInventory(projectId: string): Promise<InventoryItem[]>;
+  upsertInventory(projectId: string, input: Omit<InventoryItem, 'id' | 'projectId'> & { id?: string }): Promise<InventoryItem[]>;
+  listPol(projectId: string): Promise<PolRecord[]>;
+  addPol(projectId: string, input: Omit<PolRecord, 'id' | 'projectId'>): Promise<PolRecord[]>;
+  listFixedAssets(projectId: string): Promise<FixedAsset[]>;
+  addFixedAsset(projectId: string, input: Omit<FixedAsset, 'id' | 'projectId'>): Promise<FixedAsset[]>;
+  listMaintenance(projectId: string): Promise<MaintenanceRequest[]>;
+  createMaintenance(projectId: string, input: { asset: string; description: string; estCost: number }): Promise<MaintenanceRequest>;
+  advanceMaintenance(projectId: string, reqNo: string, role: string): Promise<MaintenanceRequest>;
 }

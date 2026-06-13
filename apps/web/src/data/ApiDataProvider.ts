@@ -6,6 +6,7 @@ import {
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
   ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval, OverheadLine,
+  InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting,
 } from './types';
 import type { BoqWorkflowState } from '../domain/boqworkflow';
 import type { BaselineWorkflowState } from '../domain/schedulebaseline';
@@ -334,6 +335,45 @@ export class ApiDataProvider implements DataProvider {
   }
   async listAudit(): Promise<AuditEntry[]> {
     return (await this.get<{ items: AuditEntry[] }>(`/api/audit`)).items;
+  }
+  async listInventory(projectId: string): Promise<InventoryItem[]> {
+    return (await this.get<{ items: InventoryItem[] }>(`/api/projects/${projectId}/inventory`)).items;
+  }
+  async listHr(nodeId: string): Promise<HrPosting[]> {
+    return (await this.get<{ items: HrPosting[] }>(`/api/nodes/${nodeId}/hr`)).items;
+  }
+  async listAllHr(): Promise<HrPosting[]> {
+    return (await this.get<{ items: HrPosting[] }>(`/api/hr`)).items;
+  }
+  async upsertHr(nodeId: string, input: Omit<HrPosting, 'id' | 'nodeId'> & { id?: string }): Promise<HrPosting[]> {
+    return (await this.send<{ items: HrPosting[] }>(`/api/nodes/${nodeId}/hr`, 'POST', input)).items;
+  }
+  async deleteHr(nodeId: string, id: string): Promise<HrPosting[]> {
+    return (await this.send<{ items: HrPosting[] }>(`/api/nodes/${nodeId}/hr/${id}`, 'DELETE', {})).items;
+  }
+  async upsertInventory(projectId: string, input: Omit<InventoryItem, 'id' | 'projectId'> & { id?: string }): Promise<InventoryItem[]> {
+    return (await this.send<{ items: InventoryItem[] }>(`/api/projects/${projectId}/inventory`, 'POST', input)).items;
+  }
+  async listPol(projectId: string): Promise<PolRecord[]> {
+    return (await this.get<{ items: PolRecord[] }>(`/api/projects/${projectId}/pol`)).items;
+  }
+  async addPol(projectId: string, input: Omit<PolRecord, 'id' | 'projectId'>): Promise<PolRecord[]> {
+    return (await this.send<{ items: PolRecord[] }>(`/api/projects/${projectId}/pol`, 'POST', input)).items;
+  }
+  async listFixedAssets(projectId: string): Promise<FixedAsset[]> {
+    return (await this.get<{ items: FixedAsset[] }>(`/api/projects/${projectId}/fixed-assets`)).items;
+  }
+  async addFixedAsset(projectId: string, input: Omit<FixedAsset, 'id' | 'projectId'>): Promise<FixedAsset[]> {
+    return (await this.send<{ items: FixedAsset[] }>(`/api/projects/${projectId}/fixed-assets`, 'POST', input)).items;
+  }
+  async listMaintenance(projectId: string): Promise<MaintenanceRequest[]> {
+    return (await this.get<{ items: MaintenanceRequest[] }>(`/api/projects/${projectId}/maintenance`)).items;
+  }
+  async createMaintenance(projectId: string, input: { asset: string; description: string; estCost: number }): Promise<MaintenanceRequest> {
+    return this.send<MaintenanceRequest>(`/api/projects/${projectId}/maintenance`, 'POST', input);
+  }
+  async advanceMaintenance(projectId: string, reqNo: string, role: string): Promise<MaintenanceRequest> {
+    return this.send<MaintenanceRequest>(`/api/projects/${projectId}/maintenance/${reqNo}/advance`, 'POST', { role });
   }
   async getPeriodMap(projectId: string): Promise<Record<string, string>> {
     return (await this.get<{ map: Record<string, string> }>(`/api/projects/${projectId}/period-map`)).map;

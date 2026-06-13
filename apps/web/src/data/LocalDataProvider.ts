@@ -6,6 +6,7 @@ import {
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
   ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval, OverheadLine,
+  InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting,
 } from './types';
 import { itemAmount } from '../domain/boq';
 import { applyAction, computeNet, IPC_PIPELINE } from '../domain/ipc';
@@ -13,6 +14,7 @@ import { INITIAL_BOQ_WORKFLOW, pendingBoqStage, advanceBoq, raiseVo, type BoqWor
 import { pendingRarStage, advanceRar, isRarPaid } from '../domain/rarchain';
 import { INITIAL_BASELINE_WORKFLOW, pendingBaselineStage, advanceBaseline, amendBaseline } from '../domain/schedulebaseline';
 import { INITIAL_MAPPING_WORKFLOW, pendingMappingStage, advanceMappingWf, amendMappingWf } from '../domain/mappingapproval';
+import { pendingMaintStage, advanceMaint, isMaintComplete } from '../domain/maintenance';
 import type { BaselineWorkflowState } from '../domain/schedulebaseline';
 import { ROLE_LABEL } from '../domain/chains';
 import { applyRarAction } from '../domain/rar';
@@ -904,6 +906,90 @@ export class LocalDataProvider implements DataProvider {
     audit(projectId, 'amend', 'Mapping', `rev ${state.revision}`, 'opened for re-approval');
     return state;
   }
+
+  async listHr(nodeId: string): Promise<HrPosting[]> {
+    return readJson(hrKey(nodeId), () => SEED_HR[nodeId] ?? []);
+  }
+  async listAllHr(): Promise<HrPosting[]> {
+    const nodes = readJson<OrgNode[]>(nodesKey, () => NODES);
+    const out: HrPosting[] = [];
+    for (const n of nodes) out.push(...readJson<HrPosting[]>(hrKey(n.id), () => SEED_HR[n.id] ?? []));
+    return out;
+  }
+  async upsertHr(nodeId: string, input: Omit<HrPosting, 'id' | 'nodeId'> & { id?: string }): Promise<HrPosting[]> {
+    const all = readJson<HrPosting[]>(hrKey(nodeId), () => SEED_HR[nodeId] ?? []);
+    if (input.id) {
+      const h = all.find((x) => x.id === input.id);
+      if (h) Object.assign(h, { category: sanitize(input.category), sanctioned: input.sanctioned, posted: input.posted });
+    } else {
+      all.push({ id: `hr-${nodeId}-${Date.now()}`, nodeId, category: sanitize(input.category), sanctioned: input.sanctioned, posted: input.posted });
+    }
+    writeJson(hrKey(nodeId), all);
+    return all;
+  }
+  async deleteHr(nodeId: string, id: string): Promise<HrPosting[]> {
+    const all = readJson<HrPosting[]>(hrKey(nodeId), () => SEED_HR[nodeId] ?? []).filter((h) => h.id !== id);
+    writeJson(hrKey(nodeId), all);
+    return all;
+  }
+  async listInventory(projectId: string): Promise<InventoryItem[]> {
+    return readJson(invKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_INVENTORY : []));
+  }
+  async upsertInventory(projectId: string, input: Omit<InventoryItem, 'id' | 'projectId'> & { id?: string }): Promise<InventoryItem[]> {
+    const all = readJson<InventoryItem[]>(invKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_INVENTORY : []));
+    if (input.id) {
+      const it = all.find((x) => x.id === input.id);
+      if (it) Object.assign(it, { ...input, id: it.id, projectId, name: sanitize(input.name), regNo: sanitize(input.regNo) });
+    } else {
+      all.push({ id: `inv-${projectId}-${Date.now()}`, projectId, kind: input.kind, ownership: input.ownership, name: sanitize(input.name), regNo: sanitize(input.regNo), status: input.status, utilizationPct: input.utilizationPct });
+    }
+    writeJson(invKey(projectId), all);
+    return all;
+  }
+  async listPol(projectId: string): Promise<PolRecord[]> {
+    return readJson(polKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_POL : []));
+  }
+  async addPol(projectId: string, input: Omit<PolRecord, 'id' | 'projectId'>): Promise<PolRecord[]> {
+    const all = readJson<PolRecord[]>(polKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_POL : []));
+    all.push({ id: `pol-${projectId}-${Date.now()}`, projectId, ...input });
+    writeJson(polKey(projectId), all);
+    return all;
+  }
+  async listFixedAssets(projectId: string): Promise<FixedAsset[]> {
+    return readJson(faKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_FA : []));
+  }
+  async addFixedAsset(projectId: string, input: Omit<FixedAsset, 'id' | 'projectId'>): Promise<FixedAsset[]> {
+    const all = readJson<FixedAsset[]>(faKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_FA : []));
+    all.push({ id: `fa-${projectId}-${Date.now()}`, projectId, ...input, category: sanitize(input.category), description: sanitize(input.description) });
+    writeJson(faKey(projectId), all);
+    return all;
+  }
+  async listMaintenance(projectId: string): Promise<MaintenanceRequest[]> {
+    return readJson(maintKey(projectId), () => []);
+  }
+  async createMaintenance(projectId: string, input: { asset: string; description: string; estCost: number }): Promise<MaintenanceRequest> {
+    const all = readJson<MaintenanceRequest[]>(maintKey(projectId), () => []);
+    const req: MaintenanceRequest = {
+      id: `mnt-${projectId}-${Date.now()}`, projectId, reqNo: `MNT-${String(all.length + 1).padStart(2, '0')}`,
+      asset: sanitize(input.asset), description: sanitize(input.description), estCost: input.estCost, stageIndex: 0,
+    };
+    all.push(req);
+    writeJson(maintKey(projectId), all);
+    audit(projectId, 'create', 'Maintenance', req.reqNo, req.asset);
+    return req;
+  }
+  async advanceMaintenance(projectId: string, reqNo: string, role: string): Promise<MaintenanceRequest> {
+    const all = readJson<MaintenanceRequest[]>(maintKey(projectId), () => []);
+    const req = all.find((r) => r.reqNo === reqNo);
+    if (!req) throw new Error(`Maintenance ${reqNo} not found`);
+    const stage = pendingMaintStage(req.stageIndex);
+    const { stageIndex, error } = advanceMaint(req.stageIndex, role);
+    if (error) throw new Error(error);
+    req.stageIndex = stageIndex;
+    writeJson(maintKey(projectId), all);
+    audit(projectId, stage?.action ?? 'advance', 'Maintenance', req.reqNo, `${ROLE_LABEL[role] ?? role}${isMaintComplete(stageIndex) ? ' → paid' : ''}`);
+    return req;
+  }
 }
 
 // ---- localStorage helpers + seeds ----
@@ -915,6 +1001,34 @@ const contractKey = (pid: string) => `nlc-ecc.contracts.${pid}`;
 const schedWfKey = (pid: string) => `nlc-ecc.schedwf.${pid}`;
 const mapWfKey = (pid: string) => `nlc-ecc.mapwf.${pid}`;
 const overheadKey = (pid: string) => `nlc-ecc.overheads.${pid}`;
+const invKey = (pid: string) => `nlc-ecc.inventory.${pid}`;
+const polKey = (pid: string) => `nlc-ecc.pol.${pid}`;
+const faKey = (pid: string) => `nlc-ecc.fixedassets.${pid}`;
+const maintKey = (pid: string) => `nlc-ecc.maintenance.${pid}`;
+const hrKey = (nodeId: string) => `nlc-ecc.hr.${nodeId}`;
+const SEED_HR: Record<string, HrPosting[]> = {
+  'proj-f14f15': [
+    { id: 'hr-f14-1', nodeId: 'proj-f14f15', category: 'Engineers', sanctioned: 12, posted: 10 },
+    { id: 'hr-f14-2', nodeId: 'proj-f14f15', category: 'Surveyors', sanctioned: 6, posted: 5 },
+    { id: 'hr-f14-3', nodeId: 'proj-f14f15', category: 'Operators', sanctioned: 18, posted: 15 },
+    { id: 'hr-f14-4', nodeId: 'proj-f14f15', category: 'Admin const maintKey = (pid: string) => `nlc-ecc.maintenance.${pid}`; support', sanctioned: 8, posted: 8 },
+  ],
+  'pd-north': [{ id: 'hr-pdn-1', nodeId: 'pd-north', category: 'HQ staff', sanctioned: 14, posted: 12 }],
+  'hq-engrs': [{ id: 'hr-eng-1', nodeId: 'hq-engrs', category: 'HQ Engineers staff', sanctioned: 20, posted: 18 }],
+  'hq-nlc': [{ id: 'hr-nlc-1', nodeId: 'hq-nlc', category: 'HQ NLC secretariat', sanctioned: 30, posted: 27 }],
+};
+const SEED_INVENTORY: InventoryItem[] = [
+  { id: 'inv-proj-f14f15-1', projectId: 'proj-f14f15', kind: 'plant', ownership: 'integral', name: 'Excavator CAT 320', regNo: 'NLC-EX-12', status: 'operational', utilizationPct: 78 },
+  { id: 'inv-proj-f14f15-2', projectId: 'proj-f14f15', kind: 'vehicle', ownership: 'hired', name: 'Dump truck (10m³)', regNo: 'LES-4471', status: 'operational', utilizationPct: 64 },
+  { id: 'inv-proj-f14f15-3', projectId: 'proj-f14f15', kind: 'equipment', ownership: 'integral', name: 'Asphalt paver', regNo: 'NLC-AP-03', status: 'idle', utilizationPct: 22 },
+];
+const SEED_POL: PolRecord[] = [
+  { id: 'pol-proj-f14f15-1', projectId: 'proj-f14f15', month: 'May-26', fuel: 'diesel', procured: 42000, issued: 38500, idealConsumption: 36000, actualConsumption: 38500 },
+];
+const SEED_FA: FixedAsset[] = [
+  { id: 'fa-proj-f14f15-1', projectId: 'proj-f14f15', category: 'Site office', description: 'Prefab office complex', value: 18500000, acquired: '2025-09-20' },
+  { id: 'fa-proj-f14f15-2', projectId: 'proj-f14f15', category: 'Survey', description: 'Total station (Leica)', value: 3200000, acquired: '2025-10-05' },
+];
 const SEED_OVERHEADS: OverheadLine[] = [
   { id: 'ovh-proj-f14f15-1', projectId: 'proj-f14f15', category: 'Salaries (site staff)', month: 'May-26', plannedCost: 8500000 },
   { id: 'ovh-proj-f14f15-2', projectId: 'proj-f14f15', category: 'Light-vehicle POL', month: 'May-26', plannedCost: 1200000 },

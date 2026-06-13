@@ -183,3 +183,21 @@ describe('Phase 4 #16 — branch portfolio S-curve', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('HR tab + roll-up', () => {
+  it('shows project HR postings', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'HR' }));
+    const hrTable = await screen.findByRole('table', { name: 'HR postings' });
+    expect(within(hrTable).getByText('Surveyors')).toBeInTheDocument();
+  });
+
+  it('rolls HR up on the HQ NLC dashboard, excluding its own', async () => {
+    renderAt('/node/hq-nlc');
+    await screen.findByRole('heading', { name: 'HQ NLC' });
+    const card = await screen.findByLabelText('HR roll-up');
+    expect(within(card).getByText(/excluded from roll-up/)).toBeInTheDocument();
+  });
+});

@@ -13,6 +13,7 @@ import { Exceptions } from '../components/Exceptions';
 import { LeagueTable } from '../components/LeagueTable';
 import { BillingFunnel } from '../components/BillingFunnel';
 import { PortfolioSCurve } from '../components/PortfolioSCurve';
+import { HrRollupCard } from '../components/HrRollupCard';
 import { nodeBreakdownCsv, nodeBreakdownAoa } from '../domain/exporters';
 import { downloadWorkbook } from '../components/xlsxExport';
 import { NewProjectModal } from '../components/NewProjectModal';
@@ -156,6 +157,7 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
       </div>
       <BillingFunnel totals={totals} />
       <PortfolioSCurve nodeId={nodeId} projects={filtered} />
+      <HrRollupCard nodeId={nodeId} nodes={nodes} />
       {(() => {
         const ids = new Set(descendantProjectIds(nodes, nodeId));
         const located = projects.filter((p) => ids.has(p.id) && typeof p.lat === 'number');

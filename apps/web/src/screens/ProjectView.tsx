@@ -14,15 +14,16 @@ import { ExecutionTab } from './execution/ExecutionTab';
 import { MappingTab } from './mapping/MappingTab';
 import { FinancialTab } from './financial/FinancialTab';
 import { ProcurementTab } from './procurement/ProcurementTab';
+import { HrTab } from './HrTab';
 import { PhotoGallery } from '../components/PhotoGallery';
 import { PakistanMap } from '../components/PakistanMap';
 import { LocationEditor } from '../components/LocationEditor';
 
-const TABS = ['executive', 'commercial', 'execution', 'mapping', 'procurement', 'financial', 'gallery'] as const;
+const TABS = ['executive', 'commercial', 'execution', 'mapping', 'procurement', 'financial', 'hr', 'gallery'] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABEL: Record<Tab, string> = {
   executive: 'Executive', commercial: 'Commercial', execution: 'Execution',
-  mapping: 'Mapping', procurement: 'Procurement', financial: 'Financial', gallery: 'Gallery',
+  mapping: 'Mapping', procurement: 'Procurement', financial: 'Financial', hr: 'HR', gallery: 'Gallery',
 };
 
 export function ProjectView({ nodeId }: { nodeId: string }) {
@@ -107,6 +108,7 @@ export function ProjectView({ nodeId }: { nodeId: string }) {
       {active === 'mapping' && <MappingTab projectId={nodeId} />}
       {active === 'financial' && <FinancialTab projectId={nodeId} />}
       {active === 'procurement' && <ProcurementTab projectId={nodeId} />}
+      {active === 'hr' && <HrTab nodeId={nodeId} />}
     </section>
   );
 }

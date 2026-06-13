@@ -29,6 +29,33 @@ describe('Phase 6 — procurement', () => {
     expect(within(dialog).getByRole('table', { name: 'Demand items' })).toBeInTheDocument();
   });
 
+  it('shows inventory, POL and fixed-asset registers', async () => {
+    const user = await open();
+    await user.click(screen.getByRole('tab', { name: 'Inventory' }));
+    expect(await screen.findByRole('table', { name: 'Inventory' })).toBeInTheDocument();
+    expect(screen.getByText('Excavator CAT 320')).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'POL' }));
+    expect(await screen.findByRole('table', { name: 'POL' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Fixed assets' }));
+    expect(await screen.findByRole('table', { name: 'Fixed assets' })).toBeInTheDocument();
+  });
+
+  it('raises and advances a maintenance request through its chain', async () => {
+    const user = await open();
+    await user.selectOptions(screen.getByLabelText('Acting role'), 'pm');
+    await user.click(screen.getByRole('tab', { name: 'Maintenance' }));
+    await user.type(screen.getByLabelText('Maintenance asset'), 'Excavator CAT 320');
+    await user.type(screen.getByLabelText('Maintenance cost'), '250000');
+    await user.click(screen.getByRole('button', { name: 'Raise request' }));
+    await user.click(await screen.findByRole('button', { name: 'Advance MNT-01' }));
+    // PM validated → now awaiting Manager Procurement; switch role and approve
+    await user.selectOptions(screen.getByLabelText('Acting role'), 'manager_procurement');
+    await user.click(await screen.findByRole('button', { name: 'Advance MNT-01' }));
+    await user.selectOptions(screen.getByLabelText('Acting role'), 'fm');
+    await user.click(await screen.findByRole('button', { name: 'Advance MNT-01' }));
+    expect(await screen.findByText('Completed & paid.')).toBeInTheDocument();
+  });
+
   it('shows the seeded demand in the PD inbox and advances it', async () => {
     const user = await open();
     const inbox = await screen.findByRole('table', { name: 'Approval inbox' });

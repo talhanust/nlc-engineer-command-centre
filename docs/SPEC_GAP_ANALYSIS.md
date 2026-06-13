@@ -51,9 +51,9 @@ Missing vs spec (program of work):
 1. **BOQ lifecycle + roles + ceilings** ✅ this pass (workflow, lock, VO, role vocab, labor/sublet powers).
 2. **Distribution planner v2** ✅ (per-item labor/sublet/NLC-direct allocation, rates, gross margin overall+itemwise, Σqty≤BOQ check, per-contract value → Competent Authority by type+value → approve & lock).
 3. **Contractor profiles + PEC gate** ✅ (profile fields: kind/owner/CNIC/PEC/enlistment/address/contact/security; derived standing: contracts/awarded/executed/paid/liabilities/advances; **PEC-category award gate** enforced in the planner).
-4. **Billing v2** (IPC/RAR role chains, final-bill long chain + CFO, retention half/half + DLP, 70/30 & 95/5).
-5. **Execution approval chain + overheads**.
-6. **Mapping approval + material recovery linkage**.
+4. **Billing v2** ✅ — RAR interim/final chains + CFO payment authority; retention half/half + DLP; 70/30 & 95/5 withholdings; **IPC chain relabelled to spec roles** (SQS generate → PM validate/submit → vetted → with-client → approved → FM receipt, with responsible role surfaced); **recoveries-first gate** (FM pay blocked until due advances are netted).
+5. **Execution approval chain + overheads** ✅ (baseline cycle Planning Engineer→PM→Manager Plan HQ PD→PD→Manager Plan HQ Engrs→Comd Engineer→lock, amend re-runs; planned indirect/overhead lines vs actuals booked from Financial overhead payments, by month + variance).
+6. **Mapping approval + material recovery linkage** ✅ (mapping approval PM→PD→lock + amend; material issued→recovered→balance-to-recover per contractor, editable recovery, recovered from RAR/final bill).
 7. **Procurement v2 + Inventory/POL/Fixed-Assets + Maintenance**.
 8. **HR tab + roll-up**.
 9. **Progress-update workflow as single source**.

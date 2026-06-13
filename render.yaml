@@ -1,0 +1,35 @@
+# Render Blueprint — deploys the NLC Engineer Command Centre backend + Postgres.
+# Push this repo to GitHub, then in Render: New > Blueprint > pick this repo.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: nlc-ecc-api
+    runtime: node
+    rootDir: server
+    plan: free            # free web services spin down after 15 min idle
+    region: singapore     # pick the region closest to you (oregon, frankfurt, singapore, ohio…)
+    buildCommand: npm install && npm run build
+    # Load the schema (idempotent) before each deploy, then start.
+    preDeployCommand: node scripts/migrate.js
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nlc-ecc-db
+          property: connectionString
+      - key: NODE_VERSION
+        value: "20"
+      - key: SEED_DEV_USER          # seed a demo admin so X-User auth works; remove for real prod
+        value: "1"
+      - key: DEV_USER_NAME
+        value: demo
+      - key: CORS_ORIGIN            # set to your SPA origin, e.g. https://<user>.github.io
+        sync: false
+
+databases:
+  - name: nlc-ecc-db
+    plan: free                       # free Postgres expires after 30 days; one free DB per workspace
+    region: singapore                # MUST match the web service region
+    databaseName: fnpc
+    postgresMajorVersion: "16"

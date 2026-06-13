@@ -8,11 +8,12 @@ import { BaselineImport } from '../../components/BaselineImport';
 import { ScheduleWorkflowStrip } from '../../components/ScheduleWorkflowStrip';
 import { PeriodMappingTab } from './PeriodMappingTab';
 import { OverheadsTab } from './OverheadsTab';
+import { ProgressTab } from './ProgressTab';
 import type { MonthlySeriesPoint, ScheduleActivity, Resource, ResourceClass } from '../../data/types';
 
-const SUB = ['schedule', 'lookahead', 'scurve', 'periodmap', 'overheads', 'production', 'resources'] as const;
+const SUB = ['schedule', 'lookahead', 'scurve', 'progress', 'periodmap', 'overheads', 'production', 'resources'] as const;
 type Sub = (typeof SUB)[number];
-const LABEL: Record<Sub, string> = { schedule: 'Schedule / WBS', lookahead: 'Lookahead', scurve: 'S-curve & progress', periodmap: 'Period mapping', overheads: 'Overheads', production: 'Production & materials', resources: 'Resources' };
+const LABEL: Record<Sub, string> = { schedule: 'Schedule / WBS', lookahead: 'Lookahead', scurve: 'S-curve & progress', progress: 'Progress updates', periodmap: 'Period mapping', overheads: 'Overheads', production: 'Production & materials', resources: 'Resources' };
 
 export function ExecutionTab({ projectId }: { projectId: string }) {
   const [sub, setSub] = useState<Sub>('scurve');
@@ -29,6 +30,7 @@ export function ExecutionTab({ projectId }: { projectId: string }) {
       {sub === 'lookahead' && <Lookahead projectId={projectId} />}
       {sub === 'scurve' && <SCurve projectId={projectId} />}
       {sub === 'periodmap' && <PeriodMappingTab projectId={projectId} />}
+      {sub === 'progress' && <ProgressTab projectId={projectId} />}
       {sub === 'overheads' && <OverheadsTab projectId={projectId} />}
       {sub === 'production' && <ProductionTab projectId={projectId} />}
       {sub === 'resources' && <Resources projectId={projectId} />}

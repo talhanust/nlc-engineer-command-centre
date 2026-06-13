@@ -184,6 +184,28 @@ describe('Phase 4 #16 — branch portfolio S-curve', () => {
   });
 });
 
+describe('progress-update workflow', () => {
+  it('QS enters executed qty, PM validates, physical % moves', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Progress updates' }));
+    const grid = await screen.findByRole('table', { name: 'Progress by BOQ item' });
+    // QS (default role) enters a quantity on the first item
+    const inputs = within(grid).getAllByLabelText(/Enter executed /);
+    await user.type(inputs[0], '25');
+    await user.tab();
+    // a draft appears; QS can't validate
+    const pending = await screen.findByRole('table', { name: 'Progress pending validation' });
+    const validateBtn = await within(pending).findByRole('button', { name: /Validate / });
+    expect(validateBtn).toBeDisabled();
+    // switch to PM and validate
+    await user.selectOptions(screen.getByLabelText('Progress acting role'), 'pm');
+    await user.click(await within(await screen.findByRole('table', { name: 'Progress pending validation' })).findByRole('button', { name: /Validate / }));
+    await waitFor(() => expect(screen.getByText(/Nothing awaiting validation/)).toBeInTheDocument());
+  });
+});
+
 describe('HR tab + roll-up', () => {
   it('shows project HR postings', async () => {
     const user = userEvent.setup();

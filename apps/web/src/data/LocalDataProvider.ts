@@ -5,11 +5,15 @@ import {
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
-  ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval,
+  ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval, OverheadLine,
 } from './types';
 import { itemAmount } from '../domain/boq';
 import { applyAction, computeNet, IPC_PIPELINE } from '../domain/ipc';
 import { INITIAL_BOQ_WORKFLOW, pendingBoqStage, advanceBoq, raiseVo, type BoqWorkflowState } from '../domain/boqworkflow';
+import { pendingRarStage, advanceRar, isRarPaid } from '../domain/rarchain';
+import { INITIAL_BASELINE_WORKFLOW, pendingBaselineStage, advanceBaseline, amendBaseline } from '../domain/schedulebaseline';
+import { INITIAL_MAPPING_WORKFLOW, pendingMappingStage, advanceMappingWf, amendMappingWf } from '../domain/mappingapproval';
+import type { BaselineWorkflowState } from '../domain/schedulebaseline';
 import { ROLE_LABEL } from '../domain/chains';
 import { applyRarAction } from '../domain/rar';
 import { synthSeries } from '../domain/scurve';
@@ -357,6 +361,48 @@ export class LocalDataProvider implements DataProvider {
     audit(projectId, action, 'RAR', rar.rarNo, `→ ${to}`);
     return rar;
   }
+  async setRarFinal(projectId: string, rarNo: string, isFinal: boolean): Promise<Rar> {
+    const all = readJson<Rar[]>(rarKey(projectId), () => SEED_RARS);
+    const rar = all.find((r) => r.rarNo === rarNo);
+    if (!rar) throw new Error(`RAR ${rarNo} not found`);
+    rar.isFinal = isFinal;
+    rar.chainStage = 0;
+    writeJson(rarKey(projectId), all);
+    audit(projectId, isFinal ? 'mark_final' : 'mark_interim', 'RAR', rar.rarNo);
+    return rar;
+  }
+  async setRarRecoveriesNetted(projectId: string, rarNo: string, netted: boolean): Promise<Rar> {
+    const all = readJson<Rar[]>(rarKey(projectId), () => SEED_RARS);
+    const rar = all.find((r) => r.rarNo === rarNo);
+    if (!rar) throw new Error(`RAR ${rarNo} not found`);
+    rar.recoveriesNetted = netted;
+    writeJson(rarKey(projectId), all);
+    audit(projectId, netted ? 'recoveries_netted' : 'recoveries_unset', 'RAR', rar.rarNo);
+    return rar;
+  }
+  async advanceRarChain(projectId: string, rarNo: string, role: string): Promise<Rar> {
+    const all = readJson<Rar[]>(rarKey(projectId), () => SEED_RARS);
+    const rar = all.find((r) => r.rarNo === rarNo);
+    if (!rar) throw new Error(`RAR ${rarNo} not found`);
+    const state = { isFinal: !!rar.isFinal, stageIndex: rar.chainStage ?? 0 };
+    const stage = pendingRarStage(state);
+    // Recoveries-first gate: the final pay step is blocked until due recoveries are netted.
+    if (stage?.action === 'pay') {
+      const advances = readJson<Advance[]>(advKey(projectId), () => []);
+      const due = advances.filter((a) => a.direction === 'sub_disbursement' && a.subcontractorId === rar.subcontractorId)
+        .reduce((s, a) => s + a.amount, 0);
+      if (due > 0 && !rar.recoveriesNetted) {
+        throw new Error('Due recoveries must be netted before payment.');
+      }
+    }
+    const { state: next, error } = advanceRar(state, role);
+    if (error) throw new Error(error);
+    rar.chainStage = next.stageIndex;
+    if (isRarPaid(next)) rar.status = 'paid';
+    writeJson(rarKey(projectId), all);
+    audit(projectId, stage?.action ?? 'advance', 'RAR', rar.rarNo, `${ROLE_LABEL[role] ?? role}${isRarPaid(next) ? ' → paid' : ''}`);
+    return rar;
+  }
   async setRarNote(projectId: string, rarNo: string, note: string): Promise<Rar> {
     const all = readJson<Rar[]>(rarKey(projectId), () => SEED_RARS);
     const rar = all.find((r) => r.rarNo === rarNo);
@@ -456,6 +502,47 @@ export class LocalDataProvider implements DataProvider {
     writeJson(seriesKey(projectId), points);
     audit(projectId, 'import', 'S-curve', `${points.length} months`);
     return points;
+  }
+
+  async getScheduleWorkflow(projectId: string): Promise<BaselineWorkflowState> {
+    return readJson(schedWfKey(projectId), () => INITIAL_BASELINE_WORKFLOW);
+  }
+  async advanceScheduleWorkflow(projectId: string, role: string): Promise<BaselineWorkflowState> {
+    const cur = readJson<BaselineWorkflowState>(schedWfKey(projectId), () => INITIAL_BASELINE_WORKFLOW);
+    const stage = pendingBaselineStage(cur);
+    const { state, error } = advanceBaseline(cur, role);
+    if (error) throw new Error(error);
+    writeJson(schedWfKey(projectId), state);
+    audit(projectId, stage?.action ?? 'advance', 'Baseline', `rev ${state.revision}`, `${ROLE_LABEL[role] ?? role}${state.locked ? ' → locked' : ''}`);
+    return state;
+  }
+  async amendScheduleBaseline(projectId: string): Promise<BaselineWorkflowState> {
+    const cur = readJson<BaselineWorkflowState>(schedWfKey(projectId), () => INITIAL_BASELINE_WORKFLOW);
+    const { state, error } = amendBaseline(cur);
+    if (error) throw new Error(error);
+    writeJson(schedWfKey(projectId), state);
+    audit(projectId, 'amend', 'Baseline', `rev ${state.revision}`, 'opened for re-approval');
+    return state;
+  }
+
+  async listOverheads(projectId: string): Promise<OverheadLine[]> {
+    return readJson(overheadKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_OVERHEADS : []));
+  }
+  async upsertOverhead(projectId: string, input: Omit<OverheadLine, 'id' | 'projectId'> & { id?: string }): Promise<OverheadLine[]> {
+    const all = readJson<OverheadLine[]>(overheadKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_OVERHEADS : []));
+    if (input.id) {
+      const o = all.find((x) => x.id === input.id);
+      if (o) Object.assign(o, { category: sanitize(input.category), month: input.month, plannedCost: input.plannedCost });
+    } else {
+      all.push({ id: `ovh-${projectId}-${Date.now()}`, projectId, category: sanitize(input.category), month: input.month, plannedCost: input.plannedCost });
+    }
+    writeJson(overheadKey(projectId), all);
+    return all;
+  }
+  async deleteOverhead(projectId: string, id: string): Promise<OverheadLine[]> {
+    const all = readJson<OverheadLine[]>(overheadKey(projectId), () => []).filter((o) => o.id !== id);
+    writeJson(overheadKey(projectId), all);
+    return all;
   }
   async listMonthlySeries(projectId: string): Promise<MonthlySeriesPoint[]> {
     return readJson(seriesKey(projectId), () => {
@@ -791,6 +878,32 @@ export class LocalDataProvider implements DataProvider {
     writeJson(issueKey(projectId), all);
     return iss;
   }
+  async setMaterialRecovered(projectId: string, id: string, recovered: number): Promise<MaterialIssue[]> {
+    const all = readJson<MaterialIssue[]>(issueKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_ISSUES : []));
+    const iss = all.find((x) => x.id === id);
+    if (iss) { iss.recovered = recovered; writeJson(issueKey(projectId), all); audit(projectId, 'recover', 'Material', iss.materialCode, `${recovered}`); }
+    return all;
+  }
+  async getMappingWorkflow(projectId: string): Promise<BaselineWorkflowState> {
+    return readJson(mapWfKey(projectId), () => INITIAL_MAPPING_WORKFLOW);
+  }
+  async advanceMappingWorkflow(projectId: string, role: string): Promise<BaselineWorkflowState> {
+    const cur = readJson<BaselineWorkflowState>(mapWfKey(projectId), () => INITIAL_MAPPING_WORKFLOW);
+    const stage = pendingMappingStage(cur);
+    const { state, error } = advanceMappingWf(cur, role);
+    if (error) throw new Error(error);
+    writeJson(mapWfKey(projectId), state);
+    audit(projectId, stage?.action ?? 'advance', 'Mapping', `rev ${state.revision}`, `${ROLE_LABEL[role] ?? role}${state.locked ? ' → locked' : ''}`);
+    return state;
+  }
+  async amendMapping(projectId: string): Promise<BaselineWorkflowState> {
+    const cur = readJson<BaselineWorkflowState>(mapWfKey(projectId), () => INITIAL_MAPPING_WORKFLOW);
+    const { state, error } = amendMappingWf(cur);
+    if (error) throw new Error(error);
+    writeJson(mapWfKey(projectId), state);
+    audit(projectId, 'amend', 'Mapping', `rev ${state.revision}`, 'opened for re-approval');
+    return state;
+  }
 }
 
 // ---- localStorage helpers + seeds ----
@@ -799,6 +912,14 @@ const boqKey = (pid: string) => `nlc-ecc.boq.${pid}`;
 const boqWfKey = (pid: string) => `nlc-ecc.boqwf.${pid}`;
 const allocKey = (pid: string) => `nlc-ecc.alloc.${pid}`;
 const contractKey = (pid: string) => `nlc-ecc.contracts.${pid}`;
+const schedWfKey = (pid: string) => `nlc-ecc.schedwf.${pid}`;
+const mapWfKey = (pid: string) => `nlc-ecc.mapwf.${pid}`;
+const overheadKey = (pid: string) => `nlc-ecc.overheads.${pid}`;
+const SEED_OVERHEADS: OverheadLine[] = [
+  { id: 'ovh-proj-f14f15-1', projectId: 'proj-f14f15', category: 'Salaries (site staff)', month: 'May-26', plannedCost: 8500000 },
+  { id: 'ovh-proj-f14f15-2', projectId: 'proj-f14f15', category: 'Light-vehicle POL', month: 'May-26', plannedCost: 1200000 },
+  { id: 'ovh-proj-f14f15-3', projectId: 'proj-f14f15', category: 'Camp const contractKey = (pid: string) => `nlc-ecc.contracts.${pid}`; utilities', month: 'May-26', plannedCost: 900000 },
+];
 const ipcKey = (pid: string) => `nlc-ecc.ipcs.${pid}`;
 const subKey = (pid: string) => `nlc-ecc.subs.${pid}`;
 const rarKey = (pid: string) => `nlc-ecc.rars.${pid}`;
@@ -849,8 +970,8 @@ const SEED_PRODUCTION: ProductionRun[] = [
 ];
 
 const SEED_ISSUES: MaterialIssue[] = [
-  { id: 'mi-proj-f14f15-1', projectId: 'proj-f14f15', dated: '2026-05-14', materialCode: 'M-CEM', qty: 8000, issuedTo: 'Structures (culverts)' },
-  { id: 'mi-proj-f14f15-2', projectId: 'proj-f14f15', dated: '2026-05-30', materialCode: 'M-CEM', qty: 6500, issuedTo: 'Box culvert RD 12+000' },
+  { id: 'mi-proj-f14f15-1', projectId: 'proj-f14f15', dated: '2026-05-14', materialCode: 'M-CEM', qty: 8000, issuedTo: 'Structures (culverts)', contractorId: 'sub-proj-f14f15-1', rate: 1150, recovered: 4000000 },
+  { id: 'mi-proj-f14f15-2', projectId: 'proj-f14f15', dated: '2026-05-30', materialCode: 'M-CEM', qty: 6500, issuedTo: 'Box culvert RD 12+000', contractorId: 'sub-proj-f14f15-2', rate: 1150, recovered: 0 },
 ];
 
 function writeJson(key: string, value: unknown): void {

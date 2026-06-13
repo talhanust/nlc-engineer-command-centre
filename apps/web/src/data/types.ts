@@ -1,4 +1,5 @@
 // The data layer is abstracted behind one interface so the SAME React app
+import type { BaselineWorkflowState } from '../domain/schedulebaseline';
 import type { BoqWorkflowState } from '../domain/boqworkflow';
 // runs two ways: ApiDataProvider against the on-prem backend, or
 // LocalDataProvider (client-only) for the static GitHub Pages demo.
@@ -132,6 +133,10 @@ export interface Rar {
   gross: number;
   netPayable: number;
   note?: string;
+  // Billing approval chain (interim vs final bill)
+  isFinal?: boolean;
+  chainStage?: number;
+  recoveriesNetted?: boolean;
 }
 
 /** Recovery link: amount recovered from a RAR against a client IPC. */
@@ -373,6 +378,19 @@ export interface MaterialIssue {
   materialCode: string;
   qty: number;
   issuedTo: string; // activity / WBS / location
+  // Recovery linkage (material issued to a contractor, recovered via RAR/Final Bill)
+  contractorId?: string;
+  rate?: number;       // issue rate (PKR/unit) → issued value = qty × rate
+  recovered?: number;  // amount recovered to date
+}
+
+/** Planned indirect/overhead cost line (Planning Engineer); actuals from Financial. */
+export interface OverheadLine {
+  id: string;
+  projectId: string;
+  category: string; // Salaries, Light-vehicle POL, etc.
+  month: string;
+  plannedCost: number;
 }
 
 /** Project salients — editable key facts shown on the executive tab. */
@@ -433,6 +451,9 @@ export interface DataProvider {
     input: { period: string; subcontractorId: string; gross: number },
   ): Promise<Rar>;
   transitionRar(projectId: string, rarNo: string, action: string): Promise<Rar>;
+  setRarFinal(projectId: string, rarNo: string, isFinal: boolean): Promise<Rar>;
+  setRarRecoveriesNetted(projectId: string, rarNo: string, netted: boolean): Promise<Rar>;
+  advanceRarChain(projectId: string, rarNo: string, role: string): Promise<Rar>;
   setRarNote(projectId: string, rarNo: string, note: string): Promise<Rar>;
   listRarIpcLinks(projectId: string): Promise<RarIpcLink[]>;
   addRarIpcLink(projectId: string, input: { rarId: string; ipcId: string; amount: number }): Promise<RarIpcLink>;
@@ -447,6 +468,14 @@ export interface DataProvider {
   listSchedule(projectId: string): Promise<ScheduleActivity[]>;
   replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>): Promise<ScheduleActivity[]>;
   importScurve(projectId: string, points: MonthlySeriesPoint[]): Promise<MonthlySeriesPoint[]>;
+  // Schedule baseline approval cycle
+  getScheduleWorkflow(projectId: string): Promise<BaselineWorkflowState>;
+  advanceScheduleWorkflow(projectId: string, role: string): Promise<BaselineWorkflowState>;
+  amendScheduleBaseline(projectId: string): Promise<BaselineWorkflowState>;
+  // Overheads (planned indirect costs)
+  listOverheads(projectId: string): Promise<OverheadLine[]>;
+  upsertOverhead(projectId: string, input: Omit<OverheadLine, 'id' | 'projectId'> & { id?: string }): Promise<OverheadLine[]>;
+  deleteOverhead(projectId: string, id: string): Promise<OverheadLine[]>;
   listMonthlySeries(projectId: string): Promise<MonthlySeriesPoint[]>;
   setMonthlyActual(projectId: string, month: string, actual: number): Promise<MonthlySeriesPoint[]>;
   listResources(projectId: string): Promise<Resource[]>;
@@ -484,6 +513,11 @@ export interface DataProvider {
   createProductionRun(projectId: string, input: Omit<ProductionRun, 'id' | 'projectId'>): Promise<ProductionRun>;
   listMaterialIssues(projectId: string): Promise<MaterialIssue[]>;
   createMaterialIssue(projectId: string, input: Omit<MaterialIssue, 'id' | 'projectId'>): Promise<MaterialIssue>;
+  setMaterialRecovered(projectId: string, id: string, recovered: number): Promise<MaterialIssue[]>;
+  // Mapping approval cycle
+  getMappingWorkflow(projectId: string): Promise<BaselineWorkflowState>;
+  advanceMappingWorkflow(projectId: string, role: string): Promise<BaselineWorkflowState>;
+  amendMapping(projectId: string): Promise<BaselineWorkflowState>;
   // Salients
   listSalients(projectId: string): Promise<Salient[]>;
   upsertSalient(projectId: string, input: { id?: string; label: string; value: string }): Promise<Salient>;

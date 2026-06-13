@@ -5,9 +5,10 @@ import {
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
-  ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval,
+  ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval, OverheadLine,
 } from './types';
 import type { BoqWorkflowState } from '../domain/boqworkflow';
+import type { BaselineWorkflowState } from '../domain/schedulebaseline';
 import { LocalDataProvider } from './LocalDataProvider';
 
 // Talks to the on-prem backend per FGEHA_NLC_API_Contract.md. Stubbed here;
@@ -173,6 +174,15 @@ export class ApiDataProvider implements DataProvider {
   async transitionRar(projectId: string, rarNo: string, action: string): Promise<Rar> {
     return this.send<Rar>(`/api/projects/${projectId}/rars/${rarNo}/transitions`, 'POST', { action });
   }
+  async setRarFinal(projectId: string, rarNo: string, isFinal: boolean): Promise<Rar> {
+    return this.send<Rar>(`/api/projects/${projectId}/rars/${rarNo}/final`, 'PATCH', { isFinal });
+  }
+  async setRarRecoveriesNetted(projectId: string, rarNo: string, netted: boolean): Promise<Rar> {
+    return this.send<Rar>(`/api/projects/${projectId}/rars/${rarNo}/recoveries-netted`, 'PATCH', { netted });
+  }
+  async advanceRarChain(projectId: string, rarNo: string, role: string): Promise<Rar> {
+    return this.send<Rar>(`/api/projects/${projectId}/rars/${rarNo}/chain/advance`, 'POST', { role });
+  }
   async setRarNote(projectId: string, rarNo: string, note: string): Promise<Rar> {
     return this.send<Rar>(`/api/projects/${projectId}/rars/${rarNo}/note`, 'PATCH', { note });
   }
@@ -211,6 +221,24 @@ export class ApiDataProvider implements DataProvider {
   }
   async importScurve(projectId: string, points: MonthlySeriesPoint[]): Promise<MonthlySeriesPoint[]> {
     return (await this.send<{ items: MonthlySeriesPoint[] }>(`/api/projects/${projectId}/scurve`, 'PUT', { points })).items;
+  }
+  async getScheduleWorkflow(projectId: string): Promise<BaselineWorkflowState> {
+    return this.get<BaselineWorkflowState>(`/api/projects/${projectId}/schedule/workflow`);
+  }
+  async advanceScheduleWorkflow(projectId: string, role: string): Promise<BaselineWorkflowState> {
+    return this.send<BaselineWorkflowState>(`/api/projects/${projectId}/schedule/workflow/advance`, 'POST', { role });
+  }
+  async amendScheduleBaseline(projectId: string): Promise<BaselineWorkflowState> {
+    return this.send<BaselineWorkflowState>(`/api/projects/${projectId}/schedule/workflow/amend`, 'POST', {});
+  }
+  async listOverheads(projectId: string): Promise<OverheadLine[]> {
+    return (await this.get<{ items: OverheadLine[] }>(`/api/projects/${projectId}/overheads`)).items;
+  }
+  async upsertOverhead(projectId: string, input: Omit<OverheadLine, 'id' | 'projectId'> & { id?: string }): Promise<OverheadLine[]> {
+    return (await this.send<{ items: OverheadLine[] }>(`/api/projects/${projectId}/overheads`, 'POST', input)).items;
+  }
+  async deleteOverhead(projectId: string, id: string): Promise<OverheadLine[]> {
+    return (await this.send<{ items: OverheadLine[] }>(`/api/projects/${projectId}/overheads/${id}`, 'DELETE', {})).items;
   }
   async listSchedule(projectId: string): Promise<ScheduleActivity[]> {
     return (await this.get<{ items: ScheduleActivity[] }>(`/api/projects/${projectId}/schedule`)).items;
@@ -324,6 +352,18 @@ export class ApiDataProvider implements DataProvider {
   }
   async createMaterialIssue(projectId: string, input: Omit<MaterialIssue, 'id' | 'projectId'>): Promise<MaterialIssue> {
     return this.send<MaterialIssue>(`/api/projects/${projectId}/material-issues`, 'POST', input);
+  }
+  async setMaterialRecovered(projectId: string, id: string, recovered: number): Promise<MaterialIssue[]> {
+    return (await this.send<{ items: MaterialIssue[] }>(`/api/projects/${projectId}/material-issues/${id}/recovered`, 'PATCH', { recovered })).items;
+  }
+  async getMappingWorkflow(projectId: string): Promise<BaselineWorkflowState> {
+    return this.get<BaselineWorkflowState>(`/api/projects/${projectId}/mapping/workflow`);
+  }
+  async advanceMappingWorkflow(projectId: string, role: string): Promise<BaselineWorkflowState> {
+    return this.send<BaselineWorkflowState>(`/api/projects/${projectId}/mapping/workflow/advance`, 'POST', { role });
+  }
+  async amendMapping(projectId: string): Promise<BaselineWorkflowState> {
+    return this.send<BaselineWorkflowState>(`/api/projects/${projectId}/mapping/workflow/amend`, 'POST', {});
   }
   async listSalients(projectId: string): Promise<Salient[]> {
     return (await this.get<{ items: Salient[] }>(`/api/projects/${projectId}/salients`)).items;

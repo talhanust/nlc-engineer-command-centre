@@ -24,6 +24,16 @@ async function main() {
       console.log('migrate: schema already present, skipping');
     }
 
+    // Document store for operating-model entities (allocations, workflows,
+    // overheads, inventory, POL, assets, maintenance, HR, progress, …).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS fnpc.app_doc (
+        scope_key  TEXT PRIMARY KEY,
+        value      JSONB NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`);
+    console.log('migrate: app_doc ready');
+
     const seed = process.env.SEED_DEV_USER === '1';
     const userCount = await client.query('SELECT count(*)::int AS n FROM fnpc.app_user');
     if (seed || userCount.rows[0].n === 0) {

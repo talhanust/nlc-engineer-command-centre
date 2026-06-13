@@ -67,29 +67,55 @@ src/
     demands.ts        approval-chain advance primitive
 ```
 
-## Deploying to Render
+## Deploying free on Render (no credit card)
 
-This repo includes a Blueprint at `render.yaml` that provisions the API + a
-managed Postgres together.
+Render free **web services** need no card. Render's free **Postgres expires
+after ~30 days**, so use a free external Postgres that doesn't expire — Neon
+(neon.tech) or Supabase — and keep only the web service on Render. The
+Blueprint at `render.yaml` is already set up for this.
 
-1. Push the repo to GitHub.
-2. Render Dashboard → **New → Blueprint** → select this repo → **Apply**.
-   It creates `nlc-ecc-api` (web) and `nlc-ecc-db` (Postgres) and wires
-   `DATABASE_URL` automatically.
-3. On first deploy the **pre-deploy command** (`node scripts/migrate.js`)
-   loads `db/schema.sql` (only if not already present) and seeds a demo admin
-   user `demo` (because `SEED_DEV_USER=1`).
-4. Set **`CORS_ORIGIN`** on the web service to your SPA origin
-   (e.g. `https://<user>.github.io`). It's left blank in the Blueprint so you
-   can fill it in the dashboard.
-5. Verify: `GET https://<service>.onrender.com/api/health` → `{ "ok": true }`.
-   Authenticated calls need the dev header `X-User: demo` until SSO lands.
+1. **Free Postgres (no card):** create a project at https://neon.tech and copy
+   its connection string, e.g.
+   `postgresql://user:pass@ep-xxx.neon.tech/neondb?sslmode=require`.
+   (For loading the schema, prefer Neon's *direct* connection string over the
+   *pooled* one.)
+2. Push this repo to GitHub.
+3. Render → **New → Blueprint** → select this repo → **Apply** (creates the
+   `nlc-ecc-api` web service only).
+4. When prompted, paste your Neon URL as **`DATABASE_URL`**, and set
+   **`CORS_ORIGIN`** to your SPA origin (e.g. `https://<user>.github.io`).
+5. First deploy runs `node scripts/migrate.js`, which loads `db/schema.sql`
+   once (idempotent) and seeds a demo admin `demo` (`SEED_DEV_USER=1`).
+6. Verify `GET https://<service>.onrender.com/api/health` → `{ "ok": true }`.
+   Authenticated calls use the dev header `X-User: demo` until SSO lands.
 
 **Notes**
-- Free web services sleep after 15 min idle (cold start ~30–60 s); free
-  Postgres expires after 30 days — upgrade to a paid instance for anything
-  persistent.
-- `region` for the web service and the database **must match**.
-- The `X-User` header is a development stand-in. Before real production use,
-  replace `authenticate()` with OIDC/SAML token validation and remove
-  `SEED_DEV_USER`.
+- Free web services sleep after 15 min idle (cold start ~30–60 s) — fine for a
+  demo. 750 compute-hours/month, no card.
+- If Render still prompts you for a card on the web service (rare, anti-fraud),
+  alternatives with free no-card tiers include Railway (trial credits),
+  Cloudflare/Vercel (edge functions), or running the same Node server on
+  Fly.io/Northflank.
+- The `X-User` header is a dev stand-in. For production, replace
+  `authenticate()` with OIDC/SAML token validation and remove `SEED_DEV_USER`.
+
+## Operating-model document store (api-mode parity)
+
+The reference relational routes cover the core entities (projects, IPCs,
+demands, roll-up). The rest of the operating model — distribution planner,
+contractor/PEC, billing chains, overheads, mapping + material recovery,
+inventory/POL/assets/maintenance, HR, progress — is persisted via a generic
+JSONB document store so api mode behaves exactly like the offline demo:
+
+- Table `fnpc.app_doc (scope_key TEXT PK, value JSONB, updated_at)` (created by
+  `scripts/migrate.js`).
+- Routes: `GET /api/state` (all docs → `{ docs: { key: value } }`),
+  `PUT /api/state/:key` (upsert; body is the raw JSON value),
+  `DELETE /api/state/:key`.
+- The SPA's `RemoteKvStore` hydrates all docs once, serves the provider's
+  synchronous store interface from memory, and writes through on every change.
+  The provider logic is identical to local mode — only the backing store differs.
+
+This is a deliberate delivery tradeoff: it makes the full feature set work and
+persist immediately. Hot, query-heavy entities can be normalised into dedicated
+relational tables later without changing the SPA.

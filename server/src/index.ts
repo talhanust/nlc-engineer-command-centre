@@ -7,6 +7,7 @@ import { projectsRouter } from './routes/projects';
 import { ipcsRouter } from './routes/ipcs';
 import { rollupRouter } from './routes/rollup';
 import { demandsRouter } from './routes/demands';
+import { stateRouter } from './routes/state';
 
 const app = express();
 app.use(express.json({ limit: '8mb' }));
@@ -37,6 +38,7 @@ app.use('/api', projectsRouter);
 app.use('/api', ipcsRouter);
 app.use('/api', rollupRouter);
 app.use('/api', demandsRouter);
+app.use('/api', stateRouter);
 
 // Central error handler — emits the standard envelope.
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

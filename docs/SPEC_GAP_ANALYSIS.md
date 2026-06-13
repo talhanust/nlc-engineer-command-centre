@@ -57,4 +57,4 @@ Missing vs spec (program of work):
 7. **Procurement v2 + Inventory/POL/Fixed-Assets + Maintenance**.
 8. **HR tab + roll-up** ✅ (per-node HR postings by category with sanctioned/posted/vacancy; roll-up rules — projects & HQ PD & HQ Engrs include own; HQ NLC shows own but excludes it from the roll-up; branch-dashboard roll-up card by category).
 9. **Progress-update workflow as single source**.
-10. **Backend wiring** (api → Postgres + OIDC/RBAC) to enforce all chains server-side.
+10. **Backend wiring** — IN PROGRESS: api mode now reuses the proven provider logic over a Postgres-backed **document store** (`fnpc.app_doc` JSONB) via a generic `/api/state` KV API + client `RemoteKvStore` (hydrate + write-through). This makes every operating-model feature work in api mode with the same behaviour as the offline demo, persisted in Postgres. Still ahead: OIDC/RBAC replacing the X-User stand-in, optional normalisation of hot entities into relational tables, Playwright e2e. *(original: full relational route build-out)* — Backend wiring (api → Postgres + OIDC/RBAC) to enforce all chains server-side.

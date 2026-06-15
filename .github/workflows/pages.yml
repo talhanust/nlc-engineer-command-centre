@@ -30,8 +30,9 @@ jobs:
       - name: Build static demo
         run: npm --workspace @nlc-ecc/web run build
         env:
-          VITE_DATA_MODE: local
-          # Pages serves a project under /<repo>/ — set base accordingly.
+          VITE_DATA_MODE: api
+          VITE_API_BASE_URL: https://nlc-engineer-command-centre-web-ivory.vercel.app
+          VITE_API_USER: demo
           VITE_BASE: /nlc-engineer-command-centre/
       - name: SPA fallback for deep links
         # BrowserRouter deep links (e.g. /node/pd-north) 404 on refresh without

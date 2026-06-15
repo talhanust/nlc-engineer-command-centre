@@ -1,6 +1,47 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-15 — Workspace power-user layer + OSM basemaps
+- Resizable sidebar: drag handle on its right edge sets width (200–440px,
+  persisted via the workspace key, live during drag).
+- Per-panel collapse: new CollapsibleCard accordions a card to its header,
+  state persisted per id; independent of focus mode. Dashboard breakdown now
+  collapses, expands full-page, and docks.
+- Presentation mode: header button (and Esc to exit) hides all chrome and
+  bumps zoom ×1.12 for briefings. Settings → Workspace saves two named layout
+  slots (sidebar/width/zoom/density/theme).
+- Route cross-fade: RouteFade keys the outlet by path; View-Transitions name
+  set where supported, CSS fade fallback everywhere (respects reduced-motion).
+- Keyboard layer: '[' toggle sidebar, '+/-' zoom, 'g' command palette, 'f'
+  expand the panel under the cursor. Typing targets are ignored.
+- Dock / split view: new Dock (provider + Dockable + right rail). Pin the map
+  or breakdown to a sticky rail that stays put while the page scrolls; clears
+  on navigation. Hidden under 1100px.
+- Density toggle: comfortable/compact table rows (Settings), separate from zoom.
+- Persistence: theme + last-visited node remembered; app reopens where you
+  left off (HomeRedirect → last node).
+- Focus 'Expand' folded onto S-curve, twin S-curve, EVM, cash flow, Gantt,
+  distribution mix, and the receipts/payments/liabilities tables.
+- Maps: Leaflet + OpenStreetMap made first-class — basemap switcher on every
+  map and a default-basemap setting (Auto/OpenStreetMap/Light/Dark); OSM uses
+  the canonical tile.openstreetmap.org tiles. Theme now drives tiles directly.
+  Tests +6 → web 200 passing; server 8; typecheck clean; both builds green.
+
+2026-06-15 — Workspace interactivity (sidebar / focus mode / zoom)
+- Collapsible sidebar: header toggle slides it away with a width/opacity
+  transition and reclaims the space; state persisted (nlc-ecc.workspace). On
+  narrow screens it becomes an off-canvas drawer with a click-away scrim.
+- Focus mode: new reusable Focusable (render-prop) puts an Expand affordance on
+  panels and opens them full-page in an overlay (Esc/✕ to close, background
+  scroll locked). Wired to every level map and the dashboard breakdown table.
+  Full-screen maps enable scroll-wheel zoom + pan via MapView interactiveZoom.
+- Content zoom: header A−/100%/A+ control scales the whole content area
+  (0.8–1.4, persisted); click the value to reset.
+- Fullscreen: header button toggles the browser Fullscreen API for a control-
+  room view.
+- State: UiState gained persisted sidebarOpen + zoom. Tests +3 (Workspace).
+  Web 194 passing, server 8; typecheck clean; both builds green.
+
 2026-06-15 — Map & form aesthetic pass
 - Basemap: switched to free CARTO tiles (Positron/Dark Matter, no key),
   auto-matched to the app's light/dark theme via a MutationObserver on

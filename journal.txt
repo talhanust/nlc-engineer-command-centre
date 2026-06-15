@@ -1,0 +1,43 @@
+NLC Engineer Command Centre — work journal
+(Newest entries first. Prose, commit-style.)
+
+2026-06-15 — Map & form aesthetic pass
+- Basemap: switched to free CARTO tiles (Positron/Dark Matter, no key),
+  auto-matched to the app's light/dark theme via a MutationObserver on
+  data-theme so calm terrain lets coloured pins pop.
+- Markers: HQ/PD HQ now render a building-glyph tile; projects a RAG dot. The
+  location picker pin gets a soft pulsing halo. Offline SVG fallback mirrors the
+  square-vs-dot distinction.
+- Create modal: grouped into Identity / Contract dates / Location sections with
+  light dividers and small caps labels.
+- Project header: Code / Commenced / Completion now render as mono pill chips.
+- Dashboard: HQ-level command map gets a hero treatment (taller, stronger card,
+  legend inline in the header). Lower levels keep the legend beneath.
+- Empty state: nodes with no located sites show a friendly "No sites mapped yet"
+  prompt instead of hiding the map.
+- ChartCard gained an optional headerExtra slot (inline legend). Web 191 tests,
+  server 8; typecheck clean; both builds green.
+
+2026-06-15 — Project-creation rework + interactive maps (Leaflet/OSM)
+- New-project window: removed Planned %/Actual % inputs. Fields are now PD HQ
+  (structural), Project Code, Project Name, CA Amount, Date of Commencement,
+  Date of Completion, plus optional Client and a map location picker. New
+  projects default to 0% progress.
+- Maps: added Leaflet 1.9 + free OpenStreetMap tiles (no API key/card). New
+  MapView component (interactive in-browser, jsdom-safe SVG fallback for tests),
+  used as a click-to-pin picker in the create modal, the project LocationEditor,
+  and a new NodeLocationEditor for HQ/PD HQ. Best-effort reverse geocoding via
+  free Nominatim auto-fills the place name.
+- Multi-level maps: OrgNode gained lat/lng/location; HQ + all PD HQs are seeded
+  with coordinates (with backfill onto older cached node sets). New LevelMap
+  plots, per level, the node + its PD HQs + project sites — colour-coded by
+  level and (projects) by RAG, click-through. Wired into CommandDashboard and
+  the project executive tab. Removed the old static PakistanMap (SVG logic moved
+  into domain/geo.ts).
+- Data: createProject persists code/dates/coords; updateProject handles the new
+  fields; new updateNodeLocation provider method (both providers). api mode
+  needs no server/DB change — the new fields ride in the existing /api/state
+  JSONB docs.
+- Tests: +9 (domain/geo, data/projectCreation). Updated ProjectLifecycle UI test
+  to the new field set. Web 191 passing, server 8 passing; typecheck clean;
+  builds green in local and api modes.

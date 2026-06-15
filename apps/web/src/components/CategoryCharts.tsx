@@ -11,7 +11,7 @@ export function DistributionDonut({ data }: { data: { name: string; value: numbe
   const colors = [c.primary, c.signal, c.muted, c.amber, c.success];
   const total = data.reduce((a, d) => a + d.value, 0);
   return (
-    <ChartCard title="Distribution mix" subtitle={`${data.length} modes`} ariaLabel="Distribution mix">
+    <ChartCard focusable title="Distribution mix" subtitle={`${data.length} modes`} ariaLabel="Distribution mix">
       <ResponsiveContainer width="100%" height={240}>
         <PieChart>
           <Pie data={data} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={2}>

@@ -11,7 +11,7 @@ type Point = MonthlySeriesPoint | WeightedPoint;
 export function SCurveChart({ points, title }: { points: Point[]; title?: string }) {
   const c = chartPalette();
   return (
-    <ChartCard title={title ?? 'Progress S-curve'} subtitle="planned vs actual · cumulative %" ariaLabel={title ?? 'S-curve'}>
+    <ChartCard focusable title={title ?? 'Progress S-curve'} subtitle="planned vs actual · cumulative %" ariaLabel={title ?? 'S-curve'}>
       <ResponsiveContainer width="100%" height={260}>
         <ComposedChart data={points} margin={{ top: 8, right: 12, left: -8, bottom: 0 }}>
           <defs>

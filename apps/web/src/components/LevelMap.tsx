@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapView, type MapMarker } from './MapView';
+import { Focusable } from './Focusable';
+import { Dockable } from './Dock';
 import { nodeById, descendantNodes } from '../domain/org';
 import { ragColorVar, markerColorVar, isValidLatLng } from '../domain/geo';
 import type { OrgNode, Project } from '../data/types';
@@ -108,13 +110,22 @@ export function LevelMap({
 
   return (
     <div className={hero ? 'level-map-hero' : undefined}>
-      <MapView
-        title={title}
-        ariaLabel="Project map"
-        markers={markers}
-        height={hero ? Math.max(height, 460) : height}
-        legend={hero ? <Legend /> : undefined}
-      />
+      <Dockable title={title}>
+        {() => (
+          <Focusable title={title} label={`Open ${title} full screen`}>
+            {(big) => (
+              <MapView
+                title={title}
+                ariaLabel="Project map"
+                markers={markers}
+                height={big ? Math.round((typeof window !== 'undefined' ? window.innerHeight : 800) - 150) : (hero ? Math.max(height, 460) : height)}
+                legend={(hero || big) ? <Legend /> : undefined}
+                interactiveZoom={big}
+              />
+            )}
+          </Focusable>
+        )}
+      </Dockable>
       {!hero && <Legend />}
     </div>
   );

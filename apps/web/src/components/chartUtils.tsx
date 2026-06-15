@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { Focusable } from './Focusable';
 
 /** Resolve a CSS custom property to a concrete color (recharts needs real values). */
 export function cssColor(name: string, fallback: string): string {
@@ -23,9 +24,9 @@ export function chartPalette() {
 }
 
 export function ChartCard({
-  title, subtitle, ariaLabel, headerExtra, children,
-}: { title: string; subtitle?: string; ariaLabel?: string; headerExtra?: ReactNode; children: ReactNode }) {
-  return (
+  title, subtitle, ariaLabel, headerExtra, focusable, children,
+}: { title: string; subtitle?: string; ariaLabel?: string; headerExtra?: ReactNode; focusable?: boolean; children: ReactNode }) {
+  const card = (
     <div className="chart-card">
       <div className="chart-head">
         <span className="chart-title">{title}</span>
@@ -37,4 +38,8 @@ export function ChartCard({
       </div>
     </div>
   );
+  if (focusable) {
+    return <Focusable title={title}>{() => card}</Focusable>;
+  }
+  return card;
 }

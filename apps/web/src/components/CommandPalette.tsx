@@ -20,8 +20,13 @@ export function CommandPalette() {
         setOpen(false);
       }
     }
+    function onOpenEvent() { setOpen(true); }
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('nlc:command-palette', onOpenEvent);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('nlc:command-palette', onOpenEvent);
+    };
   }, []);
 
   useEffect(() => {

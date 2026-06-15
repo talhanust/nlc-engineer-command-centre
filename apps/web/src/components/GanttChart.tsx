@@ -22,7 +22,7 @@ export function GanttChart({ activities }: { activities: ScheduleActivity[] }) {
   });
 
   return (
-    <ChartCard title="Schedule (Gantt)" subtitle="planned activity windows" ariaLabel="Gantt chart">
+    <ChartCard focusable title="Schedule (Gantt)" subtitle="planned activity windows" ariaLabel="Gantt chart">
       <ResponsiveContainer width="100%" height={Math.max(200, activities.length * 42 + 40)}>
         <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }} barCategoryGap="22%">
           <CartesianGrid stroke={c.grid} horizontal={false} />

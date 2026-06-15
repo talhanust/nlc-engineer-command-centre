@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { ChartCard } from './chartUtils';
+import { useUiState, type Basemap } from '../state/UiState';
 import {
   PK_BBOX, PK_OUTLINE, PK_CITIES, PK_CENTER, PK_DEFAULT_ZOOM,
   projectToXY, isValidLatLng,
@@ -13,12 +14,9 @@ export interface MapMarker {
   lat: number;
   lng: number;
   label: string;
-  /** CSS-var colour string, e.g. 'var(--signal)'. */
-  color: string;
-  /** Larger pin for org HQs vs project sites. */
-  emphasis?: boolean;
-  /** Pin shape — a building tile for HQ/PD HQ, a dot for project sites. */
-  glyph?: MarkerGlyph;
+  color: string;        // CSS-var colour string, e.g. 'var(--signal)'
+  emphasis?: boolean;   // larger pin for org HQs vs project sites
+  glyph?: MarkerGlyph;  // building tile for HQ/PD HQ, dot for project sites
   onClick?: () => void;
 }
 
@@ -28,35 +26,39 @@ interface MapViewProps {
   subtitle?: string;
   ariaLabel?: string;
   height?: number;
-  /** Click-to-place mode for capturing a location. */
   picker?: boolean;
   pick?: { lat: number; lng: number } | null;
   onPick?: (lat: number, lng: number) => void;
-  /** Optional inline legend rendered in the card header. */
   legend?: React.ReactNode;
+  interactiveZoom?: boolean;
 }
 
-// jsdom (tests) and SSR can't run Leaflet's DOM layout, so we render a
-// deterministic offline SVG locator there instead. The real browser gets the
-// interactive themed map.
 const HEADLESS =
   typeof window === 'undefined' ||
   (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent));
 
-// Free CARTO basemaps (no key) — calm, muted terrain so coloured pins pop.
-// Matched to the app's light/dark theme. Attribution required.
-const TILES = {
-  light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-  dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+// Leaflet + OpenStreetMap basemaps — all free, no API key. OSM is the canonical
+// street map; the CARTO styles are calmer, theme-matched OSM-data renderings.
+interface TileDef { url: string; attr: string; subdomains?: string; }
+const BASEMAPS: Record<Exclude<Basemap, 'auto'>, TileDef> = {
+  osm: {
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attr: '&copy; OpenStreetMap contributors',
+  },
+  light: {
+    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    attr: '&copy; OpenStreetMap contributors &copy; CARTO', subdomains: 'abcd',
+  },
+  dark: {
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attr: '&copy; OpenStreetMap contributors &copy; CARTO', subdomains: 'abcd',
+  },
 };
-const TILE_ATTR = '&copy; OpenStreetMap contributors &copy; CARTO';
-
-function currentTheme(): 'light' | 'dark' {
-  if (typeof document === 'undefined') return 'light';
-  return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+function resolveBasemap(pref: Basemap, theme: 'light' | 'dark'): Exclude<Basemap, 'auto'> {
+  if (pref === 'auto') return theme === 'dark' ? 'dark' : 'light';
+  return pref;
 }
 
-// Resolve a CSS custom property to a concrete colour for Leaflet's inline icons.
 function resolveColor(cssVar: string): string {
   if (typeof document === 'undefined') return '#E87722';
   const name = cssVar.replace(/var\(|\)/g, '').trim();
@@ -77,14 +79,15 @@ function pinHtml(color: string, glyph: MarkerGlyph, emphasis?: boolean): string 
 }
 
 /**
- * Map surface used at every level (HQ, PD HQ, project) and as a location
- * picker. Free CARTO/OSM tiles — no API key, theme-matched. Falls back to an
- * offline Pakistan locator when a real DOM/network isn't available.
+ * Map surface used at every level and as a location picker. Leaflet + free
+ * OpenStreetMap/CARTO tiles (no key), theme-matched, with a basemap switcher.
+ * Falls back to an offline Pakistan locator when no real DOM/network exists.
  */
 export function MapView({
   markers = [], title = 'Map', subtitle, ariaLabel = 'Project map',
-  height = 320, picker = false, pick = null, onPick, legend,
+  height = 320, picker = false, pick = null, onPick, legend, interactiveZoom = false,
 }: MapViewProps) {
+  const { theme, basemap, setBasemap } = useUiState();
   const ref = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<unknown>(null);
   const markerLayerRef = useRef<unknown>(null);
@@ -93,20 +96,17 @@ export function MapView({
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
 
-  // Init the Leaflet map once.
   useEffect(() => {
     if (HEADLESS || !ref.current) return;
     let disposed = false;
     let map: import('leaflet').Map | null = null;
-    let themeObserver: MutationObserver | null = null;
 
     void (async () => {
       const L = await import('leaflet');
       if (disposed || !ref.current) return;
-      map = L.map(ref.current, { scrollWheelZoom: false, zoomControl: true }).setView(PK_CENTER, PK_DEFAULT_ZOOM);
-      tileLayerRef.current = L.tileLayer(TILES[currentTheme()], {
-        attribution: TILE_ATTR, subdomains: 'abcd', maxZoom: 20,
-      }).addTo(map);
+      map = L.map(ref.current, { scrollWheelZoom: interactiveZoom, zoomControl: true }).setView(PK_CENTER, PK_DEFAULT_ZOOM);
+      const def = BASEMAPS[resolveBasemap(basemap, theme)];
+      tileLayerRef.current = L.tileLayer(def.url, { attribution: def.attr, subdomains: def.subdomains ?? 'abc', maxZoom: 19 }).addTo(map);
       markerLayerRef.current = L.layerGroup().addTo(map);
       pickLayerRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
@@ -116,14 +116,6 @@ export function MapView({
           onPickRef.current?.(Number(e.latlng.lat.toFixed(6)), Number(e.latlng.lng.toFixed(6)));
         });
       }
-
-      // Swap tiles when the app theme flips.
-      themeObserver = new MutationObserver(() => {
-        const layer = tileLayerRef.current as import('leaflet').TileLayer | null;
-        if (layer) layer.setUrl(TILES[currentTheme()]);
-      });
-      themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-
       setTimeout(() => map && map.invalidateSize(), 0);
       syncMarkers(L, map);
       syncPick(L, map);
@@ -131,15 +123,22 @@ export function MapView({
 
     return () => {
       disposed = true;
-      if (themeObserver) themeObserver.disconnect();
       if (map) map.remove();
-      mapRef.current = null;
-      markerLayerRef.current = null;
-      pickLayerRef.current = null;
-      tileLayerRef.current = null;
+      mapRef.current = null; markerLayerRef.current = null;
+      pickLayerRef.current = null; tileLayerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [picker]);
+  }, [picker, interactiveZoom]);
+
+  // Swap tiles when the chosen basemap or theme changes.
+  useEffect(() => {
+    if (HEADLESS) return;
+    const layer = tileLayerRef.current as import('leaflet').TileLayer | null;
+    if (!layer) return;
+    const def = BASEMAPS[resolveBasemap(basemap, theme)];
+    layer.setUrl(def.url);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basemap, theme]);
 
   function syncMarkers(L: typeof import('leaflet'), map: import('leaflet').Map) {
     const layer = markerLayerRef.current as import('leaflet').LayerGroup | null;
@@ -151,10 +150,8 @@ export function MapView({
       const glyph: MarkerGlyph = m.glyph ?? 'dot';
       const size = glyph === 'building' ? (m.emphasis ? 28 : 24) : (m.emphasis ? 18 : 14);
       const icon = L.divIcon({
-        className: 'map-pin-icon',
-        html: pinHtml(color, glyph, m.emphasis),
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
+        className: 'map-pin-icon', html: pinHtml(color, glyph, m.emphasis),
+        iconSize: [size, size], iconAnchor: [size / 2, size / 2],
       });
       const mk = L.marker([m.lat, m.lng], { icon, title: m.label, riseOnHover: true }).addTo(layer);
       mk.bindTooltip(m.label, { direction: 'top', offset: [0, -size / 2] });
@@ -181,44 +178,43 @@ export function MapView({
     }
   }
 
-  // Re-sync markers when they change.
   useEffect(() => {
     if (HEADLESS) return;
     const map = mapRef.current as import('leaflet').Map | null;
     if (!map) return;
-    void (async () => {
-      const L = await import('leaflet');
-      syncMarkers(L, map);
-    })();
+    void (async () => { const L = await import('leaflet'); syncMarkers(L, map); })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(markers.map((m) => [m.id, m.lat, m.lng, m.color, m.emphasis, m.glyph]))]);
 
-  // Re-sync the picked pin.
   useEffect(() => {
     if (HEADLESS) return;
     const map = mapRef.current as import('leaflet').Map | null;
     if (!map) return;
-    void (async () => {
-      const L = await import('leaflet');
-      syncPick(L, map);
-    })();
+    void (async () => { const L = await import('leaflet'); syncPick(L, map); })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pick?.lat, pick?.lng]);
 
   const located = markers.filter((m) => isValidLatLng(m.lat, m.lng));
   const sub = subtitle ?? `${located.length} located${picker ? ' · click map to set' : ''}`;
 
+  const basemapSelect = (
+    <label className="basemap-select small no-print" title="Basemap">
+      <span className="sr-only">Basemap</span>
+      <select aria-label="Basemap" value={basemap} onChange={(e) => setBasemap(e.target.value as Basemap)}>
+        <option value="auto">Auto (theme)</option>
+        <option value="osm">OpenStreetMap</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
+  );
+
   return (
-    <ChartCard title={title} subtitle={sub} ariaLabel={ariaLabel} headerExtra={legend}>
+    <ChartCard title={title} subtitle={sub} ariaLabel={ariaLabel} headerExtra={<>{legend}{basemapSelect}</>}>
       {HEADLESS ? (
         <OfflineLocator markers={located} pick={pick} height={height} />
       ) : (
-        <div
-          ref={ref}
-          className="leaflet-host"
-          style={{ width: '100%', height, borderRadius: 'var(--r-sm)', overflow: 'hidden' }}
-          aria-hidden="true"
-        />
+        <div ref={ref} className="leaflet-host" style={{ width: '100%', height, borderRadius: 'var(--r-sm)', overflow: 'hidden' }} aria-hidden="true" />
       )}
     </ChartCard>
   );

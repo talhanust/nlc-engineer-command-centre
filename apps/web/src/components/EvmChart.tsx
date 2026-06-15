@@ -26,7 +26,7 @@ export function buildEvm(series: MonthlySeriesPoint[], contractValue: number, co
 export function EvmChart({ data }: { data: EvmPoint[] }) {
   const c = chartPalette();
   return (
-    <ChartCard title="Earned value (EVM)" subtitle="PV · EV · AC" ariaLabel="Earned value">
+    <ChartCard focusable title="Earned value (EVM)" subtitle="PV · EV · AC" ariaLabel="Earned value">
       <ResponsiveContainer width="100%" height={250}>
         <ComposedChart data={data} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
           <CartesianGrid stroke={c.grid} vertical={false} />

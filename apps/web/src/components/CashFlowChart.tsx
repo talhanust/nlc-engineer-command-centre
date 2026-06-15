@@ -10,7 +10,7 @@ const cr = (n: number) => `${(n / 1e7).toFixed(1)} Cr`;
 export function CashFlowChart({ months }: { months: CashFlowMonth[] }) {
   const c = chartPalette();
   return (
-    <ChartCard title="Cash flow & forecast" subtitle="inflow / outflow · cumulative net" ariaLabel="Cash flow">
+    <ChartCard focusable title="Cash flow & forecast" subtitle="inflow / outflow · cumulative net" ariaLabel="Cash flow">
       <ResponsiveContainer width="100%" height={280}>
         <ComposedChart data={months} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
           <CartesianGrid stroke={c.grid} vertical={false} />

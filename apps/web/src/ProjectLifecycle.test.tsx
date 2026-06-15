@@ -21,11 +21,17 @@ describe('Project lifecycle (UI)', () => {
     await user.click(screen.getByRole('button', { name: '+ New project' }));
     const dialog = await screen.findByRole('dialog', { name: 'New project' });
     await user.type(within(dialog).getByLabelText('Project name'), 'Skardu Bypass');
+    await user.type(within(dialog).getByLabelText('Project code'), 'NLC-SKB-01');
+    await user.type(within(dialog).getByLabelText('Project CA amount'), '3500000000');
     await user.type(within(dialog).getByLabelText('Project client'), 'NHA');
-    await user.type(within(dialog).getByLabelText('Project contract value'), '3500000000');
+    // The % plan / % achieved inputs must no longer exist on the form.
+    expect(within(dialog).queryByLabelText('Project planned pct')).toBeNull();
+    expect(within(dialog).queryByLabelText('Project actual pct')).toBeNull();
     await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
     // navigates to the new project view
     expect(await screen.findByRole('heading', { name: 'Skardu Bypass' })).toBeInTheDocument();
+    // the captured code surfaces on the project header chip
+    expect(await screen.findByText('NLC-SKB-01')).toBeInTheDocument();
   });
 
   it('updates project progress', async () => {

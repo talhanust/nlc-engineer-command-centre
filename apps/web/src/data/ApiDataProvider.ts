@@ -29,7 +29,7 @@ export class ApiDataProvider implements DataProvider {
   }
 
   private async get<T>(path: string): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, { credentials: 'include', headers: this.headers() });
+    const res = await fetch(`${this.baseUrl}${path}`, { headers: this.headers() });
     if (!res.ok) throw new Error(`API ${res.status} on ${path}`);
     return (await res.json()) as T;
   }
@@ -75,7 +75,6 @@ export class ApiDataProvider implements DataProvider {
   async addComment(nodeId: string, body: string): Promise<NodeComment> {
     const res = await fetch(`${this.baseUrl}/api/nodes/${nodeId}/comments`, {
       method: 'POST',
-      credentials: 'include',
       headers: this.headers(true),
       body: JSON.stringify({ body }),
     });
@@ -93,7 +92,6 @@ export class ApiDataProvider implements DataProvider {
   ): Promise<BoqItem[]> {
     const res = await fetch(`${this.baseUrl}/api/projects/${projectId}/boq`, {
       method: 'PUT',
-      credentials: 'include',
       headers: this.headers(true),
       body: JSON.stringify({ items }),
     });
@@ -131,7 +129,6 @@ export class ApiDataProvider implements DataProvider {
   async createIpc(projectId: string, input: { period: string; gross: number }): Promise<Ipc> {
     const res = await fetch(`${this.baseUrl}/api/projects/${projectId}/ipcs`, {
       method: 'POST',
-      credentials: 'include',
       headers: this.headers(true),
       body: JSON.stringify(input),
     });
@@ -141,7 +138,6 @@ export class ApiDataProvider implements DataProvider {
   async transitionIpc(projectId: string, ipcNo: string, action: string): Promise<Ipc> {
     const res = await fetch(`${this.baseUrl}/api/projects/${projectId}/ipcs/${ipcNo}/transitions`, {
       method: 'POST',
-      credentials: 'include',
       headers: this.headers(true),
       body: JSON.stringify({ action }),
     });
@@ -152,7 +148,6 @@ export class ApiDataProvider implements DataProvider {
   private async send<T>(path: string, method: string, body: unknown): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method,
-      credentials: 'include',
       headers: this.headers(true),
       body: JSON.stringify(body),
     });

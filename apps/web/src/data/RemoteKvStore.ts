@@ -20,7 +20,7 @@ export class RemoteKvStore implements KvStore {
 
   /** Load all documents into memory. Call once before using the provider. */
   async hydrate(): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/api/state`, { credentials: 'include', headers: this.headers() });
+    const res = await fetch(`${this.baseUrl}/api/state`, { headers: this.headers() });
     if (!res.ok) throw new Error(`API ${res.status} hydrating state`);
     const body = (await res.json()) as { docs: Record<string, unknown> };
     this.map.clear();
@@ -39,7 +39,6 @@ export class RemoteKvStore implements KvStore {
     // for this session, and the server persists asynchronously).
     void fetch(`${this.baseUrl}/api/state/${encodeURIComponent(key)}`, {
       method: 'PUT',
-      credentials: 'include',
       headers: this.headers(true),
       body: value, // already-serialised JSON value
     }).catch(() => { /* swallow; surfaced on next hydrate */ });
@@ -49,7 +48,6 @@ export class RemoteKvStore implements KvStore {
     this.map.delete(key);
     void fetch(`${this.baseUrl}/api/state/${encodeURIComponent(key)}`, {
       method: 'DELETE',
-      credentials: 'include',
       headers: this.headers(),
     }).catch(() => { /* ignore */ });
   }

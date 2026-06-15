@@ -32,3 +32,12 @@ export function descendantProjectIds(nodes: OrgNode[], id: string): string[] {
 }
 
 export const isBranch = (n: OrgNode): boolean => n.type !== 'project';
+
+/** All descendant nodes (branches + projects), excluding the node itself. */
+export function descendantNodes(nodes: OrgNode[], id: string): OrgNode[] {
+  const out: OrgNode[] = [];
+  for (const child of childrenOf(nodes, id)) {
+    out.push(child, ...descendantNodes(nodes, child.id));
+  }
+  return out;
+}

@@ -16,7 +16,7 @@ import { FinancialTab } from './financial/FinancialTab';
 import { ProcurementTab } from './procurement/ProcurementTab';
 import { HrTab } from './HrTab';
 import { PhotoGallery } from '../components/PhotoGallery';
-import { PakistanMap } from '../components/PakistanMap';
+import { LevelMap } from '../components/LevelMap';
 import { LocationEditor } from '../components/LocationEditor';
 
 const TABS = ['executive', 'commercial', 'execution', 'mapping', 'procurement', 'financial', 'hr', 'gallery'] as const;
@@ -54,6 +54,13 @@ export function ProjectView({ nodeId }: { nodeId: string }) {
           <h1>{node.name}</h1>
           {/* FGEHA etc. shown here as the project's CLIENT, not app branding. */}
           <div className="muted">Client: {project.clientName}</div>
+          {(project.projectCode || project.commencementDate || project.completionDate) && (
+            <div className="chip-row project-meta">
+              {project.projectCode && <span className="chip">Code <b>{project.projectCode}</b></span>}
+              {project.commencementDate && <span className="chip">Commenced <b>{project.commencementDate}</b></span>}
+              {project.completionDate && <span className="chip">Completion <b>{project.completionDate}</b></span>}
+            </div>
+          )}
         </div>
         <div className="head-tools">
           <button className="btn no-print" onClick={() => setEditProgress(true)}>Update progress</button>
@@ -97,7 +104,7 @@ export function ProjectView({ nodeId }: { nodeId: string }) {
           <SalientsCard projectId={nodeId} />
           <div className="panel-grid">
             <LocationEditor project={project} onSaved={refresh} />
-            <PakistanMap projects={[project]} title="Project location" height={260} />
+            <LevelMap nodeId={nodeId} nodes={nodes} projects={projects} height={260} />
           </div>
         </>
       )}

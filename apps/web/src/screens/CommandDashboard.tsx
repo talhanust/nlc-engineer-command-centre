@@ -17,11 +17,11 @@ import { HrRollupCard } from '../components/HrRollupCard';
 import { nodeBreakdownCsv, nodeBreakdownAoa } from '../domain/exporters';
 import { downloadWorkbook } from '../components/xlsxExport';
 import { NewProjectModal } from '../components/NewProjectModal';
-import { PakistanMap } from '../components/PakistanMap';
-import { descendantProjectIds } from '../domain/org';
+import { LevelMap } from '../components/LevelMap';
+import { NodeLocationEditor } from '../components/NodeLocationEditor';
 
 export function CommandDashboard({ nodeId }: { nodeId: string }) {
-  const { nodes, projects } = useData();
+  const { nodes, projects, refresh } = useData();
   const { rag, filter, filterActive } = useUiState();
   const navigate = useNavigate();
   const [newProject, setNewProject] = useState(false);
@@ -158,11 +158,10 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
       <BillingFunnel totals={totals} />
       <PortfolioSCurve nodeId={nodeId} projects={filtered} />
       <HrRollupCard nodeId={nodeId} nodes={nodes} />
-      {(() => {
-        const ids = new Set(descendantProjectIds(nodes, nodeId));
-        const located = projects.filter((p) => ids.has(p.id) && typeof p.lat === 'number');
-        return located.length > 0 ? <PakistanMap projects={located} title="Portfolio map" /> : null;
-      })()}
+      <LevelMap nodeId={nodeId} nodes={nodes} projects={projects} hero={node.type === 'hq'} />
+      {(node.type === 'hq' || node.type === 'pd_hq') && (
+        <NodeLocationEditor node={node} onSaved={refresh} />
+      )}
     </section>
   );
 }

@@ -7,6 +7,7 @@ import {
   monthlyCashFlow, forecastCashFlow, financialKpis, pnlSummary,
 } from '../../domain/finance';
 import { KpiCard } from '../../components/KpiCard';
+import { Focusable } from '../../components/Focusable';
 import { CashFlowChart } from '../../components/CashFlowChart';
 import { EvmChart, buildEvm } from '../../components/EvmChart';
 import { CategoryBar } from '../../components/CategoryCharts';
@@ -159,9 +160,11 @@ function Receipts({ projectId, b, onAdded }: { projectId: string; b: Bundle; onA
         <input aria-label="Receipt amount" placeholder="Amount (PKR)" value={amount} onChange={(e) => setAmount(e.target.value)} />
         <button className="btn" onClick={add}>Record receipt</button>
       </div>
+      <Focusable title="Receipts">{() => (
       <table className="data-table" aria-label="Receipts"><thead><tr><th>Month</th><th>Source</th><th className="num">Amount</th></tr></thead>
         <tbody>{b.receipts.map((r) => (<tr key={r.id}><td>{r.month}</td><td>{r.source}</td><td className="num">{formatMoney(r.amount)}</td></tr>))}</tbody>
       </table>
+      )}</Focusable>
     </div>
   );
 }
@@ -189,9 +192,11 @@ function Payments({ projectId, b, onAdded }: { projectId: string; b: Bundle; onA
         <input aria-label="Payment amount" placeholder="Amount (PKR)" value={amount} onChange={(e) => setAmount(e.target.value)} />
         <button className="btn" onClick={add}>Record payment</button>
       </div>
+      <Focusable title="Payments">{() => (
       <table className="data-table" aria-label="Payments"><thead><tr><th>Month</th><th>Category</th><th className="num">Amount</th></tr></thead>
         <tbody>{b.payments.map((p) => (<tr key={p.id}><td>{p.month}</td><td style={{ textTransform: 'capitalize' }}>{p.category}</td><td className="num">{formatMoney(p.amount)}</td></tr>))}</tbody>
       </table>
+      )}</Focusable>
     </div>
   );
 }
@@ -215,9 +220,11 @@ function Liabilities({ projectId, b, onAdded }: { projectId: string; b: Bundle; 
         <input aria-label="Liability amount" placeholder="Amount (PKR)" value={amount} onChange={(e) => setAmount(e.target.value)} />
         <button className="btn" onClick={add}>Add liability</button>
       </div>
+      <Focusable title="Liabilities">{() => (
       <table className="data-table" aria-label="Liabilities"><thead><tr><th>Kind</th><th className="num">Amount</th></tr></thead>
         <tbody>{b.liabilities.map((l) => (<tr key={l.id}><td>{l.kind}</td><td className="num">{formatMoney(l.amount)}</td></tr>))}</tbody>
       </table>
+      )}</Focusable>
     </div>
   );
 }

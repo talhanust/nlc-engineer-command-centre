@@ -19,6 +19,7 @@ import { downloadWorkbook } from '../components/xlsxExport';
 import { NewProjectModal } from '../components/NewProjectModal';
 import { LevelMap } from '../components/LevelMap';
 import { NodeLocationEditor } from '../components/NodeLocationEditor';
+import { CollapsibleCard } from '../components/CollapsibleCard';
 
 export function CommandDashboard({ nodeId }: { nodeId: string }) {
   const { nodes, projects, refresh } = useData();
@@ -101,8 +102,7 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
         />
       </div>
 
-      <div className="card">
-        <h3>Breakdown</h3>
+      <CollapsibleCard id="dash-breakdown" title={`${node.name} — breakdown`} focusable dockable>
         <table className="data-table" aria-label="Breakdown">
           <thead>
             <tr>
@@ -149,7 +149,7 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
             </tr>
           </tfoot>
         </table>
-      </div>
+      </CollapsibleCard>
 
       <div className="panel-grid">
         <LeagueTable rows={children} />

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useData } from '../data/DataContext';
+import { useUiState, type LayoutSnapshot, type Basemap, type Density } from '../state/UiState';
 import { formatMoney, getMoneyFormat, setMoneyFormat, MONEY_FORMATS, type MoneyFormat } from '../domain/money';
 import { getPowers, setPowers, DEFAULT_POWERS, ROLE_LABEL } from '../domain/chains';
 import {
@@ -14,6 +15,7 @@ export function Settings() {
     <div className="content">
       <div className="breadcrumb"><Link to="/node/hq-nlc">HQ NLC</Link><span className="sep">/</span><strong>Settings</strong></div>
       <h1>Settings</h1>
+      <WorkspaceSettings />
       <DisplaySettings />
       <BackupRestore />
       <OrgAdmin />
@@ -119,6 +121,68 @@ function AccessMatrixEditor() {
       <div className="create-row" style={{ marginTop: 10 }}>
         <button className="btn" onClick={save}>Save matrix</button>
         {saved && <span className="pos small" role="status">Saved.</span>}
+      </div>
+    </div>
+  );
+}
+
+const LAYOUTS_KEY = 'nlc-ecc.layouts';
+type LayoutSlots = { A?: LayoutSnapshot; B?: LayoutSnapshot };
+
+function loadSlots(): LayoutSlots {
+  try { return JSON.parse(localStorage.getItem(LAYOUTS_KEY) ?? '{}') as LayoutSlots; }
+  catch { return {}; }
+}
+
+function WorkspaceSettings() {
+  const { density, setDensity, basemap, setBasemap, snapshotLayout, applyLayout } = useUiState();
+  const [slots, setSlots] = useState<LayoutSlots>(loadSlots);
+  const [msg, setMsg] = useState('');
+
+  function persist(next: LayoutSlots) {
+    setSlots(next);
+    try { localStorage.setItem(LAYOUTS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  }
+  function save(slot: 'A' | 'B') {
+    persist({ ...slots, [slot]: snapshotLayout() });
+    setMsg(`Saved current layout to slot ${slot}.`);
+  }
+  function load(slot: 'A' | 'B') {
+    const s = slots[slot];
+    if (s) { applyLayout(s); setMsg(`Loaded layout ${slot}.`); }
+  }
+
+  return (
+    <div className="card">
+      <h3>Workspace</h3>
+      <p className="muted small">Table density, default basemap, and saved layouts (sidebar, width, zoom, density, theme).</p>
+      <div className="create-row">
+        <label>Table density:{' '}
+          <select aria-label="Table density" value={density} onChange={(e) => setDensity(e.target.value as Density)}>
+            <option value="comfortable">Comfortable</option>
+            <option value="compact">Compact</option>
+          </select>
+        </label>
+        <label>Default basemap:{' '}
+          <select aria-label="Default basemap" value={basemap} onChange={(e) => setBasemap(e.target.value as Basemap)}>
+            <option value="auto">Auto (theme)</option>
+            <option value="osm">OpenStreetMap</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+      </div>
+      <div className="section-head" style={{ marginTop: 12 }}><h3>Saved layouts</h3></div>
+      <div className="create-row">
+        {(['A', 'B'] as const).map((slot) => (
+          <span key={slot} className="layout-slot">
+            <strong>Slot {slot}</strong>
+            <button className="btn-ghost" onClick={() => save(slot)} aria-label={`Save layout ${slot}`}>Save</button>
+            <button className="btn-ghost" onClick={() => load(slot)} disabled={!slots[slot]} aria-label={`Load layout ${slot}`}>Load</button>
+            <span className="muted small">{slots[slot] ? `${Math.round(slots[slot]!.zoom * 100)}% · ${slots[slot]!.density} · ${slots[slot]!.theme}` : 'empty'}</span>
+          </span>
+        ))}
+        {msg && <span className="pos small" role="status">{msg}</span>}
       </div>
     </div>
   );

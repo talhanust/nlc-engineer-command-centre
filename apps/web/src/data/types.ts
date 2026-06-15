@@ -11,6 +11,10 @@ export interface OrgNode {
   name: string;
   type: NodeType;
   parentId: string | null;
+  /** Geolocation for the multi-level map (HQ / PD HQ markers). */
+  lat?: number;
+  lng?: number;
+  location?: string;
 }
 
 export interface Project {
@@ -26,6 +30,11 @@ export interface Project {
   plannedPct: number;
   actualPct: number;
   archived?: boolean;
+  /** Project identity / contract dates (captured at creation). */
+  projectCode?: string;
+  /** ISO yyyy-mm-dd. */
+  commencementDate?: string;
+  completionDate?: string;
   /** Geolocation (for the portfolio map). */
   lat?: number;
   lng?: number;
@@ -473,10 +482,15 @@ export interface DataProvider {
   // Project & org lifecycle
   createProject(input: {
     pdHqId: string; name: string; clientName: string;
-    contractValue: string; plannedPct: number; actualPct: number;
+    contractValue: string; plannedPct?: number; actualPct?: number;
+    projectCode?: string; commencementDate?: string; completionDate?: string;
+    lat?: number; lng?: number; location?: string;
   }): Promise<Project>;
   updateProject(projectId: string, patch: Partial<Pick<Project,
-    'clientName' | 'contractValue' | 'billedToDate' | 'receivedToDate' | 'plannedPct' | 'actualPct' | 'lat' | 'lng' | 'location'>>): Promise<Project>;
+    'clientName' | 'contractValue' | 'billedToDate' | 'receivedToDate' | 'plannedPct' | 'actualPct'
+    | 'projectCode' | 'commencementDate' | 'completionDate' | 'lat' | 'lng' | 'location'>>): Promise<Project>;
+  /** Set an org node's (HQ / PD HQ) map location. */
+  updateNodeLocation(nodeId: string, patch: { lat?: number; lng?: number; location?: string }): Promise<OrgNode>;
   archiveProject(projectId: string): Promise<void>;
   restoreProject(projectId: string): Promise<void>;
   listArchivedProjects(): Promise<Project[]>;

@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import { useData } from '../data/DataContext';
+import { MapView } from './MapView';
+import { reverseGeocode } from '../domain/geocode';
+import { markerColorVar, isValidLatLng } from '../domain/geo';
 import type { Project } from '../data/types';
 
 /** Capture a project's location (place name + coordinates) for the map. */
@@ -9,6 +12,15 @@ export function LocationEditor({ project, onSaved }: { project: Project; onSaved
   const [lat, setLat] = useState(project.lat != null ? String(project.lat) : '');
   const [lng, setLng] = useState(project.lng != null ? String(project.lng) : '');
   const [saved, setSaved] = useState(false);
+
+  const latN = Number(lat), lngN = Number(lng);
+  const pick = isValidLatLng(latN, lngN) ? { lat: latN, lng: lngN } : null;
+
+  async function onPick(plat: number, plng: number) {
+    setLat(String(plat)); setLng(String(plng)); setSaved(false);
+    const place = await reverseGeocode(plat, plng);
+    if (place && !location.trim()) setLocation(place);
+  }
 
   async function save() {
     await provider.updateProject(project.id, {
@@ -23,8 +35,17 @@ export function LocationEditor({ project, onSaved }: { project: Project; onSaved
   return (
     <div className="card">
       <h3>Location</h3>
-      <p className="muted small">Place and coordinates plot this project on the portfolio map.</p>
-      <div className="create-row">
+      <p className="muted small">Click the map to drop a pin (or type coordinates). This plots the project across every level's map.</p>
+      <MapView
+        title="Pick site"
+        ariaLabel="Location picker map"
+        height={220}
+        picker
+        pick={pick}
+        onPick={onPick}
+        markers={pick ? [{ id: project.id, lat: pick.lat, lng: pick.lng, label: location || project.id, color: markerColorVar('project'), emphasis: true }] : []}
+      />
+      <div className="create-row" style={{ marginTop: 10 }}>
         <input aria-label="Location name" placeholder="Place (e.g. Islamabad)" value={location} onChange={(e) => { setLocation(e.target.value); setSaved(false); }} style={{ flex: 1, minWidth: 160 }} />
       </div>
       <div className="create-row" style={{ marginTop: 8 }}>
@@ -33,7 +54,6 @@ export function LocationEditor({ project, onSaved }: { project: Project; onSaved
         <button className="btn" onClick={save}>Save location</button>
         {saved && <span className="pos small" role="status">Saved.</span>}
       </div>
-      <p className="muted small" style={{ marginTop: 8 }}>Tip: right-click a spot in Google Maps to copy its lat, lng.</p>
     </div>
   );
 }

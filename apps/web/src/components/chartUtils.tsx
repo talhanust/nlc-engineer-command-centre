@@ -23,12 +23,13 @@ export function chartPalette() {
 }
 
 export function ChartCard({
-  title, subtitle, ariaLabel, children,
-}: { title: string; subtitle?: string; ariaLabel?: string; children: ReactNode }) {
+  title, subtitle, ariaLabel, headerExtra, children,
+}: { title: string; subtitle?: string; ariaLabel?: string; headerExtra?: ReactNode; children: ReactNode }) {
   return (
     <div className="chart-card">
       <div className="chart-head">
         <span className="chart-title">{title}</span>
+        {headerExtra}
         {subtitle && <span className="chart-sub">{subtitle}</span>}
       </div>
       <div className="chart-body" role="img" aria-label={ariaLabel ?? title}>

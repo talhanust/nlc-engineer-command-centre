@@ -43,13 +43,13 @@ const SEED: Seed[] = [
 ];
 
 const NODES: OrgNode[] = [
-  { id: 'hq-nlc', name: 'HQ NLC', type: 'hq', parentId: null },
-  { id: 'hq-engrs', name: 'HQ Engineers', type: 'hq_engrs', parentId: 'hq-nlc' },
-  { id: 'pd-north', name: 'HQ PD North', type: 'pd_hq', parentId: 'hq-engrs' },
-  { id: 'pd-centre', name: 'HQ PD Centre', type: 'pd_hq', parentId: 'hq-engrs' },
-  { id: 'pd-kpk', name: 'HQ PD KPK', type: 'pd_hq', parentId: 'hq-engrs' },
-  { id: 'pd-sindh', name: 'HQ PD Sindh', type: 'pd_hq', parentId: 'hq-engrs' },
-  { id: 'pd-bln', name: 'HQ PD Bln', type: 'pd_hq', parentId: 'hq-engrs' },
+  { id: 'hq-nlc', name: 'HQ NLC', type: 'hq', parentId: null, lat: 33.5969, lng: 73.0862, location: 'GHQ NLC, Rawalpindi' },
+  { id: 'hq-engrs', name: 'HQ Engineers', type: 'hq_engrs', parentId: 'hq-nlc', lat: 33.6007, lng: 73.0679, location: 'HQ Engineers, Rawalpindi' },
+  { id: 'pd-north', name: 'HQ PD North', type: 'pd_hq', parentId: 'hq-engrs', lat: 33.6938, lng: 73.0651, location: 'Islamabad' },
+  { id: 'pd-centre', name: 'HQ PD Centre', type: 'pd_hq', parentId: 'hq-engrs', lat: 33.6573, lng: 73.0479, location: 'Islamabad / Rawalpindi' },
+  { id: 'pd-kpk', name: 'HQ PD KPK', type: 'pd_hq', parentId: 'hq-engrs', lat: 34.0151, lng: 71.5249, location: 'Peshawar' },
+  { id: 'pd-sindh', name: 'HQ PD Sindh', type: 'pd_hq', parentId: 'hq-engrs', lat: 24.8607, lng: 67.0011, location: 'Karachi' },
+  { id: 'pd-bln', name: 'HQ PD Bln', type: 'pd_hq', parentId: 'hq-engrs', lat: 30.1798, lng: 66.9750, location: 'Quetta' },
   ...SEED.map((s): OrgNode => ({ id: s.id, name: s.name, type: 'project', parentId: s.pdHqId })),
 ];
 
@@ -74,6 +74,15 @@ export class LocalDataProvider implements DataProvider {
   readonly mode = 'local' as const;
   async listNodes(): Promise<OrgNode[]> {
     const nodes = readJson<OrgNode[]>(nodesKey, () => NODES);
+    // Backfill seeded HQ/PD HQ coordinates onto older cached/persisted node
+    // sets that predate the geolocation fields, so the maps populate at once.
+    const seedCoords = new Map(NODES.filter((n) => n.lat != null).map((n) => [n.id, n] as const));
+    for (const n of nodes) {
+      if (n.lat == null && seedCoords.has(n.id)) {
+        const s = seedCoords.get(n.id)!;
+        n.lat = s.lat; n.lng = s.lng; n.location = n.location ?? s.location;
+      }
+    }
     const archived = new Set(this.readProjectsRaw().filter((p) => p.archived).map((p) => p.id));
     return nodes.filter((n) => !(n.type === 'project' && archived.has(n.id)));
   }
@@ -89,7 +98,9 @@ export class LocalDataProvider implements DataProvider {
 
   async createProject(input: {
     pdHqId: string; name: string; clientName: string;
-    contractValue: string; plannedPct: number; actualPct: number;
+    contractValue: string; plannedPct?: number; actualPct?: number;
+    projectCode?: string; commencementDate?: string; completionDate?: string;
+    lat?: number; lng?: number; location?: string;
   }): Promise<Project> {
     const nodes = readJson<OrgNode[]>(nodesKey, () => NODES);
     const projects = this.readProjectsRaw();
@@ -101,7 +112,13 @@ export class LocalDataProvider implements DataProvider {
     const project: Project = {
       id, pdHqId: input.pdHqId, clientName: sanitize(input.clientName),
       contractValue: input.contractValue, billedToDate: '0', receivedToDate: '0',
-      plannedPct: input.plannedPct, actualPct: input.actualPct,
+      plannedPct: input.plannedPct ?? 0, actualPct: input.actualPct ?? 0,
+      projectCode: input.projectCode ? sanitize(input.projectCode) : undefined,
+      commencementDate: input.commencementDate || undefined,
+      completionDate: input.completionDate || undefined,
+      lat: typeof input.lat === 'number' ? input.lat : undefined,
+      lng: typeof input.lng === 'number' ? input.lng : undefined,
+      location: input.location ? sanitize(input.location) : undefined,
     };
     nodes.push(node); projects.push(project);
     writeJson(nodesKey, nodes); writeJson(projectsKey, projects);
@@ -115,9 +132,23 @@ export class LocalDataProvider implements DataProvider {
     if (!p) throw new Error(`Project ${projectId} not found`);
     Object.assign(p, patch);
     if (patch.clientName) p.clientName = sanitize(patch.clientName);
+    if (patch.location) p.location = sanitize(patch.location);
+    if (patch.projectCode) p.projectCode = sanitize(patch.projectCode);
     writeJson(projectsKey, projects);
     audit(projectId, 'update', 'Project', projectId, Object.keys(patch).join(', '));
     return p;
+  }
+
+  async updateNodeLocation(nodeId: string, patch: { lat?: number; lng?: number; location?: string }): Promise<OrgNode> {
+    const nodes = readJson<OrgNode[]>(nodesKey, () => NODES);
+    const node = nodes.find((x) => x.id === nodeId);
+    if (!node) throw new Error(`Node ${nodeId} not found`);
+    if (patch.lat !== undefined) node.lat = patch.lat;
+    if (patch.lng !== undefined) node.lng = patch.lng;
+    if (patch.location !== undefined) node.location = sanitize(patch.location);
+    writeJson(nodesKey, nodes);
+    audit(nodeId, 'update', 'Node', node.name, 'location');
+    return node;
   }
 
   async archiveProject(projectId: string): Promise<void> {

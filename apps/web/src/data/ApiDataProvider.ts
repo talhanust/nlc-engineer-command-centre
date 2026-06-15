@@ -41,11 +41,14 @@ export class ApiDataProvider implements DataProvider {
     const body = await this.get<{ items: Project[] }>('/api/projects');
     return body.items;
   }
-  async createProject(input: { pdHqId: string; name: string; clientName: string; contractValue: string; plannedPct: number; actualPct: number }): Promise<Project> {
+  async createProject(input: { pdHqId: string; name: string; clientName: string; contractValue: string; plannedPct?: number; actualPct?: number; projectCode?: string; commencementDate?: string; completionDate?: string; lat?: number; lng?: number; location?: string }): Promise<Project> {
     return this.send<Project>('/api/projects', 'POST', input);
   }
   async updateProject(projectId: string, patch: Partial<Project>): Promise<Project> {
     return this.send<Project>(`/api/projects/${projectId}`, 'PATCH', patch);
+  }
+  async updateNodeLocation(nodeId: string, patch: { lat?: number; lng?: number; location?: string }): Promise<OrgNode> {
+    return this.send<OrgNode>(`/api/nodes/${nodeId}/location`, 'PATCH', patch);
   }
   async archiveProject(projectId: string): Promise<void> {
     await this.send(`/api/projects/${projectId}/archive`, 'POST', {});

@@ -22,6 +22,7 @@ export function createApp() {
     const allow = corsOrigins.includes('*') ? '*' : (origin && corsOrigins.includes(origin) ? origin : '');
     if (allow) {
       res.setHeader('Access-Control-Allow-Origin', allow);
+      if (allow !== '*') res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-User, Authorization');

@@ -20,3 +20,5 @@
 8. ~~Transaction reverse (audited)~~ — DONE (IPC reverse steps status back + audit).
 9. ~~Excel (xlsx) export~~ — DONE (multi-sheet workbook, lazy-loaded SheetJS). Material recon still pending.
 10. ~~Project salients editor + access matrix~~ — DONE (executive tab + Settings).
+
+- 2026-06-15: Project-creation form simplified (code + contract dates + CA amount, no % plan/achieved); interactive Leaflet/OSM maps with a location picker and per-level HQ/PD HQ/project maps.

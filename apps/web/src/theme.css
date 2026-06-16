@@ -450,3 +450,136 @@ code { font-family: var(--font-mono); font-size: .9em; }
 
 /* over-allocation flag in the distribution planner */
 .data-table tr.row-flag td { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+
+/* ===== HR organogram ===== */
+.status-ok { --st: var(--rag-green); }
+.status-warn { --st: var(--rag-amber); }
+.status-crit { --st: var(--rag-red); }
+
+.hr-cockpit { margin-top: 4px; }
+.orgo { width: 100%; }
+
+/* Summary panel (AUTH / HELD / FILLED / VACANT) */
+.orgo-summary { display: flex; flex-wrap: wrap; align-items: stretch; gap: 1px; background: var(--border);
+  border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; margin-bottom: 20px; }
+.orgo-summary-cell { flex: 1; min-width: 92px; background: var(--surface); padding: 12px 16px;
+  display: flex; flex-direction: column; gap: 3px; }
+.orgo-summary-label { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.orgo-summary-val { font-family: var(--font-mono); font-size: 24px; font-weight: 700; line-height: 1; color: var(--text); }
+.orgo-summary-pct .orgo-summary-val { color: var(--st); }
+.orgo-summary-pct { box-shadow: inset 3px 0 0 var(--st); }
+.orgo-synth-tag { align-self: center; padding: 0 14px; font-size: 11px; color: var(--muted); font-style: italic; }
+
+/* Command spine */
+.orgo-spine { display: flex; flex-direction: column; align-items: center; }
+.orgo-spine-wrap { display: flex; flex-direction: column; align-items: center; width: 100%; }
+.orgo-command { display: inline-flex; align-items: center; gap: 12px; padding: 11px 22px; border-radius: var(--r-sm);
+  background: linear-gradient(135deg, var(--command), var(--command-2)); color: #fff;
+  box-shadow: var(--shadow-2); border: 1px solid rgba(255,255,255,.08); position: relative; }
+.orgo-command::after { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--st); border-radius: 3px 0 0 3px; }
+.orgo-command-title { font-weight: 700; font-size: 14.5px; letter-spacing: .01em; }
+.orgo-command-num { font-family: var(--font-mono); font-size: 13px; background: rgba(255,255,255,.14); padding: 2px 8px; border-radius: 20px; }
+.orgo-connector { width: 2px; height: 22px; background: var(--border-strong); }
+
+.orgo-branch-bar { height: 2px; background: var(--border-strong); width: min(96%, 100%); margin: 0 auto; }
+
+/* Section grid */
+.orgo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 14px; margin-top: 12px; }
+.orgo-section { position: relative; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 12px 13px; box-shadow: var(--shadow-1); box-shadow: inset 3px 0 0 var(--st), var(--shadow-1);
+  transition: transform .12s ease, box-shadow .12s ease; }
+.orgo-section:hover { transform: translateY(-1px); box-shadow: inset 3px 0 0 var(--st), var(--shadow-2); }
+.orgo-section::before { content: ''; position: absolute; top: -12px; left: 50%; width: 2px; height: 12px; background: var(--border-strong); }
+.orgo-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; width: 100%;
+  background: transparent; border: 0; padding: 0; text-align: left; color: var(--text); }
+.orgo-section-title { font-weight: 700; font-size: 13.5px; line-height: 1.25; display: flex; flex-direction: column; gap: 4px; }
+.orgo-scale { align-self: flex-start; font-family: var(--font-mono); font-size: 10px; color: var(--muted);
+  background: var(--surface-2); border: 1px solid var(--border); padding: 1px 6px; border-radius: 10px; font-weight: 600; }
+.orgo-scale.light { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.2); }
+
+.orgo-fill { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.orgo-fill.compact { margin-top: 0; }
+.orgo-fill-track { flex: 1; height: 7px; background: var(--surface-3); border-radius: 6px; overflow: hidden; }
+.orgo-fill-bar { height: 100%; background: var(--st); border-radius: 6px; transition: width .3s ease; }
+.orgo-fill-num { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); min-width: 38px; text-align: right; }
+
+.orgo-section-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 11px; }
+.orgo-foot-pct { color: var(--muted); }
+.orgo-foot-vac { font-weight: 600; }
+
+.orgo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--st); flex: 0 0 8px; display: inline-block; }
+.orgo-caret { color: var(--muted); font-size: 11px; transition: transform .15s ease; display: inline-block; }
+.orgo-caret.open { transform: rotate(90deg); }
+
+/* Posts (designation level) */
+.orgo-posts { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 6px; }
+.orgo-post { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px;
+  border-radius: var(--r-sm); font-size: 12.5px; }
+.orgo-post.has-kids { cursor: pointer; }
+.orgo-post:hover { background: var(--surface-2); }
+.orgo-post-main { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.orgo-post-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.orgo-post-num { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); flex: 0 0 auto; }
+
+/* status tags reused in KPIs */
+.tag-ok { color: var(--rag-green); } .tag-warn { color: var(--rag-amber); } .tag-crit { color: var(--rag-red); }
+
+@media (max-width: 560px) { .orgo-grid { grid-template-columns: 1fr 1fr; } }
+
+/* ===== HR people / roster / recruitment ===== */
+.hr-avatar { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.hr-avatar-initials { border-radius: 50%; color: #fff; font-weight: 700; font-family: var(--font-body); letter-spacing: .02em; }
+
+.person-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.person-card { display: flex; align-items: center; gap: 11px; padding: 10px 12px; background: var(--surface-2);
+  border: 1px solid var(--border); border-left: 3px solid var(--st, var(--primary)); border-radius: var(--r-sm); }
+.status-person-present { --st: var(--rag-green); }
+.status-person-leave { --st: var(--rag-amber); }
+.status-person-detached { --st: var(--signal); }
+.status-person-training { --st: var(--primary); }
+.person-main { flex: 1; min-width: 0; }
+.person-name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.person-meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
+.person-status { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 7px; border-radius: 10px; color: #fff; background: var(--st); }
+.person-actions { display: flex; gap: 4px; opacity: 0; transition: .14s; }
+.person-card:hover .person-actions { opacity: 1; }
+.icon-mini { width: 24px; height: 24px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--r-sm);
+  cursor: pointer; color: var(--muted); font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
+.icon-mini:hover { color: var(--primary); border-color: var(--primary); }
+
+.empty-seat { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: transparent;
+  border: 1px dashed var(--border-strong); border-radius: var(--r-sm); cursor: pointer; text-align: left; transition: .14s; }
+.empty-seat:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 5%, transparent); }
+.empty-seat-ring { width: 38px; height: 38px; border-radius: 50%; border: 1px dashed var(--border-strong);
+  display: inline-flex; align-items: center; justify-content: center; color: var(--muted); font-size: 18px; flex: 0 0 auto; }
+.roster-group.selected { box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 50%, transparent); }
+
+/* seat chip on organogram boxes */
+.orgo-seatchip { display: inline-flex; align-items: center; gap: 1px; font-family: var(--font-mono); font-size: 10.5px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 0 6px; }
+.orgo-seatchip .seat-present { color: var(--rag-green); font-weight: 700; }
+.orgo-seatchip .seat-named { color: var(--muted); }
+.orgo-seatchip .seat-sep { color: var(--border-strong); }
+.orgo-seatchip .seat-empty { color: var(--rag-amber); font-weight: 700; margin-left: 3px; }
+.orgo-post-right, .orgo-foot-right { display: inline-flex; align-items: center; gap: 8px; }
+.orgo-section.selected, .orgo-command.selected, .orgo-post.selected { outline: 2px solid var(--primary); outline-offset: 1px; }
+.orgo-section { cursor: pointer; }
+
+/* segmented control */
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+.seg-btn { padding: 5px 12px; background: var(--surface); border: 0; cursor: pointer; font-size: 12px; color: var(--muted); font-family: var(--font-body); }
+.seg-btn.active { background: var(--primary); color: #fff; }
+
+/* recruitment kanban */
+.kanban { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(180px, 1fr); gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+.kanban-col { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); padding: 8px; min-height: 90px; }
+.kanban-col-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 12px;
+  text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 2px 4px 8px; }
+.kanban-count { background: var(--surface-3); border-radius: 10px; padding: 0 7px; font-size: 11px; }
+.kanban-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px 10px; margin-bottom: 8px; box-shadow: var(--shadow-1); }
+.kanban-card-title { font-weight: 600; font-size: 13px; }
+.kanban-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 8px; }
+.btn-mini { padding: 3px 8px; font-size: 11.5px; }
+.kanban-empty { text-align: center; padding: 14px 0; }
+
+@media (max-width: 560px) { .person-grid { grid-template-columns: 1fr; } }

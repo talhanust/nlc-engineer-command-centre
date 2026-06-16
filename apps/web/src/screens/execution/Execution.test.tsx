@@ -243,6 +243,19 @@ describe('HR cockpit + organogram', () => {
     expect(await screen.findByRole('table', { name: 'Vacancies' })).toBeInTheDocument();
   });
 
+  it('lets HR staff edit the organogram (add a section)', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-rwp-ring/hr');
+    await screen.findByText(/HR command/);
+    await user.click(screen.getByRole('button', { name: 'Edit organogram' }));
+    // Add-affordances appear; open the add-section editor.
+    await user.click(await screen.findByRole('button', { name: 'Add section' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Add post' });
+    await user.type(within(dialog).getByLabelText('Post title'), 'New Test Sec');
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }));
+    expect(await screen.findByText('New Test Sec')).toBeInTheDocument();
+  });
+
   it('aggregates an org-wide HR board on a branch node', async () => {
     const user = userEvent.setup();
     renderAt('/node/hq-nlc');
@@ -250,5 +263,38 @@ describe('HR cockpit + organogram', () => {
     await user.click(screen.getByRole('tab', { name: 'Org board' }));
     const board = await screen.findByRole('table', { name: 'Org-wide HR board' });
     expect(within(board).getByText('HQ PD Centre')).toBeInTheDocument();
+  });
+
+  it('lists credentials and flags expiry', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-rwp-ring/hr');
+    await screen.findByText(/HR command/);
+    await user.click(screen.getByRole('tab', { name: 'Skills' }));
+    const table = await screen.findByRole('table', { name: 'Credentials' });
+    expect(within(table).getByText('CIVIL/12345')).toBeInTheDocument();
+    expect(screen.getByText(/need attention/)).toBeInTheDocument();
+  });
+
+  it('advances a posting through approval', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-rwp-ring/hr');
+    await screen.findByText(/HR command/);
+    await user.click(screen.getByRole('tab', { name: 'Postings' }));
+    const table = await screen.findByRole('table', { name: 'Postings' });
+    expect(within(table).getByText('Zeeshan Ali')).toBeInTheDocument();
+    // Seeded at 'recommended' → advance to 'approved' → Effect button appears.
+    await user.click(screen.getByRole('button', { name: /Advance posting for Zeeshan Ali/ }));
+    expect(await screen.findByRole('button', { name: /Effect posting for Zeeshan Ali/ })).toBeInTheDocument();
+  });
+
+  it('snapshots an establishment version and diffs it', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-rwp-ring/hr');
+    await screen.findByText(/HR command/);
+    await user.click(screen.getByRole('tab', { name: 'Versions' }));
+    await user.click(screen.getByRole('button', { name: 'Snapshot current' }));
+    expect(await screen.findByText(/v1 ·/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Diff vs current/ }));
+    expect(await screen.findByText(/No changes/)).toBeInTheDocument();
   });
 });

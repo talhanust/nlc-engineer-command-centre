@@ -1,6 +1,54 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-16 — HR platform: roster, recruitment, attendance, cost, org board
+- People layer (HrPerson): name/rank/CNIC/contact/photo/posting-date/status,
+  linked to an establishment post (or bench). Provider CRUD on Local + Api.
+  Recruitment requisitions (HrRequisition) with a raised→advertised→interview→
+  offer→joined stage flow + advance/convert-to-hire; writes to the audit log.
+- domain/roster.ts (occupancy, present strength, bench, initials/hue) and
+  domain/hrcost.ts (NLC pay-bands, scale parsing, cost by section/total on a
+  held-or-named basis). Unit-tested (8 new).
+- Organogram is now occupancy-aware: each box shows present/named and empty
+  seats, has a PRESENT summary cell, and is clickable → opens that post's roster.
+- HrCockpit became a full one-window platform: Organogram · Roster ·
+  Recruitment · Cost · Establishment (+ Org board on branch tiers).
+  • Roster: Bitrix-style people cards grouped by post, empty-seat cards for
+    vacancies, a bench group, add/edit/remove with attendance status.
+  • Recruitment: live vacancy list (AUTH−HELD) + a kanban pipeline; raise from a
+    vacancy, advance stages, or convert a 'joined' card into a roster entry.
+  • Cost: monthly burn by section + annualised, held/named basis toggle.
+  • Org board: branch-wide fill% across every sub-unit, worst-fill-first, with
+    present strength and vacancy columns.
+- Seeded a named roster + open requisitions on proj-rwp-ring. Replaced the old
+  HrRollupCard (superseded by Org board). Tests +10 → web 217; server 8;
+  typecheck clean; both builds green.
+
+2026-06-15 — HR organogram at every tier + one-window HR cockpit
+- New establishment model: HrUnit (post/section tree per node, parentId, scale,
+  category, auth/held, order) with provider CRUD (listHrUnits / listAllHrUnits /
+  upsertHrUnit / deleteHrUnit) on Local + Api providers; rides existing JSONB,
+  no migration.
+- domain/organogram.ts: tree build, leaf roll-up (no double counting),
+  establishment totals, fill status/percent, command-spine detection, and a
+  fallback that synthesises an organogram from category strengths so EVERY tier
+  shows something. Unit-tested (6).
+- HrOrganogram component: interactive top-down chart — AUTH/HELD/FILLED/VACANT
+  summary panel, command spine (Director → Deputy), responsive section grid with
+  RAG fill bars, and expandable posts (designation tiers). Themed, not the dated
+  3D look; reads on light/dark.
+- HrCockpit (one window): Organogram / Strength / Establishment sub-tabs.
+  Strength = KPIs + by-category fill + roll-up across sub-units (branch tiers).
+  Establishment = builder table (add/edit/delete posts, re-parent, seed from
+  categories). Wired into the project HR tab AND branch dashboards, and the
+  organogram is Focusable + Dockable (full-screen / pin).
+- Seeded establishments: proj-rwp-ring (image-1 directorate, AUTH 113/HELD 96),
+  proj-e12 (Anx-D Table of Organisation, ~33 posts with designations & scales),
+  pd-centre and hq-engrs (upper tiers). Other nodes fall back to category-
+  derived organograms.
+- Replaced the old HrTab with the cockpit. Tests +7 → web 207 passing; server 8;
+  typecheck clean; both builds green.
+
 2026-06-15 — Workspace power-user layer + OSM basemaps
 - Resizable sidebar: drag handle on its right edge sets width (200–440px,
   persisted via the workspace key, live during drag).

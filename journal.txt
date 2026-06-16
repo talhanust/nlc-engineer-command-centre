@@ -1,6 +1,47 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-16 — Editable organogram (HR staff edit on the chart)
+- The organogram is now an editing surface. An "Edit organogram" toggle on the
+  Organogram tab turns on inline affordances: ＋ add a post under any box, ✎ edit
+  (title / scale / category / auth / held / reports-to), ✕ remove (with confirm;
+  orphans re-parent to the deleted box's parent). An "Add section" tile and an
+  "Add head post" empty-state cover the structural cases.
+- Re-parenting two ways: the editor's Reports-to dropdown and drag-and-drop —
+  drag any box onto another to re-assign its parent, with a cycle guard so a box
+  can't be dropped onto its own descendant.
+- A lightweight UnitEditorPanel (inline, not a modal) handles add/edit; every
+  change persists immediately via upsertHrUnit/deleteHrUnit and the chart
+  re-renders. Editing operates on the authored establishment; if the tier was
+  still category-derived, entering edit first materialises real posts so edits
+  stick. Export buttons follow the edited set.
+- Tests +1 (add a section via the chart) → web 225; server 8; typecheck clean;
+  both builds green.
+
+2026-06-16 — HR admin: postings, skills, versioning, import/export
+- Postings & deployment (HrTransfer, global store): raise a movement for a
+  person to a post/node, run it raised→recommended→approved→effected through a
+  POSTING_CHAIN (or reject); effecting moves the person record between node
+  stores. Writes to the audit log. Cross-node target posts resolved by fetching
+  the destination node's units.
+- Skills / qualifications (HrCredential per node): PEC / licence / certification
+  / training / medical with issue + expiry; domain/credentials.ts computes
+  valid / expiring(≤90d) / expired and an attention list; Skills view shows an
+  alert banner + table. Seeded creds on proj-rwp-ring (one expiring, one
+  expired).
+- Establishment versioning (HrEstablishmentVersion per node): snapshot the
+  current TO&E as vN (draft), sanction it (approval + approver), and diff any
+  snapshot against the live establishment (added / removed / changed +
+  auth/held deltas) via domain/estabversion.ts.
+- Import / export: establishment ⇄ .xlsx/.csv (SheetJS, reusing the existing
+  workbook helpers; Anx-D style sheets parse by header into HrUnits with parent
+  resolution by title), and the organogram exports to SVG, PNG (SVG→canvas) and
+  Print/PDF via a self-contained chart generator (hrExport.ts).
+- Cockpit now: Organogram · Roster · Postings · Skills · Recruitment · Cost ·
+  Establishment · Versions (+ Org board on branches). Domain tests +4,
+  integration +3 → web 224; server 8; typecheck clean; both builds green
+  (xlsx lazy-chunked).
+
 2026-06-16 — HR platform: roster, recruitment, attendance, cost, org board
 - People layer (HrPerson): name/rank/CNIC/contact/photo/posting-date/status,
   linked to an establishment post (or bench). Provider CRUD on Local + Api.

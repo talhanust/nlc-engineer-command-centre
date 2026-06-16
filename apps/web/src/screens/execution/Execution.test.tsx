@@ -206,20 +206,49 @@ describe('progress-update workflow', () => {
   });
 });
 
-describe('HR tab + roll-up', () => {
-  it('shows project HR postings', async () => {
+describe('HR cockpit + organogram', () => {
+  it('shows the project HR establishment (organogram)', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/execution');
     await screen.findByRole('heading', { name: 'Progress S-curve' });
     await user.click(screen.getByRole('tab', { name: 'HR' }));
-    const hrTable = await screen.findByRole('table', { name: 'HR postings' });
-    expect(within(hrTable).getByText('Surveyors')).toBeInTheDocument();
+    await screen.findByText(/HR command/);
+    // Synthesised organogram surfaces the category sections.
+    expect(screen.getByText('Surveyors')).toBeInTheDocument();
   });
 
-  it('rolls HR up on the HQ NLC dashboard, excluding its own', async () => {
+  it('renders an authored organogram with people and expandable posts', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-rwp-ring/hr');
+    await screen.findByText(/HR command/);
+    expect(screen.getByText('Dir Proj (Centre)')).toBeInTheDocument();
+    expect(screen.getByText('Adm / Coord Sec')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Expand Adm \/ Coord Sec/ }));
+    expect(await screen.findByText('Coordination')).toBeInTheDocument();
+  });
+
+  it('lists the roster with named occupants', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-rwp-ring/hr');
+    await screen.findByText(/HR command/);
+    await user.click(screen.getByRole('tab', { name: 'Roster' }));
+    expect(await screen.findByText('Col (R) Imran Yousaf')).toBeInTheDocument();
+  });
+
+  it('shows a recruitment pipeline of vacancies', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-rwp-ring/hr');
+    await screen.findByText(/HR command/);
+    await user.click(screen.getByRole('tab', { name: 'Recruitment' }));
+    expect(await screen.findByRole('table', { name: 'Vacancies' })).toBeInTheDocument();
+  });
+
+  it('aggregates an org-wide HR board on a branch node', async () => {
+    const user = userEvent.setup();
     renderAt('/node/hq-nlc');
     await screen.findByRole('heading', { name: 'HQ NLC' });
-    const card = await screen.findByLabelText('HR roll-up');
-    expect(within(card).getByText(/excluded from roll-up/)).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Org board' }));
+    const board = await screen.findByRole('table', { name: 'Org-wide HR board' });
+    expect(within(board).getByText('HQ PD Centre')).toBeInTheDocument();
   });
 });

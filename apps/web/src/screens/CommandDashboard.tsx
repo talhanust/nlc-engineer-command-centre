@@ -13,7 +13,7 @@ import { Exceptions } from '../components/Exceptions';
 import { LeagueTable } from '../components/LeagueTable';
 import { BillingFunnel } from '../components/BillingFunnel';
 import { PortfolioSCurve } from '../components/PortfolioSCurve';
-import { HrRollupCard } from '../components/HrRollupCard';
+import { HrCockpit } from '../components/HrCockpit';
 import { nodeBreakdownCsv, nodeBreakdownAoa } from '../domain/exporters';
 import { downloadWorkbook } from '../components/xlsxExport';
 import { NewProjectModal } from '../components/NewProjectModal';
@@ -157,7 +157,7 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
       </div>
       <BillingFunnel totals={totals} />
       <PortfolioSCurve nodeId={nodeId} projects={filtered} />
-      <HrRollupCard nodeId={nodeId} nodes={nodes} />
+      <HrCockpit nodeId={nodeId} nodes={nodes} />
       <LevelMap nodeId={nodeId} nodes={nodes} projects={projects} hero={node.type === 'hq'} />
       {(node.type === 'hq' || node.type === 'pd_hq') && (
         <NodeLocationEditor node={node} onSaved={refresh} />

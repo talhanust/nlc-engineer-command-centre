@@ -14,7 +14,7 @@ import { ExecutionTab } from './execution/ExecutionTab';
 import { MappingTab } from './mapping/MappingTab';
 import { FinancialTab } from './financial/FinancialTab';
 import { ProcurementTab } from './procurement/ProcurementTab';
-import { HrTab } from './HrTab';
+import { HrCockpit } from '../components/HrCockpit';
 import { PhotoGallery } from '../components/PhotoGallery';
 import { LevelMap } from '../components/LevelMap';
 import { LocationEditor } from '../components/LocationEditor';
@@ -115,7 +115,7 @@ export function ProjectView({ nodeId }: { nodeId: string }) {
       {active === 'mapping' && <MappingTab projectId={nodeId} />}
       {active === 'financial' && <FinancialTab projectId={nodeId} />}
       {active === 'procurement' && <ProcurementTab projectId={nodeId} />}
-      {active === 'hr' && <HrTab nodeId={nodeId} />}
+      {active === 'hr' && <HrCockpit nodeId={nodeId} nodes={nodes} />}
     </section>
   );
 }

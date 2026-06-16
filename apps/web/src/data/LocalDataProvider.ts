@@ -6,7 +6,7 @@ import {
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
   ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval, OverheadLine,
-  InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, ProgressUpdate,
+  InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, ProgressUpdate,
 } from './types';
 import { itemAmount } from '../domain/boq';
 import { applyAction, computeNet, IPC_PIPELINE } from '../domain/ipc';
@@ -988,6 +988,112 @@ export class LocalDataProvider implements DataProvider {
     writeJson(hrKey(nodeId), all);
     return all;
   }
+  async listHrUnits(nodeId: string): Promise<HrUnit[]> {
+    return readJson(hrUnitKey(nodeId), () => SEED_HR_UNITS[nodeId] ?? []);
+  }
+  async listAllHrUnits(): Promise<HrUnit[]> {
+    const nodes = readJson<OrgNode[]>(nodesKey, () => NODES);
+    const out: HrUnit[] = [];
+    for (const n of nodes) out.push(...readJson<HrUnit[]>(hrUnitKey(n.id), () => SEED_HR_UNITS[n.id] ?? []));
+    return out;
+  }
+  async upsertHrUnit(nodeId: string, input: Omit<HrUnit, 'id' | 'nodeId'> & { id?: string }): Promise<HrUnit[]> {
+    const all = readJson<HrUnit[]>(hrUnitKey(nodeId), () => SEED_HR_UNITS[nodeId] ?? []);
+    const patch = {
+      parentId: input.parentId ?? null,
+      title: sanitize(input.title),
+      scale: input.scale ? sanitize(input.scale) : undefined,
+      category: input.category ? sanitize(input.category) : undefined,
+      auth: Math.max(0, Math.round(input.auth)),
+      held: Math.max(0, Math.round(input.held)),
+      order: input.order ?? all.length,
+    };
+    if (input.id) {
+      const u = all.find((x) => x.id === input.id);
+      if (u) Object.assign(u, patch);
+    } else {
+      all.push({ id: `hru-${nodeId}-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, nodeId, ...patch });
+    }
+    writeJson(hrUnitKey(nodeId), all);
+    return all;
+  }
+  async deleteHrUnit(nodeId: string, id: string): Promise<HrUnit[]> {
+    // Remove the unit and re-parent its orphans to the deleted unit's parent.
+    const all = readJson<HrUnit[]>(hrUnitKey(nodeId), () => SEED_HR_UNITS[nodeId] ?? []);
+    const target = all.find((u) => u.id === id);
+    const next = all
+      .filter((u) => u.id !== id)
+      .map((u) => (u.parentId === id ? { ...u, parentId: target?.parentId ?? null } : u));
+    writeJson(hrUnitKey(nodeId), next);
+    return next;
+  }
+  async listPeople(nodeId: string): Promise<HrPerson[]> {
+    return readJson(peopleKey(nodeId), () => SEED_PEOPLE[nodeId] ?? []);
+  }
+  async listAllPeople(): Promise<HrPerson[]> {
+    const nodes = readJson<OrgNode[]>(nodesKey, () => NODES);
+    const out: HrPerson[] = [];
+    for (const n of nodes) out.push(...readJson<HrPerson[]>(peopleKey(n.id), () => SEED_PEOPLE[n.id] ?? []));
+    return out;
+  }
+  async upsertPerson(nodeId: string, input: Omit<HrPerson, 'id' | 'nodeId'> & { id?: string }): Promise<HrPerson[]> {
+    const all = readJson<HrPerson[]>(peopleKey(nodeId), () => SEED_PEOPLE[nodeId] ?? []);
+    const patch = {
+      unitId: input.unitId ?? null,
+      name: sanitize(input.name),
+      rank: input.rank ? sanitize(input.rank) : undefined,
+      cnic: input.cnic ? sanitize(input.cnic) : undefined,
+      contact: input.contact ? sanitize(input.contact) : undefined,
+      photoUrl: input.photoUrl,
+      postingDate: input.postingDate,
+      status: input.status,
+      category: input.category ? sanitize(input.category) : undefined,
+    };
+    if (input.id) {
+      const p = all.find((x) => x.id === input.id);
+      if (p) Object.assign(p, patch);
+    } else {
+      all.push({ id: `per-${nodeId}-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, nodeId, ...patch });
+    }
+    writeJson(peopleKey(nodeId), all);
+    return all;
+  }
+  async deletePerson(nodeId: string, id: string): Promise<HrPerson[]> {
+    const all = readJson<HrPerson[]>(peopleKey(nodeId), () => SEED_PEOPLE[nodeId] ?? []).filter((p) => p.id !== id);
+    writeJson(peopleKey(nodeId), all);
+    return all;
+  }
+  async listRequisitions(nodeId: string): Promise<HrRequisition[]> {
+    return readJson(reqKey(nodeId), () => SEED_REQS[nodeId] ?? []);
+  }
+  async upsertRequisition(nodeId: string, input: Omit<HrRequisition, 'id' | 'nodeId' | 'raisedAt'> & { id?: string }): Promise<HrRequisition[]> {
+    const all = readJson<HrRequisition[]>(reqKey(nodeId), () => SEED_REQS[nodeId] ?? []);
+    if (input.id) {
+      const r = all.find((x) => x.id === input.id);
+      if (r) Object.assign(r, { unitId: input.unitId, title: sanitize(input.title), count: input.count, stage: input.stage, note: input.note ? sanitize(input.note) : undefined });
+    } else {
+      all.unshift({ id: `req-${nodeId}-${Date.now()}`, nodeId, unitId: input.unitId, title: sanitize(input.title), count: input.count, stage: input.stage, raisedAt: new Date().toISOString(), note: input.note ? sanitize(input.note) : undefined });
+    }
+    writeJson(reqKey(nodeId), all);
+    audit(nodeId, 'requisition', 'HR', sanitize(input.title), input.stage);
+    return all;
+  }
+  async advanceRequisition(nodeId: string, id: string): Promise<HrRequisition[]> {
+    const all = readJson<HrRequisition[]>(reqKey(nodeId), () => SEED_REQS[nodeId] ?? []);
+    const r = all.find((x) => x.id === id);
+    if (r) {
+      const i = REQ_STAGES.indexOf(r.stage);
+      if (i < REQ_STAGES.length - 1) r.stage = REQ_STAGES[i + 1];
+      audit(nodeId, 'requisition-advance', 'HR', r.title, r.stage);
+    }
+    writeJson(reqKey(nodeId), all);
+    return all;
+  }
+  async deleteRequisition(nodeId: string, id: string): Promise<HrRequisition[]> {
+    const all = readJson<HrRequisition[]>(reqKey(nodeId), () => SEED_REQS[nodeId] ?? []).filter((r) => r.id !== id);
+    writeJson(reqKey(nodeId), all);
+    return all;
+  }
   async listInventory(projectId: string): Promise<InventoryItem[]> {
     return readJson(invKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_INVENTORY : []));
   }
@@ -1062,6 +1168,10 @@ const polKey = (pid: string) => `nlc-ecc.pol.${pid}`;
 const faKey = (pid: string) => `nlc-ecc.fixedassets.${pid}`;
 const maintKey = (pid: string) => `nlc-ecc.maintenance.${pid}`;
 const hrKey = (nodeId: string) => `nlc-ecc.hr.${nodeId}`;
+const hrUnitKey = (nodeId: string) => `nlc-ecc.hrunits.${nodeId}`;
+const peopleKey = (nodeId: string) => `nlc-ecc.hrpeople.${nodeId}`;
+const reqKey = (nodeId: string) => `nlc-ecc.hrreq.${nodeId}`;
+const REQ_STAGES: HrRequisition['stage'][] = ['raised', 'advertised', 'interview', 'offer', 'joined'];
 const progressKey = (pid: string) => `nlc-ecc.progress.${pid}`;
 const SEED_HR: Record<string, HrPosting[]> = {
   'proj-f14f15': [
@@ -1073,6 +1183,128 @@ const SEED_HR: Record<string, HrPosting[]> = {
   'pd-north': [{ id: 'hr-pdn-1', nodeId: 'pd-north', category: 'HQ staff', sanctioned: 14, posted: 12 }],
   'hq-engrs': [{ id: 'hr-eng-1', nodeId: 'hq-engrs', category: 'HQ Engineers staff', sanctioned: 20, posted: 18 }],
   'hq-nlc': [{ id: 'hr-nlc-1', nodeId: 'hq-nlc', category: 'HQ NLC secretariat', sanctioned: 30, posted: 27 }],
+};
+
+// ---- HR establishment / organogram seeds ----
+type EstabDef = { id: string; parent: string | null; title: string; auth: number; held: number; scale?: string; cat?: string };
+function estab(nodeId: string, defs: EstabDef[]): HrUnit[] {
+  const order = new Map<string, number>();
+  return defs.map((d) => {
+    const key = d.parent ?? '__root';
+    const o = order.get(key) ?? 0; order.set(key, o + 1);
+    return { id: d.id, nodeId, parentId: d.parent, title: d.title, auth: d.auth, held: d.held, order: o, scale: d.scale, category: d.cat };
+  });
+}
+
+const SEED_HR_UNITS: Record<string, HrUnit[]> = {
+  // Image-1 style large project directorate (AUTH 113 / HELD 96 ≈ 85%).
+  'proj-rwp-ring': estab('proj-rwp-ring', [
+    { id: 'rr-dir', parent: null, title: 'Dir Proj (Centre)', scale: 'NLC-19', auth: 1, held: 1, cat: 'Command' },
+    { id: 'rr-dy', parent: 'rr-dir', title: 'Dy Dir Proj (Centre)', scale: 'NLC-18', auth: 1, held: 1, cat: 'Command' },
+    { id: 'rr-contract', parent: 'rr-dy', title: 'Contract Sec', auth: 7, held: 6, cat: 'Commercial' },
+    { id: 'rr-contract-qs', parent: 'rr-contract', title: 'QS Cell', scale: 'NLC-16/17', auth: 4, held: 3, cat: 'Commercial' },
+    { id: 'rr-contract-cc', parent: 'rr-contract', title: 'Contracts Cell', scale: 'NLC-14-16', auth: 3, held: 3, cat: 'Commercial' },
+    { id: 'rr-billing', parent: 'rr-dy', title: 'Billing Sec', auth: 7, held: 6, cat: 'Commercial' },
+    { id: 'rr-mfi', parent: 'rr-dy', title: 'M & FI Sec', auth: 7, held: 6, cat: 'Engineering' },
+    { id: 'rr-plans', parent: 'rr-dy', title: 'Plans Sec', auth: 5, held: 4, cat: 'Planning' },
+    { id: 'rr-hr', parent: 'rr-dy', title: 'HR Sec', auth: 7, held: 6, cat: 'Admin' },
+    { id: 'rr-fa', parent: 'rr-dy', title: 'F&A Sec', auth: 12, held: 11, cat: 'Finance' },
+    { id: 'rr-adm', parent: 'rr-dy', title: 'Adm / Coord Sec', auth: 46, held: 39, cat: 'Admin' },
+    { id: 'rr-adm-office', parent: 'rr-adm', title: 'Office Admin', scale: 'NLC-11-15', auth: 20, held: 17, cat: 'Admin' },
+    { id: 'rr-adm-coord', parent: 'rr-adm', title: 'Coordination', scale: 'NLC-14-16', auth: 14, held: 12, cat: 'Admin' },
+    { id: 'rr-adm-support', parent: 'rr-adm', title: 'Support Staff', scale: 'NLC-1-7', auth: 12, held: 10, cat: 'Support' },
+    { id: 'rr-md', parent: 'rr-dy', title: 'M&D Sec', auth: 7, held: 6, cat: 'Engineering' },
+    { id: 'rr-pe', parent: 'rr-dy', title: 'P&E Sec', auth: 4, held: 3, cat: 'Plant' },
+    { id: 'rr-rrs', parent: 'rr-dy', title: 'RR&S Sec', auth: 6, held: 5, cat: 'Engineering' },
+    { id: 'rr-proc', parent: 'rr-dy', title: 'Proc Sec', auth: 3, held: 2, cat: 'Procurement' },
+  ]),
+  // PDF (Anx D) Table of Organisation — model establishment (Grand Total 33).
+  'proj-e12': estab('proj-e12', [
+    { id: 'e12-head', parent: null, title: 'Snr Mngr Proj / DPM', scale: 'NLC-19A/19B', auth: 1, held: 1, cat: 'Command' },
+    { id: 'e12-cb', parent: 'e12-head', title: 'Contract / Billing Sec', auth: 3, held: 2, cat: 'Commercial' },
+    { id: 'e12-cb-apm', parent: 'e12-cb', title: 'APM', scale: 'NLC-17', auth: 1, held: 1, cat: 'Commercial' },
+    { id: 'e12-cb-qs', parent: 'e12-cb', title: 'SQS / QS', scale: 'NLC-17/16', auth: 1, held: 1, cat: 'Commercial' },
+    { id: 'e12-cb-aqs', parent: 'e12-cb', title: 'AQS', scale: 'NLC-14-15', auth: 1, held: 0, cat: 'Commercial' },
+    { id: 'e12-plan', parent: 'e12-head', title: 'Planning Sec', auth: 2, held: 2, cat: 'Planning' },
+    { id: 'e12-plan-se', parent: 'e12-plan', title: 'Site Engr', scale: 'NLC-14-16', auth: 1, held: 1, cat: 'Engineering' },
+    { id: 'e12-plan-erp', parent: 'e12-plan', title: 'ERP Coordinator', scale: 'NLC-14-16', auth: 1, held: 1, cat: 'Planning' },
+    { id: 'e12-mfi', parent: 'e12-head', title: 'Monitoring & Field Insp Team', auth: 2, held: 2, cat: 'Engineering' },
+    { id: 'e12-mfi-si', parent: 'e12-mfi', title: 'Site Incharge / Supvr', scale: 'NLC-14-16', auth: 2, held: 2, cat: 'Engineering' },
+    { id: 'e12-svy', parent: 'e12-head', title: 'Svy Sec', auth: 2, held: 1, cat: 'Survey' },
+    { id: 'e12-svy-snr', parent: 'e12-svy', title: 'Snr Svy / Svy', scale: 'NLC-16', auth: 1, held: 1, cat: 'Survey' },
+    { id: 'e12-svy-asst', parent: 'e12-svy', title: 'Asst Svy', scale: 'NLC-12-13', auth: 1, held: 0, cat: 'Survey' },
+    { id: 'e12-lab', parent: 'e12-head', title: 'Lab Sec', auth: 2, held: 2, cat: 'Lab' },
+    { id: 'e12-lab-tech', parent: 'e12-lab', title: 'Snr Lab Tech / Lab Tech', scale: 'NLC-12-15', auth: 1, held: 1, cat: 'Lab' },
+    { id: 'e12-lab-help', parent: 'e12-lab', title: 'Helper Lab', scale: 'NLC-5-7', auth: 1, held: 1, cat: 'Support' },
+    { id: 'e12-cad', parent: 'e12-head', title: 'Design (Auto CAD) Sec', auth: 2, held: 2, cat: 'Engineering' },
+    { id: 'e12-cad-op', parent: 'e12-cad', title: 'Snr / Auto CAD Op', scale: 'NLC-14-16', auth: 2, held: 2, cat: 'Engineering' },
+    { id: 'e12-mt', parent: 'e12-head', title: 'MT / Plant & Eqpt Sec', auth: 5, held: 4, cat: 'Plant' },
+    { id: 'e12-mt-supvr', parent: 'e12-mt', title: 'Supvr Adm / MT', scale: 'NLC-14-15', auth: 1, held: 1, cat: 'Plant' },
+    { id: 'e12-mt-store', parent: 'e12-mt', title: 'Store Supvr / Keeper', scale: 'NLC-7-15', auth: 1, held: 1, cat: 'Plant' },
+    { id: 'e12-mt-dvr', parent: 'e12-mt', title: 'Dvr LTV', scale: 'NLC-4-7', auth: 3, held: 2, cat: 'Support' },
+    { id: 'e12-fa', parent: 'e12-head', title: 'F&A Sec', auth: 1, held: 1, cat: 'Finance' },
+    { id: 'e12-fa-acct', parent: 'e12-fa', title: 'Snr Acct / Acct / Asst Acct', scale: 'NLC-14-16', auth: 1, held: 1, cat: 'Finance' },
+    { id: 'e12-adm', parent: 'e12-head', title: 'Administration Group', auth: 7, held: 6, cat: 'Admin' },
+    { id: 'e12-adm-supvr', parent: 'e12-adm', title: 'Snr Supvr Adm', scale: 'NLC-14-15', auth: 1, held: 1, cat: 'Admin' },
+    { id: 'e12-adm-supdt', parent: 'e12-adm', title: 'Snr Supdt / Supdt Office', scale: 'NLC-14-16', auth: 1, held: 1, cat: 'Admin' },
+    { id: 'e12-adm-udc', parent: 'e12-adm', title: 'UDC', scale: 'NLC-11-13', auth: 1, held: 1, cat: 'Admin' },
+    { id: 'e12-adm-elec', parent: 'e12-adm', title: 'Electrician / Generator Op', scale: 'NLC-7-9', auth: 1, held: 1, cat: 'Support' },
+    { id: 'e12-adm-cook', parent: 'e12-adm', title: 'Cook (Mess / Unit)', scale: 'NLC-5-7', auth: 1, held: 1, cat: 'Support' },
+    { id: 'e12-adm-qasid', parent: 'e12-adm', title: 'N / Qasid', scale: 'NLC-1-3', auth: 1, held: 0, cat: 'Support' },
+    { id: 'e12-adm-san', parent: 'e12-adm', title: 'Sanitary Worker', scale: 'NLC-1-2', auth: 1, held: 1, cat: 'Support' },
+    { id: 'e12-sec', parent: 'e12-head', title: 'Security Sec', auth: 6, held: 5, cat: 'Security' },
+    { id: 'e12-sec-guard', parent: 'e12-sec', title: 'Security Guard / Watchman', scale: 'NLC-1-7', auth: 6, held: 5, cat: 'Security' },
+  ]),
+  // PD HQ (Centre) directorate.
+  'pd-centre': estab('pd-centre', [
+    { id: 'pdc-pd', parent: null, title: 'Project Director (Centre)', scale: 'NLC-19/20', auth: 1, held: 1, cat: 'Command' },
+    { id: 'pdc-coord', parent: 'pdc-pd', title: 'Coordination Sec', auth: 6, held: 5, cat: 'Admin' },
+    { id: 'pdc-plan', parent: 'pdc-pd', title: 'Planning & Monitoring Sec', auth: 5, held: 4, cat: 'Planning' },
+    { id: 'pdc-contract', parent: 'pdc-pd', title: 'Contracts Sec', auth: 5, held: 4, cat: 'Commercial' },
+    { id: 'pdc-fa', parent: 'pdc-pd', title: 'F&A Sec', auth: 6, held: 5, cat: 'Finance' },
+    { id: 'pdc-adm', parent: 'pdc-pd', title: 'Administration Sec', auth: 8, held: 7, cat: 'Admin' },
+  ]),
+  // HQ Engineers.
+  'hq-engrs': estab('hq-engrs', [
+    { id: 'eng-dg', parent: null, title: 'DG (Engineers)', scale: 'NLC-20/21', auth: 1, held: 1, cat: 'Command' },
+    { id: 'eng-dir', parent: 'eng-dg', title: 'Dir (Works)', scale: 'NLC-19', auth: 1, held: 1, cat: 'Command' },
+    { id: 'eng-tech', parent: 'eng-dir', title: 'Technical Sec', auth: 8, held: 7, cat: 'Engineering' },
+    { id: 'eng-contract', parent: 'eng-dir', title: 'Contracts Sec', auth: 6, held: 5, cat: 'Commercial' },
+    { id: 'eng-qa', parent: 'eng-dir', title: 'Quality Assurance Sec', auth: 5, held: 4, cat: 'Engineering' },
+    { id: 'eng-adm', parent: 'eng-dir', title: 'Administration Sec', auth: 6, held: 5, cat: 'Admin' },
+  ]),
+};
+
+type PersonDef = { id: string; unitId: string | null; name: string; rank?: string; status?: HrPerson['status']; cnic?: string; contact?: string; posted?: string; cat?: string };
+function people(nodeId: string, defs: PersonDef[]): HrPerson[] {
+  return defs.map((d) => ({
+    id: d.id, nodeId, unitId: d.unitId, name: d.name, rank: d.rank,
+    cnic: d.cnic, contact: d.contact, postingDate: d.posted,
+    status: d.status ?? 'present', category: d.cat,
+  }));
+}
+
+const SEED_PEOPLE: Record<string, HrPerson[]> = {
+  'proj-rwp-ring': people('proj-rwp-ring', [
+    { id: 'pr-dir', unitId: 'rr-dir', name: 'Col (R) Imran Yousaf', rank: 'NLC-19', status: 'present', cnic: '37405-1111111-1', contact: '0300-1111111', posted: '2024-02-01', cat: 'Command' },
+    { id: 'pr-dy', unitId: 'rr-dy', name: 'Lt Col (R) Faisal Mehmood', rank: 'NLC-18', status: 'present', contact: '0300-2222222', posted: '2024-03-15', cat: 'Command' },
+    { id: 'pr-hr1', unitId: 'rr-hr', name: 'Sadia Rauf', rank: 'NLC-16', status: 'present', posted: '2024-05-01', cat: 'Admin' },
+    { id: 'pr-hr2', unitId: 'rr-hr', name: 'Usman Tariq', rank: 'NLC-14', status: 'leave', posted: '2024-06-10', cat: 'Admin' },
+    { id: 'pr-qs1', unitId: 'rr-contract-qs', name: 'Hamza Sheikh', rank: 'NLC-17', status: 'present', posted: '2024-04-01', cat: 'Commercial' },
+    { id: 'pr-qs2', unitId: 'rr-contract-qs', name: 'Ahsan Raza', rank: 'NLC-16', status: 'training', posted: '2024-09-01', cat: 'Commercial' },
+    { id: 'pr-fa1', unitId: 'rr-fa', name: 'Nadia Iqbal', rank: 'NLC-16', status: 'present', posted: '2024-03-20', cat: 'Finance' },
+    { id: 'pr-fa2', unitId: 'rr-fa', name: 'Kamran Aslam', rank: 'NLC-15', status: 'present', posted: '2024-07-05', cat: 'Finance' },
+    { id: 'pr-proc', unitId: 'rr-proc', name: 'Bilal Hussain', rank: 'NLC-14', status: 'detached', posted: '2024-08-12', cat: 'Procurement' },
+    { id: 'pr-bench', unitId: null, name: 'Zeeshan Ali', rank: 'NLC-14', status: 'present', posted: '2025-01-10', cat: 'Engineering' },
+  ]),
+};
+
+const SEED_REQS: Record<string, HrRequisition[]> = {
+  'proj-rwp-ring': [
+    { id: 'req-rr-1', nodeId: 'proj-rwp-ring', unitId: 'rr-proc', title: 'Proc Sec', count: 1, stage: 'advertised', raisedAt: '2025-05-02T00:00:00.000Z', note: 'Procurement assistant' },
+    { id: 'req-rr-2', nodeId: 'proj-rwp-ring', unitId: 'rr-adm-office', title: 'Office Admin', count: 3, stage: 'interview', raisedAt: '2025-04-18T00:00:00.000Z' },
+    { id: 'req-rr-3', nodeId: 'proj-rwp-ring', unitId: 'rr-fa', title: 'F&A Sec', count: 1, stage: 'raised', raisedAt: '2025-05-20T00:00:00.000Z' },
+  ],
 };
 const SEED_INVENTORY: InventoryItem[] = [
   { id: 'inv-proj-f14f15-1', projectId: 'proj-f14f15', kind: 'plant', ownership: 'integral', name: 'Excavator CAT 320', regNo: 'NLC-EX-12', status: 'operational', utilizationPct: 78 },

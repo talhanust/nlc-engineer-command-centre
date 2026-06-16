@@ -6,7 +6,7 @@ import {
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
   ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval, OverheadLine,
-  InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, ProgressUpdate,
+  InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, ProgressUpdate,
 } from './types';
 import type { BoqWorkflowState } from '../domain/boqworkflow';
 import type { BaselineWorkflowState } from '../domain/schedulebaseline';
@@ -366,6 +366,42 @@ export class ApiDataProvider implements DataProvider {
   }
   async deleteHr(nodeId: string, id: string): Promise<HrPosting[]> {
     return (await this.send<{ items: HrPosting[] }>(`/api/nodes/${nodeId}/hr/${id}`, 'DELETE', {})).items;
+  }
+  async listHrUnits(nodeId: string): Promise<HrUnit[]> {
+    return (await this.get<{ items: HrUnit[] }>(`/api/nodes/${nodeId}/hr-units`)).items;
+  }
+  async listAllHrUnits(): Promise<HrUnit[]> {
+    return (await this.get<{ items: HrUnit[] }>(`/api/hr-units`)).items;
+  }
+  async upsertHrUnit(nodeId: string, input: Omit<HrUnit, 'id' | 'nodeId'> & { id?: string }): Promise<HrUnit[]> {
+    return (await this.send<{ items: HrUnit[] }>(`/api/nodes/${nodeId}/hr-units`, 'POST', input)).items;
+  }
+  async deleteHrUnit(nodeId: string, id: string): Promise<HrUnit[]> {
+    return (await this.send<{ items: HrUnit[] }>(`/api/nodes/${nodeId}/hr-units/${id}`, 'DELETE', {})).items;
+  }
+  async listPeople(nodeId: string): Promise<HrPerson[]> {
+    return (await this.get<{ items: HrPerson[] }>(`/api/nodes/${nodeId}/people`)).items;
+  }
+  async listAllPeople(): Promise<HrPerson[]> {
+    return (await this.get<{ items: HrPerson[] }>(`/api/people`)).items;
+  }
+  async upsertPerson(nodeId: string, input: Omit<HrPerson, 'id' | 'nodeId'> & { id?: string }): Promise<HrPerson[]> {
+    return (await this.send<{ items: HrPerson[] }>(`/api/nodes/${nodeId}/people`, 'POST', input)).items;
+  }
+  async deletePerson(nodeId: string, id: string): Promise<HrPerson[]> {
+    return (await this.send<{ items: HrPerson[] }>(`/api/nodes/${nodeId}/people/${id}`, 'DELETE', {})).items;
+  }
+  async listRequisitions(nodeId: string): Promise<HrRequisition[]> {
+    return (await this.get<{ items: HrRequisition[] }>(`/api/nodes/${nodeId}/requisitions`)).items;
+  }
+  async upsertRequisition(nodeId: string, input: Omit<HrRequisition, 'id' | 'nodeId' | 'raisedAt'> & { id?: string }): Promise<HrRequisition[]> {
+    return (await this.send<{ items: HrRequisition[] }>(`/api/nodes/${nodeId}/requisitions`, 'POST', input)).items;
+  }
+  async advanceRequisition(nodeId: string, id: string): Promise<HrRequisition[]> {
+    return (await this.send<{ items: HrRequisition[] }>(`/api/nodes/${nodeId}/requisitions/${id}/advance`, 'POST', {})).items;
+  }
+  async deleteRequisition(nodeId: string, id: string): Promise<HrRequisition[]> {
+    return (await this.send<{ items: HrRequisition[] }>(`/api/nodes/${nodeId}/requisitions/${id}`, 'DELETE', {})).items;
   }
   async upsertInventory(projectId: string, input: Omit<InventoryItem, 'id' | 'projectId'> & { id?: string }): Promise<InventoryItem[]> {
     return (await this.send<{ items: InventoryItem[] }>(`/api/projects/${projectId}/inventory`, 'POST', input)).items;

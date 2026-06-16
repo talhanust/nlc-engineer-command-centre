@@ -423,6 +423,55 @@ export interface HrPosting {
   posted: number;
 }
 
+/**
+ * A post or section in a node's HR establishment — the building block of the
+ * organogram (Table of Organisation). Units form a tree via `parentId`; the
+ * head of the establishment has parentId === null. `auth` is the authorised
+ * strength (AUTH) and `held` the filled strength (HELD).
+ */
+export interface HrUnit {
+  id: string;
+  nodeId: string;
+  parentId: string | null;
+  title: string;        // 'Dir Proj (Centre)', 'HR Sec', 'Site Engr'
+  scale?: string;       // 'NLC-17', 'Lt Col / Col', etc.
+  category?: string;    // optional link to an HR category bucket
+  auth: number;
+  held: number;
+  order: number;        // sibling order within the same parent
+}
+
+export type HrPersonStatus = 'present' | 'leave' | 'detached' | 'training';
+
+/** A named individual occupying (or available for) an establishment post. */
+export interface HrPerson {
+  id: string;
+  nodeId: string;          // org node they belong to
+  unitId: string | null;   // the HrUnit post they fill (null = bench / unassigned)
+  name: string;
+  rank?: string;           // 'Maj (R)', 'NLC-17', civilian grade
+  cnic?: string;
+  contact?: string;
+  photoUrl?: string;       // optional avatar
+  postingDate?: string;    // ISO date posted in
+  status: HrPersonStatus;
+  category?: string;       // analytics mirror
+}
+
+export type ReqStage = 'raised' | 'advertised' | 'interview' | 'offer' | 'joined';
+
+/** A recruitment requisition raised against a vacant post. */
+export interface HrRequisition {
+  id: string;
+  nodeId: string;
+  unitId: string;          // post being filled
+  title: string;           // snapshot of the post title
+  count: number;           // seats sought
+  stage: ReqStage;
+  raisedAt: string;        // ISO
+  note?: string;
+}
+
 /** Inventory: integral or hired plant/equipment/vehicles + utilisation. */
 export interface InventoryItem {
   id: string;
@@ -617,6 +666,21 @@ export interface DataProvider {
   upsertHr(nodeId: string, input: Omit<HrPosting, 'id' | 'nodeId'> & { id?: string }): Promise<HrPosting[]>;
   deleteHr(nodeId: string, id: string): Promise<HrPosting[]>;
   listAllHr(): Promise<HrPosting[]>;
+  // HR establishment / organogram (per org node)
+  listHrUnits(nodeId: string): Promise<HrUnit[]>;
+  listAllHrUnits(): Promise<HrUnit[]>;
+  upsertHrUnit(nodeId: string, input: Omit<HrUnit, 'id' | 'nodeId'> & { id?: string }): Promise<HrUnit[]>;
+  deleteHrUnit(nodeId: string, id: string): Promise<HrUnit[]>;
+  // HR people / roster (per org node)
+  listPeople(nodeId: string): Promise<HrPerson[]>;
+  listAllPeople(): Promise<HrPerson[]>;
+  upsertPerson(nodeId: string, input: Omit<HrPerson, 'id' | 'nodeId'> & { id?: string }): Promise<HrPerson[]>;
+  deletePerson(nodeId: string, id: string): Promise<HrPerson[]>;
+  // HR recruitment requisitions (per org node)
+  listRequisitions(nodeId: string): Promise<HrRequisition[]>;
+  upsertRequisition(nodeId: string, input: Omit<HrRequisition, 'id' | 'nodeId' | 'raisedAt'> & { id?: string }): Promise<HrRequisition[]>;
+  advanceRequisition(nodeId: string, id: string): Promise<HrRequisition[]>;
+  deleteRequisition(nodeId: string, id: string): Promise<HrRequisition[]>;
   // Procurement — inventory / POL / fixed assets / maintenance
   listInventory(projectId: string): Promise<InventoryItem[]>;
   upsertInventory(projectId: string, input: Omit<InventoryItem, 'id' | 'projectId'> & { id?: string }): Promise<InventoryItem[]>;

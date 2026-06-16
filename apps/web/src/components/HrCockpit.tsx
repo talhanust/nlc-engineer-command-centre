@@ -8,15 +8,16 @@ import { occupancyByUnit, presentStrength } from '../domain/roster';
 import type { HrUnit, HrPosting, HrPerson, HrRequisition, OrgNode } from '../data/types';
 import { HrOrganogram } from './HrOrganogram';
 import { RosterView, RecruitmentBoard, CostView, OrgBoard } from './HrViews';
+import { SkillsView, PostingsView, VersionsView, EstablishmentIO, OrganogramExport } from './HrAdminViews';
 import { Focusable } from './Focusable';
 import { Dockable } from './Dock';
 import { KpiCard } from './KpiCard';
 
-const BASE_VIEWS = ['organogram', 'roster', 'recruitment', 'cost', 'establishment'] as const;
+const BASE_VIEWS = ['organogram', 'roster', 'postings', 'skills', 'recruitment', 'cost', 'establishment', 'versions'] as const;
 type View = (typeof BASE_VIEWS)[number] | 'board';
 const VIEW_LABEL: Record<View, string> = {
-  organogram: 'Organogram', roster: 'Roster', recruitment: 'Recruitment',
-  cost: 'Cost', establishment: 'Establishment', board: 'Org board',
+  organogram: 'Organogram', roster: 'Roster', postings: 'Postings', skills: 'Skills',
+  recruitment: 'Recruitment', cost: 'Cost', establishment: 'Establishment', versions: 'Versions', board: 'Org board',
 };
 
 export function HrCockpit({ nodeId, nodes }: { nodeId: string; nodes: OrgNode[] }) {
@@ -67,6 +68,49 @@ export function HrCockpit({ nodeId, nodes }: { nodeId: string; nodes: OrgNode[] 
     setView('roster');
   }
 
+  // ---- organogram editing ----
+  const [editing, setEditing] = useState(false);
+  const [editorUnit, setEditorUnit] = useState<HrUnit | null>(null);
+
+  async function enterEdit() {
+    if (!authored && node) { await seedFromCategories(); }
+    setEditing(true);
+  }
+  function handleAdd(parentId: string | null) {
+    setEditorUnit({ id: '', nodeId, parentId, title: '', auth: 1, held: 0, order: units.length } as HrUnit);
+  }
+  function handleEdit(u: HrUnit) { setEditorUnit(u); }
+  async function handleDelete(u: HrUnit) {
+    if (typeof window !== 'undefined' && !window.confirm(`Remove “${u.title}” from the establishment?`)) return;
+    await provider.deleteHrUnit(nodeId, u.id);
+    await load();
+  }
+  function isDescendant(units2: HrUnit[], ancestorId: string, candidateId: string): boolean {
+    let cur = units2.find((x) => x.id === candidateId);
+    const byId = new Map(units2.map((x) => [x.id, x]));
+    while (cur && cur.parentId) {
+      if (cur.parentId === ancestorId) return true;
+      cur = byId.get(cur.parentId);
+    }
+    return false;
+  }
+  async function handleReparent(unitId: string, newParentId: string | null) {
+    if (unitId === newParentId) return;
+    if (newParentId && isDescendant(units, unitId, newParentId)) return; // no cycles
+    const u = units.find((x) => x.id === unitId);
+    if (!u || u.parentId === newParentId) return;
+    await provider.upsertHrUnit(nodeId, { ...u, parentId: newParentId });
+    await load();
+  }
+  async function saveEditor(patch: Omit<HrUnit, 'nodeId'>) {
+    await provider.upsertHrUnit(nodeId, {
+      id: patch.id || undefined, parentId: patch.parentId, title: patch.title, scale: patch.scale,
+      category: patch.category, auth: patch.auth, held: patch.held, order: patch.order,
+    });
+    setEditorUnit(null);
+    await load();
+  }
+
   async function seedFromCategories() {
     if (!node) return;
     const synth = organogramFromPostings(node, postings);
@@ -99,15 +143,32 @@ export function HrCockpit({ nodeId, nodes }: { nodeId: string; nodes: OrgNode[] 
 
       {view === 'organogram' && (
         <>
-          <p className="muted small" style={{ marginTop: 0 }}>Tip: click any box to see who fills it.</p>
+          <div className="orgo-toolbar">
+            <p className="muted small" style={{ margin: 0 }}>
+              {editing ? 'Editing establishment — changes save immediately.' : 'Tip: click any box to see who fills it.'}
+            </p>
+            <div className="orgo-toolbar-actions">
+              <OrganogramExport units={editing ? units : effectiveUnits} title={`${node?.name ?? 'Establishment'}`} />
+              {editing
+                ? <button className="btn" onClick={() => { setEditing(false); setEditorUnit(null); }}>Done editing</button>
+                : <button className="btn-ghost" onClick={enterEdit} aria-label="Edit organogram">✎ Edit organogram</button>}
+            </div>
+          </div>
+
+          {editorUnit && (
+            <UnitEditorPanel unit={editorUnit} units={units} onSave={saveEditor} onCancel={() => setEditorUnit(null)} />
+          )}
+
           <Dockable title="Establishment organogram">
             {() => (
               <Focusable title="Establishment organogram">
                 {() => (
                   <div className="card">
                     <HrOrganogram
-                      units={effectiveUnits} synthesised={!authored}
-                      occupancy={people.length ? occupancy : undefined} onSelectUnit={selectUnit} selectedUnitId={selectedUnitId}
+                      units={editing ? units : effectiveUnits} synthesised={!editing && !authored}
+                      occupancy={people.length ? occupancy : undefined} onSelectUnit={editing ? undefined : selectUnit} selectedUnitId={selectedUnitId}
+                      editable={editing}
+                      onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} onReparent={handleReparent}
                     />
                   </div>
                 )}
@@ -127,6 +188,12 @@ export function HrCockpit({ nodeId, nodes }: { nodeId: string; nodes: OrgNode[] 
         <RosterView nodeId={nodeId} units={effectiveUnits} people={people} selectedUnitId={selectedUnitId} onChange={load} />
       )}
 
+      {view === 'postings' && (
+        <PostingsView nodeId={nodeId} nodeName={node?.name ?? nodeId} nodes={nodes} units={effectiveUnits} people={people} onChanged={load} />
+      )}
+
+      {view === 'skills' && <SkillsView nodeId={nodeId} people={people} />}
+
       {view === 'recruitment' && (
         <RecruitmentBoard nodeId={nodeId} units={effectiveUnits} people={people} requisitions={reqs} onChange={load} />
       )}
@@ -134,8 +201,13 @@ export function HrCockpit({ nodeId, nodes }: { nodeId: string; nodes: OrgNode[] 
       {view === 'cost' && <CostView units={effectiveUnits} people={people} />}
 
       {view === 'establishment' && (
-        <EstablishmentBuilder nodeId={nodeId} units={units} authored={authored} onChange={load} onSeed={seedFromCategories} />
+        <>
+          <EstablishmentIO nodeId={nodeId} units={units} onImported={load} />
+          <EstablishmentBuilder nodeId={nodeId} units={units} authored={authored} onChange={load} onSeed={seedFromCategories} />
+        </>
       )}
+
+      {view === 'versions' && <VersionsView nodeId={nodeId} units={units} />}
 
       {view === 'board' && branch && (
         <OrgBoard nodeId={nodeId} nodes={nodes} allUnits={allUnits} allPostings={allPostings} allPeople={allPeople} />
@@ -212,6 +284,61 @@ function EstablishmentBuilder({
             ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function UnitEditorPanel({
+  unit, units, onSave, onCancel,
+}: {
+  unit: HrUnit;
+  units: HrUnit[];
+  onSave: (patch: Omit<HrUnit, 'nodeId'>) => void;
+  onCancel: () => void;
+}) {
+  const isNew = !unit.id;
+  const [title, setTitle] = useState(unit.title);
+  const [scale, setScale] = useState(unit.scale ?? '');
+  const [category, setCategory] = useState(unit.category ?? '');
+  const [parentId, setParentId] = useState<string>(unit.parentId ?? '');
+  const [auth, setAuth] = useState(String(unit.auth ?? 0));
+  const [held, setHeld] = useState(String(unit.held ?? 0));
+
+  const byId = new Map(units.map((u) => [u.id, u]));
+  // A unit cannot become its own descendant's child.
+  const descendants = new Set<string>();
+  if (!isNew) {
+    const collect = (pid: string) => units.filter((u) => u.parentId === pid).forEach((c) => { descendants.add(c.id); collect(c.id); });
+    collect(unit.id);
+  }
+  const parentOptions = units.filter((u) => u.id !== unit.id && !descendants.has(u.id));
+  const label = (u: HrUnit) => (u.parentId && byId.has(u.parentId) ? `${byId.get(u.parentId)!.title} › ${u.title}` : u.title);
+
+  function save() {
+    if (!title.trim()) return;
+    onSave({
+      id: unit.id, parentId: parentId || null, title: title.trim(),
+      scale: scale.trim() || undefined, category: category.trim() || undefined,
+      auth: Number(auth) || 0, held: Number(held) || 0, order: unit.order,
+    });
+  }
+
+  return (
+    <div className="card unit-editor" role="dialog" aria-label={isNew ? 'Add post' : `Edit ${unit.title}`}>
+      <div className="section-head"><h3>{isNew ? 'Add post' : `Edit “${unit.title}”`}</h3></div>
+      <div className="create-row" style={{ flexWrap: 'wrap' }}>
+        <input aria-label="Post title" placeholder="Post / section title" value={title} onChange={(e) => setTitle(e.target.value)} style={{ flex: 2, minWidth: 180 }} autoFocus />
+        <select aria-label="Reports to" value={parentId} onChange={(e) => setParentId(e.target.value)} style={{ flex: 1, minWidth: 160 }}>
+          <option value="">— Head (no parent) —</option>
+          {parentOptions.map((u) => <option key={u.id} value={u.id}>{label(u)}</option>)}
+        </select>
+        <input aria-label="Scale" placeholder="Scale" value={scale} onChange={(e) => setScale(e.target.value)} style={{ width: 120 }} />
+        <input aria-label="Category" placeholder="Category" value={category} onChange={(e) => setCategory(e.target.value)} style={{ width: 130 }} />
+        <label className="field-inline">Auth <input aria-label="Authorised" value={auth} onChange={(e) => setAuth(e.target.value)} style={{ width: 56 }} /></label>
+        <label className="field-inline">Held <input aria-label="Held" value={held} onChange={(e) => setHeld(e.target.value)} style={{ width: 56 }} /></label>
+        <button className="btn" onClick={save}>{isNew ? 'Add' : 'Save'}</button>
+        <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+      </div>
     </div>
   );
 }

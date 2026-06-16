@@ -10,6 +10,12 @@ interface OrgoCtx {
   occupancy?: Map<string, Occupancy>;
   onSelectUnit?: (unitId: string) => void;
   selectedUnitId?: string;
+  // editing
+  editable?: boolean;
+  onAdd?: (parentId: string | null) => void;
+  onEdit?: (unit: HrUnit) => void;
+  onDelete?: (unit: HrUnit) => void;
+  onReparent?: (unitId: string, newParentId: string | null) => void;
 }
 const Ctx = createContext<OrgoCtx>({});
 
@@ -54,22 +60,56 @@ function SeatChip({ node }: { node: OrgoNode }) {
   );
 }
 
+/** Add / edit / delete affordances shown on each box in edit mode. */
+function EditTools({ node, allowAdd = true }: { node: OrgoNode; allowAdd?: boolean }) {
+  const { editable, onAdd, onEdit, onDelete } = useContext(Ctx);
+  if (!editable) return null;
+  const bare: HrUnit = {
+    id: node.id, nodeId: node.nodeId, parentId: node.parentId, title: node.title,
+    scale: node.scale, category: node.category, auth: node.auth, held: node.held, order: node.order,
+  };
+  return (
+    <span className="orgo-edit-tools no-print" onClick={(e) => e.stopPropagation()}>
+      {allowAdd && <button className="orgo-edit-btn" title="Add post under this" aria-label={`Add post under ${node.title}`} onClick={() => onAdd?.(node.id)}>＋</button>}
+      <button className="orgo-edit-btn" title="Edit" aria-label={`Edit ${node.title}`} onClick={() => onEdit?.(bare)}>✎</button>
+      <button className="orgo-edit-btn danger" title="Delete" aria-label={`Delete ${node.title}`} onClick={() => onDelete?.(bare)}>✕</button>
+    </span>
+  );
+}
+
+function useDnd(node: OrgoNode) {
+  const { editable, onReparent } = useContext(Ctx);
+  if (!editable || !onReparent) return {};
+  return {
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData('text/hru', node.id); e.stopPropagation(); },
+    onDragOver: (e: React.DragEvent) => { if (e.dataTransfer.types.includes('text/hru')) e.preventDefault(); },
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault(); e.stopPropagation();
+      const id = e.dataTransfer.getData('text/hru');
+      if (id && id !== node.id) onReparent(id, node.id);
+    },
+  };
+}
+
 function PostRow({ node, depth }: { node: OrgoNode; depth: number }) {
-  const { onSelectUnit, selectedUnitId } = useContext(Ctx);
+  const { onSelectUnit, selectedUnitId, editable } = useContext(Ctx);
   const [open, setOpen] = useState(false);
   const s = rolledStrength(node);
   const hasKids = node.children.length > 0;
   const selected = selectedUnitId === node.id;
+  const dnd = useDnd(node);
   return (
     <>
       <div
-        className={`orgo-post${hasKids ? ' has-kids' : ''}${selected ? ' selected' : ''}`}
+        className={`orgo-post${hasKids ? ' has-kids' : ''}${selected ? ' selected' : ''}${editable ? ' editable' : ''}`}
         style={{ paddingLeft: 10 + depth * 14 }}
         onClick={() => { onSelectUnit?.(node.id); if (hasKids) setOpen((o) => !o); }}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectUnit?.(node.id); if (hasKids) setOpen((o) => !o); } }}
         aria-expanded={hasKids ? open : undefined}
+        {...dnd}
       >
         <span className="orgo-post-main">
           {hasKids && <span className={`orgo-caret${open ? ' open' : ''}`}>▸</span>}
@@ -80,6 +120,7 @@ function PostRow({ node, depth }: { node: OrgoNode; depth: number }) {
         <span className="orgo-post-right">
           <SeatChip node={node} />
           <span className="orgo-post-num">{s.held}/{s.auth}</span>
+          <EditTools node={node} />
         </span>
       </div>
       {hasKids && open && node.children.map((c) => <PostRow key={c.id} node={c} depth={depth + 1} />)}
@@ -88,30 +129,35 @@ function PostRow({ node, depth }: { node: OrgoNode; depth: number }) {
 }
 
 function SectionCard({ node }: { node: OrgoNode }) {
-  const { onSelectUnit, selectedUnitId } = useContext(Ctx);
+  const { onSelectUnit, selectedUnitId, editable } = useContext(Ctx);
   const [open, setOpen] = useState(false);
   const s = rolledStrength(node);
   const hasKids = node.children.length > 0;
   const vacancy = s.auth - s.held;
   const selected = selectedUnitId === node.id;
+  const dnd = useDnd(node);
   return (
     <div
-      className={`orgo-section status-${fillStatus(s.held, s.auth)}${selected ? ' selected' : ''}`}
+      className={`orgo-section status-${fillStatus(s.held, s.auth)}${selected ? ' selected' : ''}${editable ? ' editable' : ''}`}
       onClick={() => onSelectUnit?.(node.id)}
+      {...dnd}
     >
-      <button
-        className="orgo-section-head"
-        onClick={(e) => { if (hasKids) { e.stopPropagation(); setOpen((o) => !o); } }}
-        aria-expanded={hasKids ? open : undefined}
-        aria-label={hasKids ? `${open ? 'Collapse' : 'Expand'} ${node.title}` : node.title}
-        style={{ cursor: hasKids ? 'pointer' : 'default' }}
-      >
-        <span className="orgo-section-title">
-          {node.title}
-          {node.scale && <span className="orgo-scale">{node.scale}</span>}
-        </span>
-        {hasKids && <span className={`orgo-caret${open ? ' open' : ''}`}>▸</span>}
-      </button>
+      <div className="orgo-section-top">
+        <button
+          className="orgo-section-head"
+          onClick={(e) => { if (hasKids) { e.stopPropagation(); setOpen((o) => !o); } }}
+          aria-expanded={hasKids ? open : undefined}
+          aria-label={hasKids ? `${open ? 'Collapse' : 'Expand'} ${node.title}` : node.title}
+          style={{ cursor: hasKids ? 'pointer' : 'default' }}
+        >
+          <span className="orgo-section-title">
+            {node.title}
+            {node.scale && <span className="orgo-scale">{node.scale}</span>}
+          </span>
+          {hasKids && <span className={`orgo-caret${open ? ' open' : ''}`}>▸</span>}
+        </button>
+        <EditTools node={node} />
+      </div>
       <FillBar held={s.held} auth={s.auth} />
       <div className="orgo-section-foot">
         <span className="orgo-foot-pct">{fillPct(s.held, s.auth)}% filled</span>
@@ -131,18 +177,29 @@ function SectionCard({ node }: { node: OrgoNode }) {
 
 export function HrOrganogram({
   units, synthesised = false, occupancy, onSelectUnit, selectedUnitId,
+  editable = false, onAdd, onEdit, onDelete, onReparent,
 }: {
   units: HrUnit[]; synthesised?: boolean;
   occupancy?: Map<string, Occupancy>;
   onSelectUnit?: (unitId: string) => void;
   selectedUnitId?: string;
+  editable?: boolean;
+  onAdd?: (parentId: string | null) => void;
+  onEdit?: (unit: HrUnit) => void;
+  onDelete?: (unit: HrUnit) => void;
+  onReparent?: (unitId: string, newParentId: string | null) => void;
 }) {
   const roots = useMemo(() => buildOrganogram(units), [units]);
   const totals = useMemo(() => establishmentTotals(roots), [roots]);
   const { spine, fanout } = useMemo(() => commandSpine(roots), [roots]);
 
   if (units.length === 0) {
-    return <p className="muted">No establishment defined for this tier yet. Add posts in the Establishment tab to build the organogram.</p>;
+    return (
+      <div className="orgo-empty-edit">
+        <p className="muted">No establishment defined for this tier yet.</p>
+        {editable && <button className="btn" onClick={() => onAdd?.(null)}>Add head post</button>}
+      </div>
+    );
   }
 
   const sections = fanout ? fanout.children : roots;
@@ -151,8 +208,8 @@ export function HrOrganogram({
   const present = occupancy ? [...occupancy.values()].reduce((a, o) => a + o.present, 0) : null;
 
   return (
-    <Ctx.Provider value={{ occupancy, onSelectUnit, selectedUnitId }}>
-      <div className="orgo">
+    <Ctx.Provider value={{ occupancy, onSelectUnit, selectedUnitId, editable, onAdd, onEdit, onDelete, onReparent }}>
+      <div className={`orgo${editable ? ' orgo-editing' : ''}`}>
         <div className="orgo-summary">
           <div className="orgo-summary-cell"><span className="orgo-summary-label">AUTH</span><span className="orgo-summary-val">{totals.auth}</span></div>
           <div className="orgo-summary-cell"><span className="orgo-summary-label">HELD</span><span className="orgo-summary-val">{totals.held}</span></div>
@@ -161,6 +218,8 @@ export function HrOrganogram({
           <div className="orgo-summary-cell"><span className="orgo-summary-label">VACANT</span><span className="orgo-summary-val">{totals.auth - totals.held}</span></div>
           {synthesised && <span className="orgo-synth-tag">derived from category strengths</span>}
         </div>
+
+        {editable && <p className="orgo-edit-hint small muted no-print">Editing — use ＋ to add, ✎ to edit, ✕ to remove. Drag a box onto another to re-assign its parent.</p>}
 
         {spine.length > 0 && (
           <div className="orgo-spine">
@@ -177,6 +236,7 @@ export function HrOrganogram({
                     <span className="orgo-command-title">{u.title}</span>
                     {u.scale && <span className="orgo-scale light">{u.scale}</span>}
                     <span className="orgo-command-num">{s.held}/{s.auth}</span>
+                    <EditTools node={u} />
                   </div>
                   {(i < spine.length - 1 || sections.length > 0) && <div className="orgo-connector" />}
                 </div>
@@ -190,6 +250,11 @@ export function HrOrganogram({
             <div className="orgo-branch-bar" />
             <div className="orgo-grid">
               {sections.map((c) => <SectionCard key={c.id} node={c} />)}
+              {editable && (
+                <button className="orgo-add-section no-print" onClick={() => onAdd?.(fanout ? fanout.id : (roots[0]?.id ?? null))} aria-label="Add section">
+                  <span className="orgo-add-plus">＋</span><span className="small">Add section</span>
+                </button>
+              )}
             </div>
           </>
         )}

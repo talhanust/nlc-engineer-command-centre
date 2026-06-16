@@ -6,7 +6,7 @@ import {
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
   ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval, OverheadLine,
-  InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, ProgressUpdate,
+  InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
 import { itemAmount } from '../domain/boq';
 import { applyAction, computeNet, IPC_PIPELINE } from '../domain/ipc';
@@ -1094,6 +1094,123 @@ export class LocalDataProvider implements DataProvider {
     writeJson(reqKey(nodeId), all);
     return all;
   }
+  async listCredentials(nodeId: string): Promise<HrCredential[]> {
+    return readJson(credKey(nodeId), () => SEED_CREDS[nodeId] ?? []);
+  }
+  async upsertCredential(nodeId: string, input: Omit<HrCredential, 'id' | 'nodeId'> & { id?: string }): Promise<HrCredential[]> {
+    const all = readJson<HrCredential[]>(credKey(nodeId), () => SEED_CREDS[nodeId] ?? []);
+    const patch = {
+      personId: input.personId, personName: sanitize(input.personName), kind: input.kind,
+      ref: sanitize(input.ref), issued: input.issued, expires: input.expires,
+      note: input.note ? sanitize(input.note) : undefined,
+    };
+    if (input.id) {
+      const c = all.find((x) => x.id === input.id);
+      if (c) Object.assign(c, patch);
+    } else {
+      all.unshift({ id: `cred-${nodeId}-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, nodeId, ...patch });
+    }
+    writeJson(credKey(nodeId), all);
+    return all;
+  }
+  async deleteCredential(nodeId: string, id: string): Promise<HrCredential[]> {
+    const all = readJson<HrCredential[]>(credKey(nodeId), () => SEED_CREDS[nodeId] ?? []).filter((c) => c.id !== id);
+    writeJson(credKey(nodeId), all);
+    return all;
+  }
+  async listTransfersForNode(nodeId: string): Promise<HrTransfer[]> {
+    const all = readJson<HrTransfer[]>(TRANSFERS_KEY, () => SEED_TRANSFERS);
+    return all.filter((t) => t.fromNodeId === nodeId || t.toNodeId === nodeId);
+  }
+  async raiseTransfer(input: Omit<HrTransfer, 'id' | 'stage' | 'raisedAt'>): Promise<HrTransfer[]> {
+    const all = readJson<HrTransfer[]>(TRANSFERS_KEY, () => SEED_TRANSFERS);
+    all.unshift({
+      ...input, id: `mov-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      personName: sanitize(input.personName), toUnitTitle: sanitize(input.toUnitTitle),
+      reason: input.reason ? sanitize(input.reason) : undefined,
+      stage: 'raised', raisedAt: new Date().toISOString(),
+    });
+    writeJson(TRANSFERS_KEY, all);
+    audit(input.toNodeId, 'posting-raise', 'HR', input.personName, `${input.fromNodeName} → ${input.toNodeName}`);
+    return all.filter((t) => t.fromNodeId === input.fromNodeId || t.toNodeId === input.toNodeId);
+  }
+  async advanceTransfer(id: string): Promise<HrTransfer[]> {
+    const all = readJson<HrTransfer[]>(TRANSFERS_KEY, () => SEED_TRANSFERS);
+    const t = all.find((x) => x.id === id);
+    if (t && t.stage !== 'rejected' && t.stage !== 'effected') {
+      const i = TRANSFER_ORDER.indexOf(t.stage);
+      if (i >= 0 && i < TRANSFER_ORDER.length - 2) { t.stage = TRANSFER_ORDER[i + 1]; audit(t.toNodeId, 'posting-advance', 'HR', t.personName, t.stage); }
+    }
+    writeJson(TRANSFERS_KEY, all);
+    return all.filter((x) => t && (x.fromNodeId === t.fromNodeId || x.toNodeId === t.toNodeId));
+  }
+  async rejectTransfer(id: string): Promise<HrTransfer[]> {
+    const all = readJson<HrTransfer[]>(TRANSFERS_KEY, () => SEED_TRANSFERS);
+    const t = all.find((x) => x.id === id);
+    if (t) { t.stage = 'rejected'; audit(t.toNodeId, 'posting-reject', 'HR', t.personName, ''); }
+    writeJson(TRANSFERS_KEY, all);
+    return all.filter((x) => t && (x.fromNodeId === t.fromNodeId || x.toNodeId === t.toNodeId));
+  }
+  async effectTransfer(id: string): Promise<HrTransfer[]> {
+    const all = readJson<HrTransfer[]>(TRANSFERS_KEY, () => SEED_TRANSFERS);
+    const t = all.find((x) => x.id === id);
+    if (t && t.stage === 'approved') {
+      // Move the person record between node stores.
+      const fromPeople = readJson<HrPerson[]>(peopleKey(t.fromNodeId), () => SEED_PEOPLE[t.fromNodeId] ?? []);
+      const person = fromPeople.find((p) => p.id === t.personId);
+      if (person) {
+        if (t.fromNodeId === t.toNodeId) {
+          person.unitId = t.toUnitId;
+        } else {
+          const remaining = fromPeople.filter((p) => p.id !== t.personId);
+          writeJson(peopleKey(t.fromNodeId), remaining);
+          const toPeople = readJson<HrPerson[]>(peopleKey(t.toNodeId), () => SEED_PEOPLE[t.toNodeId] ?? []);
+          toPeople.push({ ...person, nodeId: t.toNodeId, unitId: t.toUnitId });
+          writeJson(peopleKey(t.toNodeId), toPeople);
+        }
+        if (t.fromNodeId === t.toNodeId) writeJson(peopleKey(t.fromNodeId), fromPeople);
+      }
+      t.stage = 'effected';
+      t.effectiveDate = new Date().toISOString().slice(0, 10);
+      audit(t.toNodeId, 'posting-effect', 'HR', t.personName, `${t.fromNodeName} → ${t.toNodeName}`);
+    }
+    writeJson(TRANSFERS_KEY, all);
+    return all.filter((x) => t && (x.fromNodeId === t.fromNodeId || x.toNodeId === t.toNodeId));
+  }
+  async deleteTransfer(id: string): Promise<HrTransfer[]> {
+    const all = readJson<HrTransfer[]>(TRANSFERS_KEY, () => SEED_TRANSFERS);
+    const t = all.find((x) => x.id === id);
+    const next = all.filter((x) => x.id !== id);
+    writeJson(TRANSFERS_KEY, next);
+    return next.filter((x) => t && (x.fromNodeId === t.fromNodeId || x.toNodeId === t.toNodeId));
+  }
+  async listEstablishmentVersions(nodeId: string): Promise<HrEstablishmentVersion[]> {
+    return readJson(versionKey(nodeId), () => []);
+  }
+  async snapshotEstablishment(nodeId: string, label: string): Promise<HrEstablishmentVersion[]> {
+    const all = readJson<HrEstablishmentVersion[]>(versionKey(nodeId), () => []);
+    const units = readJson<HrUnit[]>(hrUnitKey(nodeId), () => SEED_HR_UNITS[nodeId] ?? []);
+    const version = (all.reduce((m, v) => Math.max(m, v.version), 0)) + 1;
+    all.unshift({
+      id: `ver-${nodeId}-${Date.now()}`, nodeId, version, label: sanitize(label) || `Snapshot v${version}`,
+      status: 'draft', createdAt: new Date().toISOString(), snapshot: JSON.parse(JSON.stringify(units)),
+    });
+    writeJson(versionKey(nodeId), all);
+    audit(nodeId, 'establishment-snapshot', 'HR', `v${version}`, label);
+    return all;
+  }
+  async sanctionEstablishmentVersion(nodeId: string, id: string, approvedBy: string): Promise<HrEstablishmentVersion[]> {
+    const all = readJson<HrEstablishmentVersion[]>(versionKey(nodeId), () => []);
+    const v = all.find((x) => x.id === id);
+    if (v) { v.status = 'sanctioned'; v.approvedBy = sanitize(approvedBy); audit(nodeId, 'establishment-sanction', 'HR', `v${v.version}`, approvedBy); }
+    writeJson(versionKey(nodeId), all);
+    return all;
+  }
+  async deleteEstablishmentVersion(nodeId: string, id: string): Promise<HrEstablishmentVersion[]> {
+    const all = readJson<HrEstablishmentVersion[]>(versionKey(nodeId), () => []).filter((v) => v.id !== id);
+    writeJson(versionKey(nodeId), all);
+    return all;
+  }
   async listInventory(projectId: string): Promise<InventoryItem[]> {
     return readJson(invKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_INVENTORY : []));
   }
@@ -1171,7 +1288,11 @@ const hrKey = (nodeId: string) => `nlc-ecc.hr.${nodeId}`;
 const hrUnitKey = (nodeId: string) => `nlc-ecc.hrunits.${nodeId}`;
 const peopleKey = (nodeId: string) => `nlc-ecc.hrpeople.${nodeId}`;
 const reqKey = (nodeId: string) => `nlc-ecc.hrreq.${nodeId}`;
+const credKey = (nodeId: string) => `nlc-ecc.hrcreds.${nodeId}`;
+const versionKey = (nodeId: string) => `nlc-ecc.hrversions.${nodeId}`;
+const TRANSFERS_KEY = 'nlc-ecc.hrtransfers';
 const REQ_STAGES: HrRequisition['stage'][] = ['raised', 'advertised', 'interview', 'offer', 'joined'];
+const TRANSFER_ORDER: HrTransfer['stage'][] = ['raised', 'recommended', 'approved', 'effected'];
 const progressKey = (pid: string) => `nlc-ecc.progress.${pid}`;
 const SEED_HR: Record<string, HrPosting[]> = {
   'proj-f14f15': [
@@ -1306,6 +1427,24 @@ const SEED_REQS: Record<string, HrRequisition[]> = {
     { id: 'req-rr-3', nodeId: 'proj-rwp-ring', unitId: 'rr-fa', title: 'F&A Sec', count: 1, stage: 'raised', raisedAt: '2025-05-20T00:00:00.000Z' },
   ],
 };
+
+const SEED_CREDS: Record<string, HrCredential[]> = {
+  'proj-rwp-ring': [
+    { id: 'cred-rr-1', nodeId: 'proj-rwp-ring', personId: 'pr-qs1', personName: 'Hamza Sheikh', kind: 'PEC', ref: 'CIVIL/12345', issued: '2019-03-01', expires: '2027-03-01' },
+    { id: 'cred-rr-2', nodeId: 'proj-rwp-ring', personId: 'pr-dir', personName: 'Col (R) Imran Yousaf', kind: 'License', ref: 'LTV-PB-9981', issued: '2022-07-10', expires: '2026-07-31' },
+    { id: 'cred-rr-3', nodeId: 'proj-rwp-ring', personId: 'pr-fa1', personName: 'Nadia Iqbal', kind: 'Certification', ref: 'ACCA-778120', issued: '2020-01-15' },
+    { id: 'cred-rr-4', nodeId: 'proj-rwp-ring', personId: 'pr-proc', personName: 'Bilal Hussain', kind: 'Medical', ref: 'MED-2025-04', issued: '2025-04-01', expires: '2026-04-01' },
+  ],
+};
+
+const SEED_TRANSFERS: HrTransfer[] = [
+  {
+    id: 'mov-seed-1', personId: 'pr-bench', personName: 'Zeeshan Ali',
+    fromNodeId: 'proj-rwp-ring', fromNodeName: 'Rawalpindi Ring Road', fromUnitId: null,
+    toNodeId: 'proj-rwp-ring', toNodeName: 'Rawalpindi Ring Road', toUnitId: 'rr-mfi', toUnitTitle: 'M & FI Sec',
+    stage: 'recommended', reason: 'Bench to field inspection', raisedAt: '2025-05-25T00:00:00.000Z',
+  },
+];
 const SEED_INVENTORY: InventoryItem[] = [
   { id: 'inv-proj-f14f15-1', projectId: 'proj-f14f15', kind: 'plant', ownership: 'integral', name: 'Excavator CAT 320', regNo: 'NLC-EX-12', status: 'operational', utilizationPct: 78 },
   { id: 'inv-proj-f14f15-2', projectId: 'proj-f14f15', kind: 'vehicle', ownership: 'hired', name: 'Dump truck (10m³)', regNo: 'LES-4471', status: 'operational', utilizationPct: 64 },

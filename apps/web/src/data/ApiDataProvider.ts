@@ -6,7 +6,7 @@ import {
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
   ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval, OverheadLine,
-  InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, ProgressUpdate,
+  InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
 import type { BoqWorkflowState } from '../domain/boqworkflow';
 import type { BaselineWorkflowState } from '../domain/schedulebaseline';
@@ -402,6 +402,45 @@ export class ApiDataProvider implements DataProvider {
   }
   async deleteRequisition(nodeId: string, id: string): Promise<HrRequisition[]> {
     return (await this.send<{ items: HrRequisition[] }>(`/api/nodes/${nodeId}/requisitions/${id}`, 'DELETE', {})).items;
+  }
+  async listCredentials(nodeId: string): Promise<HrCredential[]> {
+    return (await this.get<{ items: HrCredential[] }>(`/api/nodes/${nodeId}/credentials`)).items;
+  }
+  async upsertCredential(nodeId: string, input: Omit<HrCredential, 'id' | 'nodeId'> & { id?: string }): Promise<HrCredential[]> {
+    return (await this.send<{ items: HrCredential[] }>(`/api/nodes/${nodeId}/credentials`, 'POST', input)).items;
+  }
+  async deleteCredential(nodeId: string, id: string): Promise<HrCredential[]> {
+    return (await this.send<{ items: HrCredential[] }>(`/api/nodes/${nodeId}/credentials/${id}`, 'DELETE', {})).items;
+  }
+  async listTransfersForNode(nodeId: string): Promise<HrTransfer[]> {
+    return (await this.get<{ items: HrTransfer[] }>(`/api/nodes/${nodeId}/transfers`)).items;
+  }
+  async raiseTransfer(input: Omit<HrTransfer, 'id' | 'stage' | 'raisedAt'>): Promise<HrTransfer[]> {
+    return (await this.send<{ items: HrTransfer[] }>(`/api/transfers`, 'POST', input)).items;
+  }
+  async advanceTransfer(id: string): Promise<HrTransfer[]> {
+    return (await this.send<{ items: HrTransfer[] }>(`/api/transfers/${id}/advance`, 'POST', {})).items;
+  }
+  async rejectTransfer(id: string): Promise<HrTransfer[]> {
+    return (await this.send<{ items: HrTransfer[] }>(`/api/transfers/${id}/reject`, 'POST', {})).items;
+  }
+  async effectTransfer(id: string): Promise<HrTransfer[]> {
+    return (await this.send<{ items: HrTransfer[] }>(`/api/transfers/${id}/effect`, 'POST', {})).items;
+  }
+  async deleteTransfer(id: string): Promise<HrTransfer[]> {
+    return (await this.send<{ items: HrTransfer[] }>(`/api/transfers/${id}`, 'DELETE', {})).items;
+  }
+  async listEstablishmentVersions(nodeId: string): Promise<HrEstablishmentVersion[]> {
+    return (await this.get<{ items: HrEstablishmentVersion[] }>(`/api/nodes/${nodeId}/establishment-versions`)).items;
+  }
+  async snapshotEstablishment(nodeId: string, label: string): Promise<HrEstablishmentVersion[]> {
+    return (await this.send<{ items: HrEstablishmentVersion[] }>(`/api/nodes/${nodeId}/establishment-versions`, 'POST', { label })).items;
+  }
+  async sanctionEstablishmentVersion(nodeId: string, id: string, approvedBy: string): Promise<HrEstablishmentVersion[]> {
+    return (await this.send<{ items: HrEstablishmentVersion[] }>(`/api/nodes/${nodeId}/establishment-versions/${id}/sanction`, 'POST', { approvedBy })).items;
+  }
+  async deleteEstablishmentVersion(nodeId: string, id: string): Promise<HrEstablishmentVersion[]> {
+    return (await this.send<{ items: HrEstablishmentVersion[] }>(`/api/nodes/${nodeId}/establishment-versions/${id}`, 'DELETE', {})).items;
   }
   async upsertInventory(projectId: string, input: Omit<InventoryItem, 'id' | 'projectId'> & { id?: string }): Promise<InventoryItem[]> {
     return (await this.send<{ items: InventoryItem[] }>(`/api/projects/${projectId}/inventory`, 'POST', input)).items;

@@ -472,6 +472,53 @@ export interface HrRequisition {
   note?: string;
 }
 
+export type CredentialKind = 'PEC' | 'License' | 'Certification' | 'Training' | 'Medical';
+
+/** A qualification / licence held by a person, with an optional expiry. */
+export interface HrCredential {
+  id: string;
+  nodeId: string;
+  personId: string;
+  personName: string;      // snapshot for display
+  kind: CredentialKind;
+  ref: string;             // PEC no, licence no, certificate id
+  issued?: string;         // ISO date
+  expires?: string;        // ISO date (blank = non-expiring)
+  note?: string;
+}
+
+export type TransferStage = 'raised' | 'recommended' | 'approved' | 'effected' | 'rejected';
+
+/** A posting / deployment order moving a person between posts or nodes. */
+export interface HrTransfer {
+  id: string;
+  personId: string;
+  personName: string;
+  fromNodeId: string;
+  fromNodeName: string;
+  fromUnitId: string | null;
+  toNodeId: string;
+  toNodeName: string;
+  toUnitId: string | null;
+  toUnitTitle: string;
+  stage: TransferStage;
+  reason?: string;
+  raisedAt: string;        // ISO
+  effectiveDate?: string;  // ISO when effected
+}
+
+/** A captured snapshot of a node's establishment (TO&E) for versioning. */
+export interface HrEstablishmentVersion {
+  id: string;
+  nodeId: string;
+  version: number;         // v1, v2, …
+  label: string;
+  status: 'draft' | 'sanctioned';
+  createdAt: string;       // ISO
+  approvedBy?: string;
+  snapshot: HrUnit[];
+}
+
 /** Inventory: integral or hired plant/equipment/vehicles + utilisation. */
 export interface InventoryItem {
   id: string;
@@ -681,6 +728,22 @@ export interface DataProvider {
   upsertRequisition(nodeId: string, input: Omit<HrRequisition, 'id' | 'nodeId' | 'raisedAt'> & { id?: string }): Promise<HrRequisition[]>;
   advanceRequisition(nodeId: string, id: string): Promise<HrRequisition[]>;
   deleteRequisition(nodeId: string, id: string): Promise<HrRequisition[]>;
+  // HR credentials / qualifications (per org node)
+  listCredentials(nodeId: string): Promise<HrCredential[]>;
+  upsertCredential(nodeId: string, input: Omit<HrCredential, 'id' | 'nodeId'> & { id?: string }): Promise<HrCredential[]>;
+  deleteCredential(nodeId: string, id: string): Promise<HrCredential[]>;
+  // HR postings / deployment (cross-node transfers, global store)
+  listTransfersForNode(nodeId: string): Promise<HrTransfer[]>;
+  raiseTransfer(input: Omit<HrTransfer, 'id' | 'stage' | 'raisedAt'>): Promise<HrTransfer[]>;
+  advanceTransfer(id: string): Promise<HrTransfer[]>;
+  rejectTransfer(id: string): Promise<HrTransfer[]>;
+  effectTransfer(id: string): Promise<HrTransfer[]>;
+  deleteTransfer(id: string): Promise<HrTransfer[]>;
+  // HR establishment versioning (per org node)
+  listEstablishmentVersions(nodeId: string): Promise<HrEstablishmentVersion[]>;
+  snapshotEstablishment(nodeId: string, label: string): Promise<HrEstablishmentVersion[]>;
+  sanctionEstablishmentVersion(nodeId: string, id: string, approvedBy: string): Promise<HrEstablishmentVersion[]>;
+  deleteEstablishmentVersion(nodeId: string, id: string): Promise<HrEstablishmentVersion[]>;
   // Procurement — inventory / POL / fixed assets / maintenance
   listInventory(projectId: string): Promise<InventoryItem[]>;
   upsertInventory(projectId: string, input: Omit<InventoryItem, 'id' | 'projectId'> & { id?: string }): Promise<InventoryItem[]>;

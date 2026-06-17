@@ -18,13 +18,15 @@ export function HrAvatar({ person, size = 38 }: { person: { name: string; photoU
 }
 
 export function PersonCard({
-  person, onEdit, onRemove,
-}: { person: HrPerson; onEdit?: () => void; onRemove?: () => void }) {
+  person, onEdit, onRemove, onOpen,
+}: { person: HrPerson; onEdit?: () => void; onRemove?: () => void; onOpen?: () => void }) {
   return (
     <div className={`person-card status-person-${person.status}`}>
       <HrAvatar person={person} size={40} />
       <div className="person-main">
-        <div className="person-name">{person.name}</div>
+        {onOpen
+          ? <button className="person-name person-name-btn" onClick={onOpen} aria-label={`Open ${person.name}`}>{person.name}</button>
+          : <div className="person-name">{person.name}</div>}
         <div className="person-sub muted small">{person.rank ?? '—'}{person.category ? ` · ${person.category}` : ''}</div>
         <div className="person-meta">
           <span className={`person-status st-${person.status}`}>{STATUS_LABEL[person.status]}</span>

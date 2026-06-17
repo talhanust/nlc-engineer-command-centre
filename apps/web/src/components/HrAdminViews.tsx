@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../data/DataContext';
+import { useToast } from './Toast';
 import type {
   HrUnit, HrPerson, HrCredential, HrTransfer, HrEstablishmentVersion, CredentialKind, OrgNode,
 } from '../data/types';
@@ -15,6 +16,7 @@ import { readSheetRows } from './xlsxImport';
 // =============================================================== Skills =====
 export function SkillsView({ nodeId, people }: { nodeId: string; people: HrPerson[] }) {
   const { provider } = useData();
+  const { toast } = useToast();
   const [creds, setCreds] = useState<HrCredential[]>([]);
   const [personId, setPersonId] = useState('');
   const [kind, setKind] = useState<CredentialKind>('PEC');
@@ -32,8 +34,18 @@ export function SkillsView({ nodeId, people }: { nodeId: string; people: HrPerso
     if (!personId || !ref.trim()) return;
     await provider.upsertCredential(nodeId, { personId, personName: personName(personId), kind, ref: ref.trim(), issued: issued || undefined, expires: expires || undefined });
     setRef(''); setIssued(''); setExpires(''); await load();
+    toast({ message: `Added ${kind} credential`, kind: 'success' });
   }
-  async function remove(id: string) { setCreds(await provider.deleteCredential(nodeId, id)); }
+  async function remove(c: HrCredential) {
+    setCreds(await provider.deleteCredential(nodeId, c.id));
+    toast({
+      message: `Removed ${c.kind} ${c.ref}`, kind: 'info', actionLabel: 'Undo',
+      onAction: async () => {
+        await provider.upsertCredential(nodeId, { personId: c.personId, personName: c.personName, kind: c.kind, ref: c.ref, issued: c.issued, expires: c.expires, note: c.note });
+        await load();
+      },
+    });
+  }
 
   return (
     <div>
@@ -75,7 +87,7 @@ export function SkillsView({ nodeId, people }: { nodeId: string; people: HrPerso
                   <td className="small">{c.issued ?? '—'}</td>
                   <td className="small">{c.expires ?? '—'}</td>
                   <td><span className={`expiry-badge st-${st}`}>{st === 'none' ? 'non-expiring' : st}</span></td>
-                  <td><button className="btn-ghost" aria-label={`Delete credential ${c.ref}`} onClick={() => remove(c.id)}>✕</button></td>
+                  <td><button className="btn-ghost" aria-label={`Delete credential ${c.ref}`} onClick={() => remove(c)}>✕</button></td>
                 </tr>
               );
             })}
@@ -90,6 +102,7 @@ export function PostingsView({
   nodeId, nodeName, nodes, units, people, onChanged,
 }: { nodeId: string; nodeName: string; nodes: OrgNode[]; units: HrUnit[]; people: HrPerson[]; onChanged: () => void }) {
   const { provider } = useData();
+  const { toast } = useToast();
   const [transfers, setTransfers] = useState<HrTransfer[]>([]);
   const [personId, setPersonId] = useState('');
   const [toNodeId, setToNodeId] = useState(nodeId);
@@ -122,10 +135,11 @@ export function PostingsView({
     });
     setPersonId(''); setToUnitId(''); setToUnitTitleManual(''); setReason('');
     await load(); onChanged();
+    toast({ message: `Posting raised for ${person.name}`, kind: 'success' });
   }
   async function advance(t: HrTransfer) { setTransfers(await provider.advanceTransfer(t.id)); }
-  async function effect(t: HrTransfer) { await provider.effectTransfer(t.id); await load(); onChanged(); }
-  async function reject(t: HrTransfer) { setTransfers(await provider.rejectTransfer(t.id)); }
+  async function effect(t: HrTransfer) { await provider.effectTransfer(t.id); await load(); onChanged(); toast({ message: `Posting effected — ${t.personName} → ${t.toNodeName}`, kind: 'success' }); }
+  async function reject(t: HrTransfer) { setTransfers(await provider.rejectTransfer(t.id)); toast({ message: `Posting rejected for ${t.personName}`, kind: 'info' }); }
   async function drop(t: HrTransfer) { setTransfers(await provider.deleteTransfer(t.id)); }
 
   return (
@@ -181,6 +195,7 @@ export function PostingsView({
 // ============================================================= Versions =====
 export function VersionsView({ nodeId, units }: { nodeId: string; units: HrUnit[] }) {
   const { provider } = useData();
+  const { toast } = useToast();
   const [versions, setVersions] = useState<HrEstablishmentVersion[]>([]);
   const [label, setLabel] = useState('');
   const [diffOpen, setDiffOpen] = useState<string | null>(null);
@@ -188,11 +203,16 @@ export function VersionsView({ nodeId, units }: { nodeId: string; units: HrUnit[
   async function load() { setVersions(await provider.listEstablishmentVersions(nodeId)); }
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [provider, nodeId]);
 
-  async function snapshot() { await provider.snapshotEstablishment(nodeId, label.trim() || `Snapshot`); setLabel(''); await load(); }
+  async function snapshot() {
+    const list = await provider.snapshotEstablishment(nodeId, label.trim() || `Snapshot`);
+    setLabel(''); setVersions(list);
+    toast({ message: `Snapshot v${list[0]?.version ?? ''} captured`, kind: 'success' });
+  }
   async function sanction(v: HrEstablishmentVersion) {
     const by = window.prompt('Sanctioned by (name / appointment):', 'Comd Engrs');
     if (by == null) return;
     await provider.sanctionEstablishmentVersion(nodeId, v.id, by); await load();
+    toast({ message: `Sanctioned v${v.version}`, kind: 'success' });
   }
   async function remove(id: string) { setVersions(await provider.deleteEstablishmentVersion(nodeId, id)); }
 

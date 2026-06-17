@@ -7,6 +7,8 @@ import {
 import { occupancyByUnit, presentStrength } from '../domain/roster';
 import type { HrUnit, HrPosting, HrPerson, HrRequisition, OrgNode } from '../data/types';
 import { HrOrganogram } from './HrOrganogram';
+import { EditableCell } from './EditableCell';
+import { useToast } from './Toast';
 import { RosterView, RecruitmentBoard, CostView, OrgBoard } from './HrViews';
 import { SkillsView, PostingsView, VersionsView, EstablishmentIO, OrganogramExport } from './HrAdminViews';
 import { Focusable } from './Focusable';
@@ -226,6 +228,7 @@ function EstablishmentBuilder({
   nodeId, units, authored, onChange, onSeed,
 }: { nodeId: string; units: HrUnit[]; authored: boolean; onChange: () => void; onSeed: () => void }) {
   const { provider } = useData();
+  const { toast } = useToast();
   const [title, setTitle] = useState('');
   const [parentId, setParentId] = useState<string>('');
   const [scale, setScale] = useState('');
@@ -245,6 +248,7 @@ function EstablishmentBuilder({
   }
   async function patch(u: HrUnit, p: Partial<HrUnit>) {
     await provider.upsertHrUnit(nodeId, { ...u, ...p }); onChange();
+    toast({ message: `Updated ${u.title}`, kind: 'success', duration: 2200 });
   }
   async function remove(id: string) { await provider.deleteHrUnit(nodeId, id); onChange(); }
 
@@ -279,12 +283,12 @@ function EstablishmentBuilder({
           {units.length === 0 ? <tr><td colSpan={7} className="muted">No posts yet.</td></tr> :
             units.map((u) => (
               <tr key={u.id}>
-                <td>{u.title}</td>
+                <td><EditableCell value={u.title} ariaLabel={`Title ${u.id}`} onCommit={(v) => v.trim() && patch(u, { title: v.trim() })} /></td>
                 <td className="muted small">{u.parentId && byId.has(u.parentId) ? byId.get(u.parentId)!.title : '— head —'}</td>
-                <td className="small">{u.scale ?? ''}</td>
-                <td className="small">{u.category ?? ''}</td>
-                <td className="num"><input className="qty-input" aria-label={`Auth ${u.id}`} defaultValue={u.auth} onBlur={(e) => patch(u, { auth: Number(e.target.value) || 0 })} /></td>
-                <td className="num"><input className="qty-input" aria-label={`Held ${u.id}`} defaultValue={u.held} onBlur={(e) => patch(u, { held: Number(e.target.value) || 0 })} /></td>
+                <td className="small"><EditableCell value={u.scale ?? ''} ariaLabel={`Scale ${u.id}`} onCommit={(v) => patch(u, { scale: v.trim() || undefined })} /></td>
+                <td className="small"><EditableCell value={u.category ?? ''} ariaLabel={`Category ${u.id}`} onCommit={(v) => patch(u, { category: v.trim() || undefined })} /></td>
+                <td className="num"><EditableCell type="number" align="right" value={String(u.auth)} ariaLabel={`Auth ${u.id}`} onCommit={(v) => patch(u, { auth: Number(v) || 0 })} /></td>
+                <td className="num"><EditableCell type="number" align="right" value={String(u.held)} ariaLabel={`Held ${u.id}`} onCommit={(v) => patch(u, { held: Number(v) || 0 })} /></td>
                 <td><button className="btn-ghost" aria-label={`Delete ${u.title}`} onClick={() => remove(u.id)}>✕</button></td>
               </tr>
             ))}

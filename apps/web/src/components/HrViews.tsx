@@ -77,7 +77,7 @@ export function RosterView({
             </div>
             <div className="person-grid">
               {members.map((p) => (
-                <PersonCard key={p.id} person={p} onEdit={() => { setShowForm(false); setEditing(p); }} onRemove={() => remove(p)} />
+                <PersonCard key={p.id} person={p} onOpen={() => window.dispatchEvent(new CustomEvent("nlc:person-drawer", { detail: { personId: p.id, nodeId } }))} onEdit={() => { setShowForm(false); setEditing(p); }} onRemove={() => remove(p)} />
               ))}
               {Array.from({ length: empty }).map((_, i) => (
                 <EmptySeat key={`empty-${uid}-${i}`} label={unit?.title ?? ''} onFill={() => { setEditing({ id: '', nodeId, unitId: uid, name: '', status: 'present' } as HrPerson); }} />
@@ -91,7 +91,7 @@ export function RosterView({
         <div className="card" style={{ marginBottom: 12 }}>
           <div className="section-head"><h3>Bench · unassigned</h3><span className="muted small">{bench.length}</span></div>
           <div className="person-grid">
-            {bench.map((p) => <PersonCard key={p.id} person={p} onEdit={() => { setShowForm(false); setEditing(p); }} onRemove={() => remove(p)} />)}
+            {bench.map((p) => <PersonCard key={p.id} person={p} onOpen={() => window.dispatchEvent(new CustomEvent("nlc:person-drawer", { detail: { personId: p.id, nodeId } }))} onEdit={() => { setShowForm(false); setEditing(p); }} onRemove={() => remove(p)} />)}
           </div>
         </div>
       )}

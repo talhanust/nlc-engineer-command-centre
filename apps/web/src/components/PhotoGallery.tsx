@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useData } from '../data/DataContext';
+import { useToast } from './Toast';
 import type { ProjectPhoto } from '../data/types';
 
 /** Progress photo gallery: add by URL, view in a lightbox, delete. */
 export function PhotoGallery({ projectId }: { projectId: string }) {
   const { provider } = useData();
+  const { toast } = useToast();
   const [photos, setPhotos] = useState<ProjectPhoto[]>([]);
   const [url, setUrl] = useState('');
   const [caption, setCaption] = useState('');
@@ -18,10 +20,18 @@ export function PhotoGallery({ projectId }: { projectId: string }) {
     if (!url.trim()) return;
     await provider.addPhoto(projectId, { url: url.trim(), caption: caption.trim(), dated });
     setUrl(''); setCaption(''); await reload();
+    toast({ message: 'Photo added', kind: 'success' });
   }
-  async function remove(id: string) {
-    await provider.deletePhoto(projectId, id);
+  async function remove(photo: ProjectPhoto) {
+    await provider.deletePhoto(projectId, photo.id);
     await reload();
+    toast({
+      message: 'Photo removed', kind: 'info', actionLabel: 'Undo',
+      onAction: async () => {
+        await provider.addPhoto(projectId, { url: photo.url, caption: photo.caption, dated: photo.dated });
+        await reload();
+      },
+    });
   }
 
   return (
@@ -47,7 +57,7 @@ export function PhotoGallery({ projectId }: { projectId: string }) {
                 <span>{p.caption || 'Untitled'}</span>
                 <span className="muted small">{p.dated}</span>
               </figcaption>
-              <button className="btn-ghost photo-del" aria-label={`Delete ${p.caption || p.id}`} onClick={() => remove(p.id)}>✕</button>
+              <button className="btn-ghost photo-del" aria-label={`Delete ${p.caption || p.id}`} onClick={() => remove(p)}>✕</button>
             </figure>
           ))}
         </div>

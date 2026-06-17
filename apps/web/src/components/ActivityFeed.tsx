@@ -74,18 +74,25 @@ export function ActivityFeed({ nodeId, scopeIds, limit = 40 }: { nodeId: string;
             <div className="activity-group" key={g.day}>
               <div className="activity-day">{g.day}</div>
               <ul className="activity-list">
-                {g.items.map((e) => (
-                  <li className="activity-item" key={e.id}>
-                    <span className="activity-dot" style={{ background: colorFor(e.entity) }} aria-hidden />
-                    <span className="activity-time">{timeOf(e.at)}</span>
-                    <span className="activity-body">
-                      <span className="activity-tag" style={{ borderColor: colorFor(e.entity), color: colorFor(e.entity) }}>{e.entity}</span>
-                      <span className="activity-action">{e.action}</span>
-                      <span className="activity-ref">{e.ref}</span>
-                      {e.detail && <span className="muted small activity-detail">— {e.detail}</span>}
-                    </span>
-                  </li>
-                ))}
+                {g.items.map((e) => {
+                  const linkable = e.entity !== 'Node';
+                  return (
+                    <li className={`activity-item${linkable ? ' linkable' : ''}`} key={e.id}
+                      onClick={linkable ? () => window.dispatchEvent(new CustomEvent('nlc:project-drawer', { detail: { projectId: e.projectId } })) : undefined}
+                      role={linkable ? 'button' : undefined} tabIndex={linkable ? 0 : undefined}
+                      onKeyDown={linkable ? (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); window.dispatchEvent(new CustomEvent('nlc:project-drawer', { detail: { projectId: e.projectId } })); } } : undefined}
+                    >
+                      <span className="activity-dot" style={{ background: colorFor(e.entity) }} aria-hidden />
+                      <span className="activity-time">{timeOf(e.at)}</span>
+                      <span className="activity-body">
+                        <span className="activity-tag" style={{ borderColor: colorFor(e.entity), color: colorFor(e.entity) }}>{e.entity}</span>
+                        <span className="activity-action">{e.action}</span>
+                        <span className="activity-ref">{e.ref}</span>
+                        {e.detail && <span className="muted small activity-detail">— {e.detail}</span>}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}

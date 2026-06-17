@@ -63,7 +63,11 @@ export function CommandPalette() {
   function go(i: number) {
     const h = results[i];
     if (!h) return;
-    navigate(h.kind === 'person' ? `/node/${h.nodeId}/hr` : `/node/${h.id}`);
+    if (h.kind === 'person') {
+      window.dispatchEvent(new CustomEvent('nlc:person-drawer', { detail: { personId: h.id, nodeId: h.nodeId } }));
+    } else {
+      navigate(`/node/${h.id}`);
+    }
     setOpen(false);
   }
 

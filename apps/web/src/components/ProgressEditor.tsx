@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useData } from '../data/DataContext';
+import { useToast } from './Toast';
 import { toNum } from '../domain/money';
 import type { Project, MonthlySeriesPoint } from '../data/types';
 
 /** Edit headline progress (actual %, billed, received) and per-month cumulative actuals. */
 export function ProgressEditor({ project, onClose, onSaved }: { project: Project; onClose: () => void; onSaved: () => void }) {
   const { provider, refresh } = useData();
+  const { toast } = useToast();
   const [actual, setActual] = useState(String(project.actualPct));
   const [planned, setPlanned] = useState(String(project.plannedPct));
   const [billed, setBilled] = useState(String(toNum(project.billedToDate)));
@@ -36,6 +38,7 @@ export function ProgressEditor({ project, onClose, onSaved }: { project: Project
       await refresh();
       onSaved();
       onClose();
+      toast({ message: 'Progress updated', kind: 'success' });
     } finally {
       setBusy(false);
     }

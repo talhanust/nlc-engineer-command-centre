@@ -4,6 +4,8 @@ import { MapView, type MapMarker } from './MapView';
 import { Focusable } from './Focusable';
 import { Dockable } from './Dock';
 import { useData } from '../data/DataContext';
+import { useUiState } from '../state/UiState';
+import { useToast } from './Toast';
 import { reverseGeocode } from '../domain/geocode';
 import { nodeById, descendantNodes } from '../domain/org';
 import { ragColorVar, markerColorVar, isValidLatLng } from '../domain/geo';
@@ -53,11 +55,37 @@ export function NodeMap({
 
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [filter, setFilter] = useState<MapFilter>('all');
-  const [status, setStatus] = useState<StatusFilter>('all');
+  const { mapViews, saveMapView, deleteMapView, basemap, setBasemap, filter: uiFilter, setFilter: setUiFilter } = useUiState();
+  const { toast } = useToast();
+  const status = (uiFilter.rag as StatusFilter) ?? 'all';
+  const setStatus = (s: StatusFilter) => setUiFilter({ ...uiFilter, rag: s === 'all' ? 'all' : s });
   const [location, setLocation] = useState(subject?.location ?? '');
   const [lat, setLat] = useState(subject?.lat != null ? String(subject.lat) : '');
   const [lng, setLng] = useState(subject?.lng != null ? String(subject.lng) : '');
   const [saved, setSaved] = useState(false);
+  const [viewSel, setViewSel] = useState('');
+
+  function applyView(id: string) {
+    const v = mapViews.find((x) => x.id === id);
+    if (!v) return;
+    setFilter(v.filter as MapFilter);
+    setStatus(v.status as StatusFilter);
+    setBasemap(v.basemap);
+    setViewSel(id);
+  }
+  function saveCurrentView() {
+    const name = window.prompt('Name this map view:', `View ${mapViews.length + 1}`);
+    if (!name || !name.trim()) return;
+    saveMapView(name.trim(), { filter, status, basemap });
+    toast({ message: `Saved view “${name.trim()}”`, kind: 'success' });
+  }
+  function removeView() {
+    const v = mapViews.find((x) => x.id === viewSel);
+    if (!v) return;
+    deleteMapView(v.id);
+    setViewSel('');
+    toast({ message: `Deleted view “${v.name}”`, kind: 'info' });
+  }
 
   const hasDescendants = node ? node.type !== 'project' && descendantNodes(nodes, nodeId).length > 0 : false;
   const latN = Number(lat), lngN = Number(lng);
@@ -180,6 +208,18 @@ export function NodeMap({
         <select aria-label="Status filter" className="map-filter" value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
           {STATUS_FILTERS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
+      )}
+      {!editing && hasDescendants && (
+        <span className="map-views">
+          {mapViews.length > 0 && (
+            <select aria-label="Saved views" className="map-filter" value={viewSel} onChange={(e) => applyView(e.target.value)}>
+              <option value="">Saved views…</option>
+              {mapViews.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+          )}
+          <button className="btn-ghost btn-mini" onClick={saveCurrentView} title="Save current filter + basemap as a named view">Save view</button>
+          {viewSel && <button className="icon-mini" aria-label="Delete saved view" title="Delete saved view" onClick={removeView}>✕</button>}
+        </span>
       )}
       <span className="seg" role="group" aria-label="Map mode">
         <button className={`seg-btn${mode === 'view' ? ' active' : ''}`} onClick={() => setMode('view')}>Overview</button>

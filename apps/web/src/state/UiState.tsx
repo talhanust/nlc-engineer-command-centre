@@ -27,6 +27,15 @@ export interface LayoutSnapshot {
   theme: ThemeName;
 }
 
+/** A saved map view: filter + status + basemap, recallable by name. */
+export interface MapViewPref {
+  id: string;
+  name: string;
+  filter: string;
+  status: string;
+  basemap: Basemap;
+}
+
 interface UiState {
   rag: RagThresholds;
   setRag: (r: RagThresholds) => void;
@@ -53,11 +62,24 @@ interface UiState {
   // Named layouts.
   snapshotLayout: () => LayoutSnapshot;
   applyLayout: (s: LayoutSnapshot) => void;
+  // Saved map views.
+  mapViews: MapViewPref[];
+  saveMapView: (name: string, v: Omit<MapViewPref, 'id' | 'name'>) => void;
+  deleteMapView: (id: string) => void;
 }
 
 const RAG_KEY = 'nlc-ecc.ragThresholds';
 const WS_KEY = 'nlc-ecc.workspace';
+const MAPVIEWS_KEY = 'nlc-ecc.mapviews';
 const Ctx = createContext<UiState | null>(null);
+
+function loadMapViews(): MapViewPref[] {
+  try {
+    const raw = localStorage.getItem(MAPVIEWS_KEY);
+    if (raw) { const v = JSON.parse(raw); if (Array.isArray(v)) return v as MapViewPref[]; }
+  } catch { /* ignore */ }
+  return [];
+}
 
 function loadRag(): RagThresholds {
   try {
@@ -107,10 +129,15 @@ export function UiStateProvider({ children }: { children: ReactNode }) {
   const [filter, setFilter] = useState<Filter>(EMPTY_FILTER);
   const [ws, setWs] = useState<Workspace>(loadWorkspace);
   const [presentation, setPresentation] = useState(false); // session-only
+  const [mapViews, setMapViews] = useState<MapViewPref[]>(loadMapViews);
 
   useEffect(() => {
     try { localStorage.setItem(RAG_KEY, JSON.stringify(rag)); } catch { /* ignore */ }
   }, [rag]);
+
+  useEffect(() => {
+    try { localStorage.setItem(MAPVIEWS_KEY, JSON.stringify(mapViews)); } catch { /* ignore */ }
+  }, [mapViews]);
 
   useEffect(() => {
     try { localStorage.setItem(WS_KEY, JSON.stringify(ws)); } catch { /* ignore */ }
@@ -146,6 +173,12 @@ export function UiStateProvider({ children }: { children: ReactNode }) {
       sidebarOpen: s.sidebarOpen, sidebarWidth: clampWidth(s.sidebarWidth),
       zoom: clampZoom(s.zoom), density: s.density, theme: s.theme,
     })),
+    mapViews,
+    saveMapView: (name, v) => setMapViews((list) => [
+      ...list.filter((x) => x.name !== name),
+      { ...v, id: `mv-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, name },
+    ]),
+    deleteMapView: (id) => setMapViews((list) => list.filter((x) => x.id !== id)),
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

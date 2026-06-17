@@ -842,3 +842,11 @@ code { font-family: var(--font-mono); font-size: .9em; }
 
 .activity-item.linkable { cursor: pointer; border-radius: var(--r-sm); }
 .activity-item.linkable:hover { background: var(--surface-2); }
+
+/* ===== roster bulk attendance ===== */
+.bulk-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px;
+  padding: 8px 12px; border: 1px solid var(--primary); border-radius: var(--r); background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
+.bulk-count { font-weight: 700; }
+.person-card { position: relative; }
+.person-card.selected { outline: 2px solid var(--primary); outline-offset: 1px; }
+.person-select { position: absolute; top: 8px; right: 8px; width: 15px; height: 15px; cursor: pointer; }

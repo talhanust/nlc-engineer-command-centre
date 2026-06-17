@@ -166,7 +166,8 @@ export function HrCockpit({ nodeId, nodes }: { nodeId: string; nodes: OrgNode[] 
                   <div className="card">
                     <HrOrganogram
                       units={editing ? units : effectiveUnits} synthesised={!editing && !authored}
-                      occupancy={people.length ? occupancy : undefined} onSelectUnit={editing ? undefined : selectUnit} selectedUnitId={selectedUnitId}
+                      occupancy={people.length ? occupancy : undefined} people={people.length ? people : undefined}
+                      onSelectUnit={editing ? undefined : selectUnit} selectedUnitId={selectedUnitId}
                       editable={editing}
                       onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} onReparent={handleReparent}
                     />

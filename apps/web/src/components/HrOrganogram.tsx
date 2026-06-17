@@ -1,13 +1,15 @@
 import { createContext, useContext, useMemo, useState } from 'react';
-import type { HrUnit } from '../data/types';
+import type { HrUnit, HrPerson } from '../data/types';
 import {
   buildOrganogram, commandSpine, rolledStrength, establishmentTotals,
   fillStatus, fillPct, type OrgoNode,
 } from '../domain/organogram';
 import type { Occupancy } from '../domain/roster';
+import { HrAvatar } from './HrAvatar';
 
 interface OrgoCtx {
   occupancy?: Map<string, Occupancy>;
+  peopleByUnit?: Map<string, HrPerson[]>;
   onSelectUnit?: (unitId: string) => void;
   selectedUnitId?: string;
   // editing
@@ -18,6 +20,29 @@ interface OrgoCtx {
   onReparent?: (unitId: string, newParentId: string | null) => void;
 }
 const Ctx = createContext<OrgoCtx>({});
+
+/** Named occupants of a unit (and empty seats), shown inline under a box. */
+function Occupants({ node }: { node: OrgoNode }) {
+  const { peopleByUnit } = useContext(Ctx);
+  const list = peopleByUnit?.get(node.id) ?? [];
+  const isLeaf = node.children.length === 0;
+  if (!peopleByUnit || (!isLeaf && list.length === 0)) return null;
+  const empty = Math.max(0, node.held - list.length);
+  if (list.length === 0 && empty === 0) return null;
+  return (
+    <div className="orgo-occupants">
+      {list.map((p) => (
+        <span className="orgo-occ" key={p.id} title={`${p.name}${p.rank ? ' · ' + p.rank : ''} · ${p.status}`}>
+          <HrAvatar person={p} size={16} />
+          <span className="occ-name">{p.name}</span>
+        </span>
+      ))}
+      {isLeaf && Array.from({ length: empty }).map((_, i) => (
+        <span className="orgo-occ vacant" key={`v${i}`}>vacant</span>
+      ))}
+    </div>
+  );
+}
 
 function leafIds(node: OrgoNode): string[] {
   if (node.children.length === 0) return [node.id];
@@ -103,7 +128,7 @@ function PostRow({ node, depth }: { node: OrgoNode; depth: number }) {
     <>
       <div
         className={`orgo-post${hasKids ? ' has-kids' : ''}${selected ? ' selected' : ''}${editable ? ' editable' : ''}`}
-        style={{ paddingLeft: 10 + depth * 14 }}
+        style={{ paddingLeft: 8 + Math.min(depth, 4) * 10 }}
         onClick={() => { onSelectUnit?.(node.id); if (hasKids) setOpen((o) => !o); }}
         role="button"
         tabIndex={0}
@@ -122,6 +147,7 @@ function PostRow({ node, depth }: { node: OrgoNode; depth: number }) {
           <span className="orgo-post-num">{s.held}/{s.auth}</span>
           <EditTools node={node} />
         </span>
+        <Occupants node={node} />
       </div>
       {hasKids && open && node.children.map((c) => <PostRow key={c.id} node={c} depth={depth + 1} />)}
     </>
@@ -171,16 +197,18 @@ function SectionCard({ node }: { node: OrgoNode }) {
           {node.children.map((c) => <PostRow key={c.id} node={c} depth={0} />)}
         </div>
       )}
+      {!hasKids && <Occupants node={node} />}
     </div>
   );
 }
 
 export function HrOrganogram({
-  units, synthesised = false, occupancy, onSelectUnit, selectedUnitId,
+  units, synthesised = false, occupancy, people, onSelectUnit, selectedUnitId,
   editable = false, onAdd, onEdit, onDelete, onReparent,
 }: {
   units: HrUnit[]; synthesised?: boolean;
   occupancy?: Map<string, Occupancy>;
+  people?: HrPerson[];
   onSelectUnit?: (unitId: string) => void;
   selectedUnitId?: string;
   editable?: boolean;
@@ -192,6 +220,12 @@ export function HrOrganogram({
   const roots = useMemo(() => buildOrganogram(units), [units]);
   const totals = useMemo(() => establishmentTotals(roots), [roots]);
   const { spine, fanout } = useMemo(() => commandSpine(roots), [roots]);
+  const peopleByUnit = useMemo(() => {
+    if (!people) return undefined;
+    const m = new Map<string, HrPerson[]>();
+    for (const p of people) { if (!p.unitId) continue; const l = m.get(p.unitId) ?? []; l.push(p); m.set(p.unitId, l); }
+    return m;
+  }, [people]);
 
   if (units.length === 0) {
     return (
@@ -208,7 +242,7 @@ export function HrOrganogram({
   const present = occupancy ? [...occupancy.values()].reduce((a, o) => a + o.present, 0) : null;
 
   return (
-    <Ctx.Provider value={{ occupancy, onSelectUnit, selectedUnitId, editable, onAdd, onEdit, onDelete, onReparent }}>
+    <Ctx.Provider value={{ occupancy, peopleByUnit, onSelectUnit, selectedUnitId, editable, onAdd, onEdit, onDelete, onReparent }}>
       <div className={`orgo${editable ? ' orgo-editing' : ''}`}>
         <div className="orgo-summary">
           <div className="orgo-summary-cell"><span className="orgo-summary-label">AUTH</span><span className="orgo-summary-val">{totals.auth}</span></div>

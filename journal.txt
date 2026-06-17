@@ -1,6 +1,23 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-16 — Keyboard-first establishment grid
+- The inline-editable establishment table is now arrow-key navigable. EditableCell
+  emits data-r/data-c on its display button; a grid keydown handler on the table
+  wrapper moves focus between adjacent editable cells (↑↓ rows, ←→ columns),
+  skipping the static Reports-to column. Arrows only navigate when a cell is
+  focused (not while editing an input), so text editing is unaffected; Enter/click
+  still opens the editor. Test focuses a cell and asserts ArrowDown/Right move
+  focus. Web 236; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Bulk attendance in the roster
+- Roster person cards gained selection checkboxes (reusing useBulkSelection).
+  Selecting one or more reveals a bulk bar to set attendance (Present / On leave
+  / Detached / Training) for all at once via upsertPerson, with a success toast
+  and Undo that restores each person's prior status. Selected cards are
+  outlined. Test selects a person, applies "On leave", asserts the toast. Web
+  235; server 8; typecheck clean; both builds green.
+
 2026-06-16 — Consistency pass: commercial billing toasts
 - Extended save confirmations to the core billing registers. IPC: create ("IPC-04
   created") and each stage transition ("IPC-03 → With client"). RAR: create and

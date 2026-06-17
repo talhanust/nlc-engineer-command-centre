@@ -651,3 +651,68 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .orgo-occ .hr-avatar-initials { width: 16px; height: 16px; font-size: 8px; }
 .orgo-occ .occ-name { color: var(--text); }
 .orgo-occ.vacant { color: var(--muted); font-style: italic; padding-left: 8px; border-style: dashed; }
+
+/* ===== organogram outline (indented tree) ===== */
+.orgo-outline { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+.orgo-ol-branch { position: relative; }
+.orgo-ol-row { display: flex; align-items: center; gap: 8px; padding: 7px 12px 7px 6px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background .12s; }
+.orgo-ol-row:hover { background: var(--surface-2); }
+.orgo-ol-row.selected { background: color-mix(in srgb, var(--primary) 9%, transparent); box-shadow: inset 2px 0 0 var(--primary); }
+.orgo-ol-row.editable { cursor: grab; }
+.orgo-ol-caret { background: transparent; border: 0; cursor: pointer; color: var(--muted); padding: 0; width: 16px; display: inline-flex; align-items: center; justify-content: center; }
+.orgo-ol-title { font-weight: 600; font-size: 13px; }
+.orgo-ol-spacer { flex: 1; }
+.orgo-ol-bar { width: 120px; flex: 0 0 auto; }
+.orgo-ol-bar .orgo-fill-track { height: 7px; }
+.orgo-outline .orgo-occupants { padding: 2px 12px 8px 40px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.orgo-ol-add { width: 100%; padding: 9px; background: transparent; border: 0; border-top: 1px dashed var(--border-strong);
+  color: var(--muted); cursor: pointer; font-size: 13px; }
+.orgo-ol-add:hover { color: var(--primary); background: color-mix(in srgb, var(--primary) 5%, transparent); }
+@media (max-width: 640px) { .orgo-ol-bar { display: none; } }
+
+/* ===== unified node map controls ===== */
+.map-controls { display: inline-flex; align-items: center; gap: 8px; }
+.map-filter { font-size: 11px; padding: 2px 6px; border-radius: var(--r-sm); border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-family: var(--font-mono); }
+.map-edit-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px;
+  padding-top: 10px; border-top: 1px solid var(--border); }
+
+/* outline search / controls */
+.orgo-outline-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.orgo-search { flex: 1; min-width: 180px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--text); font-size: 13px; }
+.orgo-search:focus { outline: none; border-color: var(--primary); }
+
+/* ===== map popups + fit control ===== */
+.map-popup { font-size: 12.5px; min-width: 170px; }
+.map-popup-title { display: block; font-size: 13px; margin-bottom: 6px; color: var(--text); }
+.map-popup-rows { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+.map-popup-rows th { text-align: left; color: var(--muted); font-weight: 500; padding: 1px 10px 1px 0; white-space: nowrap; vertical-align: top; }
+.map-popup-rows td { text-align: right; color: var(--text); padding: 1px 0; }
+.map-popup-open { width: 100%; border: 1px solid var(--primary); background: var(--primary); color: #fff;
+  border-radius: var(--r-sm); padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.map-popup-open:hover { filter: brightness(1.05); }
+
+.leaflet-bar .map-fit-btn, .map-fit-btn {
+  width: 30px; height: 30px; line-height: 30px; display: block; cursor: pointer; text-align: center;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--r-sm);
+  font-size: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.18); margin-top: 8px; }
+.map-fit-btn:hover { background: var(--surface-2); color: var(--primary); border-color: var(--primary); }
+.map-count { white-space: nowrap; }
+
+/* ===== marker clusters (themed over leaflet.markercluster defaults) ===== */
+.marker-cluster-small, .marker-cluster-medium, .marker-cluster-large { background: transparent; }
+.marker-cluster-small div, .marker-cluster-medium div, .marker-cluster-large div { background: transparent; }
+.marker-cluster {
+  background: color-mix(in srgb, var(--command) 22%, transparent);
+  border-radius: 50%;
+}
+.marker-cluster div {
+  width: 32px; height: 32px; margin-left: 4px; margin-top: 4px;
+  background: var(--command); color: #fff; border: 2px solid var(--surface);
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 5px rgba(0,0,0,.3);
+}
+.marker-cluster span { color: #fff; font-weight: 700; font-size: 12px; }
+.marker-cluster-large div { width: 38px; height: 38px; }

@@ -28,6 +28,19 @@ describe('Phase 7 — command palette', () => {
       expect(screen.getByRole('heading', { name: 'Gwadar Free Zone Works' })).toBeInTheDocument(),
     );
   });
+
+  it('finds a person and jumps to their HR page', async () => {
+    const user = userEvent.setup();
+    renderAt('/');
+    await screen.findByRole('heading', { name: 'HQ NLC' });
+    await user.keyboard('{Control>}k{/Control}');
+    const input = await screen.findByLabelText('Command palette search');
+    await user.type(input, 'Sadia');
+    // Person hit appears (loaded via listAllPeople).
+    await screen.findByText('Sadia Rauf');
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(screen.getByText(/HR command/)).toBeInTheDocument());
+  });
 });
 
 describe('Phase 7 — governance', () => {

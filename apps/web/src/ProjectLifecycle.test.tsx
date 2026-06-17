@@ -48,10 +48,15 @@ describe('Project lifecycle (UI)', () => {
     await waitFor(() => expect(screen.getAllByText(/77(\.0)?%/).length).toBeGreaterThan(0));
   });
 
-  it('shows the location editor and a map on the executive tab', async () => {
+  it('shows a single map with a Set-location mode on the executive tab', async () => {
+    const user = userEvent.setup();
     renderAt('/node/proj-f14f15');
-    expect(await screen.findByRole('heading', { name: 'Location' })).toBeInTheDocument();
-    expect(screen.getAllByRole('img', { name: 'Project map' }).length).toBeGreaterThan(0);
+    // Exactly one map, with Overview / Set location controls.
+    expect(await screen.findByRole('img', { name: 'Project map' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Set location' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Set location' }));
+    expect(await screen.findByLabelText('Latitude')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save location' })).toBeInTheDocument();
   });
 
   it('manages the progress photo gallery', async () => {

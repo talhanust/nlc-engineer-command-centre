@@ -69,8 +69,32 @@ describe('Project lifecycle (UI)', () => {
     expect(await screen.findByText('New pour')).toBeInTheDocument();
   });
 
+  it('records an update in the project activity feed', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15');
+    expect(await screen.findByRole('heading', { name: 'Activity' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Update progress' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Update progress' });
+    const actual = within(dialog).getByLabelText('Edit actual pct');
+    await user.clear(actual);
+    await user.type(actual, '63');
+    await user.click(within(dialog).getByRole('button', { name: 'Save progress' }));
+    // The audit event refreshes the feed; an 'update' entry for the project appears.
+    await waitFor(() => expect(screen.getAllByText('update').length).toBeGreaterThan(0));
+  });
+
   it('shows the portfolio map on a PD HQ dashboard', async () => {
     renderAt('/node/pd-north');
     expect(await screen.findByRole('img', { name: 'Project map' })).toBeInTheDocument();
+  });
+
+  it('opens a project detail drawer from the league table', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/pd-north');
+    const btn = await screen.findByRole('button', { name: /Details for F-14\/F-15/ });
+    await user.click(btn);
+    const dialog = await screen.findByRole('dialog', { name: 'F-14/F-15 Islamabad' });
+    expect(within(dialog).getByText('Contract value')).toBeInTheDocument();
+    expect(within(dialog).getByText('Outstanding (billed − received)')).toBeInTheDocument();
   });
 });

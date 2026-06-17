@@ -5,7 +5,7 @@ import type { RollupRow } from '../domain/rollup';
 
 type SortKey = 'name' | 'contractValue' | 'actualPct' | 'slippage';
 
-export function LeagueTable({ rows }: { rows: RollupRow[] }) {
+export function LeagueTable({ rows, projectIds, onDetails }: { rows: RollupRow[]; projectIds?: Set<string>; onDetails?: (id: string) => void }) {
   const navigate = useNavigate();
   const [key, setKey] = useState<SortKey>('slippage');
   const [asc, setAsc] = useState(false);
@@ -37,6 +37,7 @@ export function LeagueTable({ rows }: { rows: RollupRow[] }) {
             {head('contractValue', 'Contract', true)}
             {head('actualPct', 'Actual', true)}
             {head('slippage', 'Slippage', true)}
+            {onDetails && <th aria-label="Details"></th>}
           </tr>
         </thead>
         <tbody>
@@ -49,6 +50,17 @@ export function LeagueTable({ rows }: { rows: RollupRow[] }) {
                 {r.slippage >= 0 ? '+' : ''}
                 {formatPct(r.slippage)}
               </td>
+              {onDetails && (
+                <td className="num">
+                  {projectIds?.has(r.id) && (
+                    <button
+                      className="btn-ghost btn-mini"
+                      aria-label={`Details for ${r.name}`}
+                      onClick={(e) => { e.stopPropagation(); onDetails(r.id); }}
+                    >Details</button>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

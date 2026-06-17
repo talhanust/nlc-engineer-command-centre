@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { OrgNavigator } from './OrgNavigator';
 import { CommandPalette } from './CommandPalette';
+import { ProjectDrawerHost } from './ProjectDrawerHost';
 import { DockProvider, DockRail } from './Dock';
 import { RouteFade } from './RouteFade';
 import { useData } from '../data/DataContext';
@@ -98,6 +99,7 @@ export function AppLayout() {
   return (
     <div className={layoutClass} style={{ ['--sidebar-w' as string]: `${sidebarWidth}px` }}>
       <CommandPalette />
+      <ProjectDrawerHost />
       {presentation && (
         <button className="exit-presentation btn" onClick={() => setPresentation(false)} aria-label="Exit presentation mode">
           ✕ Exit presentation

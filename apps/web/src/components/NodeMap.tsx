@@ -130,6 +130,7 @@ export function NodeMap({
               ],
               openLabel: 'Open project ›',
               onClick: editing ? undefined : () => navigate(`/node/${p.id}`),
+              onDetails: editing ? undefined : () => window.dispatchEvent(new CustomEvent('nlc:project-drawer', { detail: { projectId: p.id } })),
             });
           }
         }

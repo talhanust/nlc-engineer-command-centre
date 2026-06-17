@@ -20,6 +20,7 @@ export interface MapMarker {
   emphasis?: boolean;   // larger pin for org HQs vs project sites
   glyph?: MarkerGlyph;  // building tile for HQ/PD HQ, dot for project sites
   onClick?: () => void;
+  onDetails?: () => void;  // opens the detail drawer
   detail?: Array<[string, string]>; // rows shown in the click popup
   openLabel?: string;   // label for the popup's open action
 }
@@ -197,14 +198,18 @@ export function MapView({
       } else {
         const rows = (m.detail ?? []).map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`).join('');
         const open = m.onClick ? `<button type="button" class="map-popup-open">${escapeHtml(m.openLabel ?? 'Open ›')}</button>` : '';
+        const details = m.onDetails ? `<button type="button" class="map-popup-details">Details</button>` : '';
         mk.bindPopup(
-          `<div class="map-popup"><strong class="map-popup-title">${escapeHtml(m.label)}</strong>${rows ? `<table class="map-popup-rows">${rows}</table>` : ''}${open}</div>`,
+          `<div class="map-popup"><strong class="map-popup-title">${escapeHtml(m.label)}</strong>${rows ? `<table class="map-popup-rows">${rows}</table>` : ''}<div class="map-popup-actions">${details}${open}</div></div>`,
           { closeButton: true, offset: [0, -size / 2], minWidth: 180 },
         );
-        if (m.onClick) {
+        if (m.onClick || m.onDetails) {
           mk.on('popupopen', (e: import('leaflet').PopupEvent) => {
-            const el = e.popup.getElement()?.querySelector('.map-popup-open');
-            if (el) el.addEventListener('click', () => m.onClick!(), { once: true });
+            const root = e.popup.getElement();
+            const openBtn = root?.querySelector('.map-popup-open');
+            if (openBtn && m.onClick) openBtn.addEventListener('click', () => m.onClick!(), { once: true });
+            const detBtn = root?.querySelector('.map-popup-details');
+            if (detBtn && m.onDetails) detBtn.addEventListener('click', () => { m.onDetails!(); mk.closePopup(); }, { once: true });
           });
         }
       }

@@ -1,6 +1,50 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-16 — Map marker clustering
+- Added leaflet.markercluster (^1.5.3): the map's marker layer is now a themed
+  cluster group, so busy maps (HQ NLC with many project pins) collapse nearby
+  sites into a count bubble that splits on zoom / click. Loaded lazily alongside
+  leaflet (own ~9KB gz chunk) and only on the real-DOM branch; the picker layer
+  and the jsdom OfflineLocator are unchanged, so tests stay green. Cluster
+  bubbles restyled to the command palette tokens (no default green/yellow).
+  getBounds still drives the Fit-to-markers control. Added a module shim in
+  vite-env.d.ts. Web 227; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Command palette: search people, not just nodes
+- ⌘/Ctrl-K palette extended from node/project jump to a true entity search. It
+  now also finds people (by name or rank) across every node via listAllPeople
+  (loaded lazily on first open), showing an avatar + rank · home-unit; Enter
+  opens that person's HR page. Nodes/projects still rank first, then people,
+  capped at 10. Dependency-free, reuses the existing palette + HrAvatar.
+- Test: open palette, search a person, Enter lands on their HR command page.
+  Web 227; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Map: rich click popups + fit-to-markers control
+- Clicking a marker now opens a popup card: title + detail rows (status, actual%,
+  planned%, client, location for projects; type/location for HQ/PD HQ) with an
+  "Open ›" action that navigates to that node/project. Hover still shows the
+  tooltip; popups are skipped in Set-location mode so map-click keeps setting the
+  pin. MapMarker gained optional `detail` rows + `openLabel`; HTML is escaped.
+- Added a "Fit to markers" Leaflet control (⤢, top-left) that refits the view to
+  every plotted location; marker layer switched to a featureGroup so the control
+  reads live bounds. Dependency-free (Leaflet bindPopup + fitBounds); only the
+  real-DOM branch is affected (jsdom uses the OfflineLocator), so tests are
+  untouched. Web 226; server 8; typecheck clean; both builds green (leaflet
+  still lazy-chunked ~43.5KB gz).
+
+2026-06-16 — Outline organogram search + single-map polish; remove dead maps
+- Outline layout (indented tree, already present) gained a search box (matches
+  titles/scales, keeps ancestors+descendants visible) and Expand-all/Collapse-all;
+  per-node collapse lifted to a shared set so search/global controls work.
+- Map: confirmed the single NodeMap (Overview / Set-location modes + view
+  filter) is the only map at every tier; deleted the orphaned LevelMap,
+  NodeLocationEditor and LocationEditor (the old second map). Added a RAG status
+  filter (All / On track / At risk / Behind) and a live "N shown" marker count.
+- Tests: replaced the old Location-editor assertion with a single-map +
+  Set-location-mode check; added an outline+search test. Web 226; server 8;
+  typecheck clean; both builds green.
+
 2026-06-16 — Fix clipped post titles + show occupant names on the chart
 - Bug: inside a narrow section card the post row laid title (left) against a
   growing right cluster (seat chip + held/auth + the three edit buttons); with

@@ -1,5 +1,6 @@
 import { DataContextProvider } from './data/DataContext';
 import { UiStateProvider } from './state/UiState';
+import { ToastProvider } from './components/Toast';
 import { AppRoutes } from './AppRoutes';
 import './theme.css';
 
@@ -9,7 +10,9 @@ export default function App() {
   return (
     <DataContextProvider>
       <UiStateProvider>
-        <AppRoutes />
+        <ToastProvider>
+          <AppRoutes />
+        </ToastProvider>
       </UiStateProvider>
     </DataContextProvider>
   );

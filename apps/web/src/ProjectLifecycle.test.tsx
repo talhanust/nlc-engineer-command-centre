@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach } from 'vitest';
+import { beforeEach, vi } from 'vitest';
 import App from './App';
 
 function renderAt(path: string) {
@@ -67,6 +67,12 @@ describe('Project lifecycle (UI)', () => {
     await user.type(screen.getByLabelText('Photo caption'), 'New pour');
     await user.click(screen.getByRole('button', { name: 'Add photo' }));
     expect(await screen.findByText('New pour')).toBeInTheDocument();
+    // Delete shows an undo toast; undo restores the photo.
+    await user.click(screen.getByRole('button', { name: 'Delete New pour' }));
+    await waitFor(() => expect(screen.queryByText('New pour')).not.toBeInTheDocument());
+    expect(screen.getByText('Photo removed')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(await screen.findByText('New pour')).toBeInTheDocument();
   });
 
   it('records an update in the project activity feed', async () => {
@@ -79,8 +85,45 @@ describe('Project lifecycle (UI)', () => {
     await user.clear(actual);
     await user.type(actual, '63');
     await user.click(within(dialog).getByRole('button', { name: 'Save progress' }));
-    // The audit event refreshes the feed; an 'update' entry for the project appears.
+    // Success toast + the audit event refreshes the feed.
+    expect(await screen.findByText('Progress updated')).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByText('update').length).toBeGreaterThan(0));
+  });
+
+  it('saves and recalls a map view', async () => {
+    const user = userEvent.setup();
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('North At-risk');
+    renderAt('/node/pd-north');
+    const statusSel = await screen.findByLabelText('Status filter');
+    await user.selectOptions(statusSel, 'red');
+    await user.click(screen.getByRole('button', { name: 'Save view' }));
+    expect(await screen.findByText(/Saved view .North At-risk/)).toBeInTheDocument();
+    // Change the filter away, then recall the saved view.
+    await user.selectOptions(statusSel, 'all');
+    const viewsSel = await screen.findByLabelText('Saved views');
+    await user.selectOptions(viewsSel, within(viewsSel).getByRole('option', { name: 'North At-risk' }));
+    expect((screen.getByLabelText('Status filter') as HTMLSelectElement).value).toBe('red');
+    promptSpy.mockRestore();
+  });
+
+  it('archives a project with an undo toast that restores it', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-bahria');
+    await screen.findByRole('heading', { name: 'Bahria Enclave Roads' });
+    await user.click(screen.getByRole('button', { name: 'Archive' }));
+    expect(await screen.findByText(/Archived/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(await screen.findByRole('heading', { name: 'Bahria Enclave Roads' })).toBeInTheDocument();
+  });
+
+  it('cross-filters the dashboard and map by a RAG chip', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/pd-north');
+    const behind = await screen.findByRole('button', { name: /Behind/ });
+    await user.click(behind);
+    expect(behind).toHaveAttribute('aria-pressed', 'true');
+    // The map's status filter shares the same RAG state.
+    expect((screen.getByLabelText('Status filter') as HTMLSelectElement).value).toBe('red');
   });
 
   it('shows the portfolio map on a PD HQ dashboard', async () => {

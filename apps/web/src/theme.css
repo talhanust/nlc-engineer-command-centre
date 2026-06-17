@@ -777,3 +777,68 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .activity-action { font-weight: 600; color: var(--text); }
 .activity-ref { color: var(--text); }
 .activity-detail { font-style: italic; }
+
+/* ===== toasts ===== */
+.toast-stack { position: fixed; right: 18px; bottom: 18px; z-index: 1400; display: flex; flex-direction: column;
+  gap: 8px; max-width: min(380px, 92vw); }
+.toast { display: flex; align-items: center; gap: 10px; padding: 11px 12px 11px 14px; border-radius: var(--r);
+  background: var(--surface); color: var(--text); border: 1px solid var(--border-strong);
+  box-shadow: 0 6px 22px rgba(0,0,0,.22); animation: toast-in .18s cubic-bezier(.2,.8,.2,1); border-left-width: 3px; }
+@keyframes toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.toast-success { border-left-color: var(--rag-green); }
+.toast-info { border-left-color: var(--primary); }
+.toast-error { border-left-color: var(--rag-red); }
+.toast-msg { flex: 1; font-size: 13px; }
+.toast-action { flex: 0 0 auto; border: 1px solid var(--primary); background: transparent; color: var(--primary);
+  border-radius: var(--r-sm); padding: 4px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.toast-action:hover { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+.toast-close { flex: 0 0 auto; border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 4px; }
+.toast-close:hover { color: var(--text); }
+
+/* saved map views */
+.map-views { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ===== inline-editable table cells ===== */
+.editable-cell { border: 1px solid transparent; background: transparent; color: inherit; font: inherit;
+  padding: 3px 6px; border-radius: var(--r-sm); cursor: text; text-align: inherit; }
+.editable-cell:hover { background: var(--surface-2); border-color: var(--border); }
+.editable-cell:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.editable-cell.empty { color: var(--muted); }
+.editable-input { width: 100%; box-sizing: border-box; padding: 3px 6px; font: inherit;
+  border: 1px solid var(--primary); border-radius: var(--r-sm); background: var(--surface); color: var(--text); }
+.editable-input:focus { outline: none; }
+
+/* ===== RAG cross-filter chips ===== */
+.rag-chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 8px; }
+.rag-chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-size: 12.5px; transition: .12s; }
+.rag-chip:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.rag-chip .rag-chip-dot { width: 9px; height: 9px; border-radius: 50%; }
+.rag-chip.status-green .rag-chip-dot { background: var(--rag-green); }
+.rag-chip.status-amber .rag-chip-dot { background: var(--rag-amber); }
+.rag-chip.status-red .rag-chip-dot { background: var(--rag-red); }
+.rag-chip-count { font-family: var(--font-mono); font-weight: 700; color: var(--muted); }
+.rag-chip.active { color: #fff; border-color: transparent; }
+.rag-chip.active .rag-chip-count { color: rgba(255,255,255,.85); }
+.rag-chip.status-green.active { background: var(--rag-green); }
+.rag-chip.status-amber.active { background: var(--rag-amber); }
+.rag-chip.status-red.active { background: var(--rag-red); }
+.rag-chip.active .rag-chip-dot { background: #fff; }
+
+/* ===== person drawer ===== */
+.person-name-btn { border: none; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--text);
+  cursor: pointer; text-align: left; }
+.person-name-btn:hover { color: var(--primary); text-decoration: underline; }
+.person-drawer-head { display: flex; justify-content: center; padding: 4px 0 14px; }
+.drawer-list { list-style: none; margin: 0 0 6px; padding: 0; }
+.drawer-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+.drawer-list li:last-child { border-bottom: none; }
+.drawer-list-main { color: var(--text); }
+.drawer-badge.status-person-present { background: var(--rag-green); }
+.drawer-badge.status-person-leave { background: var(--rag-amber); }
+.drawer-badge.status-person-detached { background: var(--signal); }
+.drawer-badge.status-person-training { background: var(--primary); }
+
+.activity-item.linkable { cursor: pointer; border-radius: var(--r-sm); }
+.activity-item.linkable:hover { background: var(--surface-2); }

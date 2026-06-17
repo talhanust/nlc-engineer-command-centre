@@ -29,17 +29,16 @@ describe('Phase 7 — command palette', () => {
     );
   });
 
-  it('finds a person and jumps to their HR page', async () => {
+  it('finds a person and opens their detail drawer', async () => {
     const user = userEvent.setup();
     renderAt('/');
     await screen.findByRole('heading', { name: 'HQ NLC' });
     await user.keyboard('{Control>}k{/Control}');
     const input = await screen.findByLabelText('Command palette search');
     await user.type(input, 'Sadia');
-    // Person hit appears (loaded via listAllPeople).
     await screen.findByText('Sadia Rauf');
     await user.keyboard('{Enter}');
-    await waitFor(() => expect(screen.getByText(/HR command/)).toBeInTheDocument());
+    expect(await screen.findByRole('dialog', { name: 'Sadia Rauf' })).toBeInTheDocument();
   });
 });
 

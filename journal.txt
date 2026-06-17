@@ -1,6 +1,31 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-16 — Per-node activity timeline
+- New ActivityFeed surfaces the append-only audit log as a readable, day-grouped
+  timeline (coloured entity tag · action · ref · detail, with a connector rail).
+  Mounted on the project Executive tab (that project's events) and on branch
+  dashboards with a "This node / All sub-units" scope toggle (self vs descendant
+  ids). Previously the audit log was only visible per entity-reference inside
+  detail modals (AuditTrail).
+- Made it live: audit() now emits a 'nlc:audit' window event and the feed
+  refetches on it, so an action (e.g. Update progress) shows up immediately.
+  Test drives the progress editor and asserts the new 'update' entry appears.
+  Web 229; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Right-hand detail drawer for projects
+- New slide-in DetailDrawer (Esc/backdrop close, animated) + ProjectDrawerHost
+  mounted at app root next to the command palette. It opens on a
+  'nlc:project-drawer' CustomEvent and shows a project's RAG badge, an
+  actual-vs-planned progress bar with slippage, financials (contract, billed,
+  received, outstanding, unbilled) and identity (client, location, code, PD HQ,
+  dates), with Open-project / Close actions — all without navigating away.
+- Triggers: a "Details" button in each map popup (project markers dispatch the
+  event; added to MapMarker.onDetails) and a "Details" button on project rows of
+  the dashboard league table (project rows only, via a projectIds set). The map
+  path stays headless-safe; the league-table path is covered by a new test.
+  Web 228; server 8; typecheck clean; both builds green.
+
 2026-06-16 — Map marker clustering
 - Added leaflet.markercluster (^1.5.3): the map's marker layer is now a themed
   cluster group, so busy maps (HQ NLC with many project pins) collapse nearby

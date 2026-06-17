@@ -71,6 +71,7 @@ export function HrCockpit({ nodeId, nodes }: { nodeId: string; nodes: OrgNode[] 
   // ---- organogram editing ----
   const [editing, setEditing] = useState(false);
   const [editorUnit, setEditorUnit] = useState<HrUnit | null>(null);
+  const [orgoLayout, setOrgoLayout] = useState<'chart' | 'outline'>('chart');
 
   async function enterEdit() {
     if (!authored && node) { await seedFromCategories(); }
@@ -148,6 +149,10 @@ export function HrCockpit({ nodeId, nodes }: { nodeId: string; nodes: OrgNode[] 
               {editing ? 'Editing establishment — changes save immediately.' : 'Tip: click any box to see who fills it.'}
             </p>
             <div className="orgo-toolbar-actions">
+              <span className="seg" role="group" aria-label="Organogram layout">
+                <button className={`seg-btn${orgoLayout === 'chart' ? ' active' : ''}`} onClick={() => setOrgoLayout('chart')}>Chart</button>
+                <button className={`seg-btn${orgoLayout === 'outline' ? ' active' : ''}`} onClick={() => setOrgoLayout('outline')}>Outline</button>
+              </span>
               <OrganogramExport units={editing ? units : effectiveUnits} title={`${node?.name ?? 'Establishment'}`} />
               {editing
                 ? <button className="btn" onClick={() => { setEditing(false); setEditorUnit(null); }}>Done editing</button>
@@ -168,7 +173,7 @@ export function HrCockpit({ nodeId, nodes }: { nodeId: string; nodes: OrgNode[] 
                       units={editing ? units : effectiveUnits} synthesised={!editing && !authored}
                       occupancy={people.length ? occupancy : undefined} people={people.length ? people : undefined}
                       onSelectUnit={editing ? undefined : selectUnit} selectedUnitId={selectedUnitId}
-                      editable={editing}
+                      editable={editing} layout={orgoLayout}
                       onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} onReparent={handleReparent}
                     />
                   </div>

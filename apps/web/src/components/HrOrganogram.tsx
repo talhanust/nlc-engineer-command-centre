@@ -18,6 +18,11 @@ interface OrgoCtx {
   onEdit?: (unit: HrUnit) => void;
   onDelete?: (unit: HrUnit) => void;
   onReparent?: (unitId: string, newParentId: string | null) => void;
+  // outline collapse + search
+  collapsedIds?: Set<string>;
+  toggleCollapse?: (id: string) => void;
+  searchActive?: boolean;
+  visibleIds?: Set<string> | null;
 }
 const Ctx = createContext<OrgoCtx>({});
 
@@ -154,6 +159,48 @@ function PostRow({ node, depth }: { node: OrgoNode; depth: number }) {
   );
 }
 
+/** A row in the indented-tree (outline) layout — better for deep hierarchies. */
+function OutlineNode({ node, depth }: { node: OrgoNode; depth: number }) {
+  const { onSelectUnit, selectedUnitId, editable, collapsedIds, toggleCollapse, searchActive, visibleIds } = useContext(Ctx);
+  const s = rolledStrength(node);
+  const hasKids = node.children.length > 0;
+  const selected = selectedUnitId === node.id;
+  const dnd = useDnd(node);
+  if (visibleIds && !visibleIds.has(node.id)) return null;
+  const open = searchActive ? true : !collapsedIds?.has(node.id);
+  return (
+    <div className="orgo-ol-branch">
+      <div
+        className={`orgo-ol-row${selected ? ' selected' : ''}${editable ? ' editable' : ''}`}
+        style={{ paddingLeft: 6 + depth * 18 }}
+        onClick={() => onSelectUnit?.(node.id)}
+        role="button" tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectUnit?.(node.id); } }}
+        {...dnd}
+      >
+        <button
+          className="orgo-ol-caret"
+          onClick={(e) => { e.stopPropagation(); if (hasKids) toggleCollapse?.(node.id); }}
+          aria-label={hasKids ? `${open ? 'Collapse' : 'Expand'} ${node.title}` : node.title}
+          style={{ visibility: hasKids ? 'visible' : 'hidden' }}
+        >
+          <span className={`orgo-caret${open ? ' open' : ''}`}>▸</span>
+        </button>
+        <StatusDot held={s.held} auth={s.auth} />
+        <span className="orgo-ol-title">{node.title}</span>
+        {node.scale && <span className="orgo-scale">{node.scale}</span>}
+        <span className="orgo-ol-spacer" />
+        <div className="orgo-ol-bar"><div className={`orgo-fill-track status-${fillStatus(s.held, s.auth)}`}><div className="orgo-fill-bar" style={{ width: `${Math.min(100, fillPct(s.held, s.auth))}%` }} /></div></div>
+        <SeatChip node={node} />
+        <span className="orgo-post-num">{s.held}/{s.auth}</span>
+        <EditTools node={node} />
+      </div>
+      <Occupants node={node} />
+      {hasKids && open && node.children.map((c) => <OutlineNode key={c.id} node={c} depth={depth + 1} />)}
+    </div>
+  );
+}
+
 function SectionCard({ node }: { node: OrgoNode }) {
   const { onSelectUnit, selectedUnitId, editable } = useContext(Ctx);
   const [open, setOpen] = useState(false);
@@ -204,7 +251,7 @@ function SectionCard({ node }: { node: OrgoNode }) {
 
 export function HrOrganogram({
   units, synthesised = false, occupancy, people, onSelectUnit, selectedUnitId,
-  editable = false, onAdd, onEdit, onDelete, onReparent,
+  editable = false, layout = 'chart', onAdd, onEdit, onDelete, onReparent,
 }: {
   units: HrUnit[]; synthesised?: boolean;
   occupancy?: Map<string, Occupancy>;
@@ -212,6 +259,7 @@ export function HrOrganogram({
   onSelectUnit?: (unitId: string) => void;
   selectedUnitId?: string;
   editable?: boolean;
+  layout?: 'chart' | 'outline';
   onAdd?: (parentId: string | null) => void;
   onEdit?: (unit: HrUnit) => void;
   onDelete?: (unit: HrUnit) => void;
@@ -220,6 +268,26 @@ export function HrOrganogram({
   const roots = useMemo(() => buildOrganogram(units), [units]);
   const totals = useMemo(() => establishmentTotals(roots), [roots]);
   const { spine, fanout } = useMemo(() => commandSpine(roots), [roots]);
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState('');
+  const toggleCollapse = (id: string) => setCollapsedIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allNodes = useMemo(() => { const out: OrgoNode[] = []; const w = (n: OrgoNode) => { out.push(n); n.children.forEach(w); }; roots.forEach(w); return out; }, [roots]);
+  const visibleIds = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return null;
+    const parentOf = new Map(units.map((u) => [u.id, u.parentId] as const));
+    const keep = new Set<string>();
+    for (const n of allNodes) {
+      if (n.title.toLowerCase().includes(q) || (n.scale ?? '').toLowerCase().includes(q)) {
+        keep.add(n.id);
+        let pid = parentOf.get(n.id) ?? null;
+        while (pid) { keep.add(pid); pid = parentOf.get(pid) ?? null; }
+        const desc = (m: OrgoNode) => m.children.forEach((c) => { keep.add(c.id); desc(c); });
+        desc(n);
+      }
+    }
+    return keep;
+  }, [query, allNodes, units]);
   const peopleByUnit = useMemo(() => {
     if (!people) return undefined;
     const m = new Map<string, HrPerson[]>();
@@ -242,7 +310,7 @@ export function HrOrganogram({
   const present = occupancy ? [...occupancy.values()].reduce((a, o) => a + o.present, 0) : null;
 
   return (
-    <Ctx.Provider value={{ occupancy, peopleByUnit, onSelectUnit, selectedUnitId, editable, onAdd, onEdit, onDelete, onReparent }}>
+    <Ctx.Provider value={{ occupancy, peopleByUnit, onSelectUnit, selectedUnitId, editable, onAdd, onEdit, onDelete, onReparent, collapsedIds, toggleCollapse, searchActive: !!visibleIds, visibleIds }}>
       <div className={`orgo${editable ? ' orgo-editing' : ''}`}>
         <div className="orgo-summary">
           <div className="orgo-summary-cell"><span className="orgo-summary-label">AUTH</span><span className="orgo-summary-val">{totals.auth}</span></div>
@@ -255,6 +323,20 @@ export function HrOrganogram({
 
         {editable && <p className="orgo-edit-hint small muted no-print">Editing — use ＋ to add, ✎ to edit, ✕ to remove. Drag a box onto another to re-assign its parent.</p>}
 
+        {layout === 'outline' ? (
+          <div className="orgo-outline">
+            <div className="orgo-outline-bar no-print">
+              <input className="orgo-search" aria-label="Search posts" placeholder="Search posts / scales…" value={query} onChange={(e) => setQuery(e.target.value)} />
+              <span className="seg">
+                <button className="seg-btn" onClick={() => setCollapsedIds(new Set())}>Expand all</button>
+                <button className="seg-btn" onClick={() => setCollapsedIds(new Set(allNodes.filter((n) => n.children.length > 0).map((n) => n.id)))}>Collapse all</button>
+              </span>
+            </div>
+            {roots.map((r) => <OutlineNode key={r.id} node={r} depth={0} />)}
+            {editable && <button className="orgo-ol-add no-print" onClick={() => onAdd?.(fanout ? fanout.id : (roots[0]?.id ?? null))}>＋ Add section</button>}
+          </div>
+        ) : (
+        <>
         {spine.length > 0 && (
           <div className="orgo-spine">
             {spine.map((u, i) => {
@@ -291,6 +373,8 @@ export function HrOrganogram({
               )}
             </div>
           </>
+        )}
+        </>
         )}
       </div>
     </Ctx.Provider>

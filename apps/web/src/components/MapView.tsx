@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import { ChartCard } from './chartUtils';
 import { useUiState, type Basemap } from '../state/UiState';
 import {
@@ -18,6 +20,8 @@ export interface MapMarker {
   emphasis?: boolean;   // larger pin for org HQs vs project sites
   glyph?: MarkerGlyph;  // building tile for HQ/PD HQ, dot for project sites
   onClick?: () => void;
+  detail?: Array<[string, string]>; // rows shown in the click popup
+  openLabel?: string;   // label for the popup's open action
 }
 
 interface MapViewProps {
@@ -30,6 +34,8 @@ interface MapViewProps {
   pick?: { lat: number; lng: number } | null;
   onPick?: (lat: number, lng: number) => void;
   legend?: React.ReactNode;
+  controls?: React.ReactNode;
+  footer?: React.ReactNode;
   interactiveZoom?: boolean;
 }
 
@@ -78,6 +84,10 @@ function pinHtml(color: string, glyph: MarkerGlyph, emphasis?: boolean): string 
   return `<span class="map-pin map-pin-dot" style="--pin:${color};width:${r * 2}px;height:${r * 2}px"></span>`;
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
+
 /**
  * Map surface used at every level and as a location picker. Leaflet + free
  * OpenStreetMap/CARTO tiles (no key), theme-matched, with a basemap switcher.
@@ -85,7 +95,7 @@ function pinHtml(color: string, glyph: MarkerGlyph, emphasis?: boolean): string 
  */
 export function MapView({
   markers = [], title = 'Map', subtitle, ariaLabel = 'Project map',
-  height = 320, picker = false, pick = null, onPick, legend, interactiveZoom = false,
+  height = 320, picker = false, pick = null, onPick, legend, controls, footer, interactiveZoom = false,
 }: MapViewProps) {
   const { theme, basemap, setBasemap } = useUiState();
   const ref = useRef<HTMLDivElement | null>(null);
@@ -104,12 +114,39 @@ export function MapView({
     void (async () => {
       const L = await import('leaflet');
       if (disposed || !ref.current) return;
+      // Cluster overlapping site/project pins so busy maps stay readable.
+      let clustered = false;
+      if (!picker) { try { await import('leaflet.markercluster'); clustered = true; } catch { clustered = false; } }
       map = L.map(ref.current, { scrollWheelZoom: interactiveZoom, zoomControl: true }).setView(PK_CENTER, PK_DEFAULT_ZOOM);
       const def = BASEMAPS[resolveBasemap(basemap, theme)];
       tileLayerRef.current = L.tileLayer(def.url, { attribution: def.attr, subdomains: def.subdomains ?? 'abc', maxZoom: 19 }).addTo(map);
-      markerLayerRef.current = L.layerGroup().addTo(map);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      markerLayerRef.current = (clustered && (L as any).markerClusterGroup
+        ? (L as any).markerClusterGroup({ maxClusterRadius: 46, showCoverageOnHover: false, spiderfyOnMaxZoom: true, chunkedLoading: true })
+        : L.featureGroup()).addTo(map);
       pickLayerRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
+
+      // "Fit to markers" control — refits the view to every plotted location.
+      if (!picker) {
+        const FitCtl = L.Control.extend({
+          options: { position: 'topleft' as const },
+          onAdd() {
+            const btn = L.DomUtil.create('button', 'map-fit-btn');
+            btn.type = 'button';
+            btn.title = 'Fit to markers';
+            btn.setAttribute('aria-label', 'Fit map to markers');
+            btn.innerHTML = '⤢';
+            L.DomEvent.on(btn, 'click', (ev: Event) => {
+              L.DomEvent.stop(ev);
+              const fg = markerLayerRef.current as import('leaflet').FeatureGroup | null;
+              if (fg && map) { const b = fg.getBounds(); if (b.isValid()) map.fitBounds(b.pad(0.3), { maxZoom: 13 }); }
+            });
+            return btn;
+          },
+        });
+        new FitCtl().addTo(map);
+      }
 
       if (picker) {
         map.on('click', (e: import('leaflet').LeafletMouseEvent) => {
@@ -155,7 +192,22 @@ export function MapView({
       });
       const mk = L.marker([m.lat, m.lng], { icon, title: m.label, riseOnHover: true }).addTo(layer);
       mk.bindTooltip(m.label, { direction: 'top', offset: [0, -size / 2] });
-      if (m.onClick) mk.on('click', () => m.onClick!());
+      if (picker) {
+        if (m.onClick) mk.on('click', () => m.onClick!());
+      } else {
+        const rows = (m.detail ?? []).map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`).join('');
+        const open = m.onClick ? `<button type="button" class="map-popup-open">${escapeHtml(m.openLabel ?? 'Open ›')}</button>` : '';
+        mk.bindPopup(
+          `<div class="map-popup"><strong class="map-popup-title">${escapeHtml(m.label)}</strong>${rows ? `<table class="map-popup-rows">${rows}</table>` : ''}${open}</div>`,
+          { closeButton: true, offset: [0, -size / 2], minWidth: 180 },
+        );
+        if (m.onClick) {
+          mk.on('popupopen', (e: import('leaflet').PopupEvent) => {
+            const el = e.popup.getElement()?.querySelector('.map-popup-open');
+            if (el) el.addEventListener('click', () => m.onClick!(), { once: true });
+          });
+        }
+      }
     }
     if (valid.length > 0) {
       const bounds = L.latLngBounds(valid.map((m) => [m.lat, m.lng] as [number, number]));
@@ -184,7 +236,7 @@ export function MapView({
     if (!map) return;
     void (async () => { const L = await import('leaflet'); syncMarkers(L, map); })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(markers.map((m) => [m.id, m.lat, m.lng, m.color, m.emphasis, m.glyph]))]);
+  }, [JSON.stringify(markers.map((m) => [m.id, m.lat, m.lng, m.color, m.emphasis, m.glyph, m.label]))]);
 
   useEffect(() => {
     if (HEADLESS) return;
@@ -210,12 +262,13 @@ export function MapView({
   );
 
   return (
-    <ChartCard title={title} subtitle={sub} ariaLabel={ariaLabel} headerExtra={<>{legend}{basemapSelect}</>}>
+    <ChartCard title={title} subtitle={sub} ariaLabel={ariaLabel} headerExtra={<>{controls}{legend}{basemapSelect}</>}>
       {HEADLESS ? (
         <OfflineLocator markers={located} pick={pick} height={height} />
       ) : (
         <div ref={ref} className="leaflet-host" style={{ width: '100%', height, borderRadius: 'var(--r-sm)', overflow: 'hidden' }} aria-hidden="true" />
       )}
+      {footer}
     </ChartCard>
   );
 }

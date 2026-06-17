@@ -9,6 +9,8 @@ import {
 import { occupancyByUnit, peopleInUnit, benchPeople, STATUS_LABEL } from '../domain/roster';
 import { costBySection, totalMonthlyCost, type CostBasis } from '../domain/hrcost';
 import { PersonCard, EmptySeat } from './HrAvatar';
+import { useBulkSelection } from './useBulkSelection';
+import { useToast } from './Toast';
 
 const STATUSES: HrPersonStatus[] = ['present', 'leave', 'detached', 'training'];
 
@@ -22,9 +24,24 @@ export function RosterView({
   nodeId, units, people, selectedUnitId, onChange,
 }: { nodeId: string; units: HrUnit[]; people: HrPerson[]; selectedUnitId?: string; onChange: () => void }) {
   const { provider } = useData();
+  const { toast } = useToast();
+  const sel = useBulkSelection();
+  const [bulkStatus, setBulkStatus] = useState<HrPersonStatus>('present');
   const [editing, setEditing] = useState<HrPerson | null>(null);
   const [showForm, setShowForm] = useState(false);
   const byId = useMemo(() => new Map(units.map((u) => [u.id, u])), [units]);
+
+  const toInput = (p: HrPerson) => { const { nodeId: _omit, ...rest } = p; return rest; };
+  async function applyBulkStatus() {
+    const targets = people.filter((p) => sel.selected.has(p.id));
+    if (targets.length === 0) return;
+    for (const p of targets) await provider.upsertPerson(nodeId, { ...toInput(p), status: bulkStatus });
+    sel.clear(); onChange();
+    toast({
+      message: `${targets.length} marked ${STATUS_LABEL[bulkStatus]}`, kind: 'success', actionLabel: 'Undo',
+      onAction: async () => { for (const p of targets) await provider.upsertPerson(nodeId, { ...toInput(p) }); onChange(); },
+    });
+  }
 
   const occupiedUnitIds = useMemo(() => {
     const ids = new Set(people.map((p) => p.unitId).filter(Boolean) as string[]);
@@ -52,6 +69,18 @@ export function RosterView({
         </button>
       </div>
 
+      {sel.count > 0 && (
+        <div className="bulk-bar no-print" role="region" aria-label="Bulk attendance">
+          <span className="bulk-count">{sel.count} selected</span>
+          <span className="muted small">Set attendance:</span>
+          <select aria-label="Bulk attendance status" value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value as HrPersonStatus)}>
+            {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+          </select>
+          <button className="btn btn-mini" onClick={applyBulkStatus}>Apply</button>
+          <button className="btn-ghost btn-mini" onClick={sel.clear}>Clear</button>
+        </div>
+      )}
+
       {(showForm || editing) && (
         <PersonForm
           nodeId={nodeId} units={units} person={editing} defaultUnitId={selectedUnitId}
@@ -77,7 +106,7 @@ export function RosterView({
             </div>
             <div className="person-grid">
               {members.map((p) => (
-                <PersonCard key={p.id} person={p} onOpen={() => window.dispatchEvent(new CustomEvent("nlc:person-drawer", { detail: { personId: p.id, nodeId } }))} onEdit={() => { setShowForm(false); setEditing(p); }} onRemove={() => remove(p)} />
+                <PersonCard key={p.id} person={p} onOpen={() => window.dispatchEvent(new CustomEvent("nlc:person-drawer", { detail: { personId: p.id, nodeId } }))} onEdit={() => { setShowForm(false); setEditing(p); }} onRemove={() => remove(p)} selected={sel.selected.has(p.id)} onToggleSelect={() => sel.toggle(p.id)} />
               ))}
               {Array.from({ length: empty }).map((_, i) => (
                 <EmptySeat key={`empty-${uid}-${i}`} label={unit?.title ?? ''} onFill={() => { setEditing({ id: '', nodeId, unitId: uid, name: '', status: 'present' } as HrPerson); }} />
@@ -91,7 +120,7 @@ export function RosterView({
         <div className="card" style={{ marginBottom: 12 }}>
           <div className="section-head"><h3>Bench · unassigned</h3><span className="muted small">{bench.length}</span></div>
           <div className="person-grid">
-            {bench.map((p) => <PersonCard key={p.id} person={p} onOpen={() => window.dispatchEvent(new CustomEvent("nlc:person-drawer", { detail: { personId: p.id, nodeId } }))} onEdit={() => { setShowForm(false); setEditing(p); }} onRemove={() => remove(p)} />)}
+            {bench.map((p) => <PersonCard key={p.id} person={p} onOpen={() => window.dispatchEvent(new CustomEvent("nlc:person-drawer", { detail: { personId: p.id, nodeId } }))} onEdit={() => { setShowForm(false); setEditing(p); }} onRemove={() => remove(p)} selected={sel.selected.has(p.id)} onToggleSelect={() => sel.toggle(p.id)} />)}
           </div>
         </div>
       )}

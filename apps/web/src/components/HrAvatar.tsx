@@ -18,10 +18,13 @@ export function HrAvatar({ person, size = 38 }: { person: { name: string; photoU
 }
 
 export function PersonCard({
-  person, onEdit, onRemove, onOpen,
-}: { person: HrPerson; onEdit?: () => void; onRemove?: () => void; onOpen?: () => void }) {
+  person, onEdit, onRemove, onOpen, selected, onToggleSelect,
+}: { person: HrPerson; onEdit?: () => void; onRemove?: () => void; onOpen?: () => void; selected?: boolean; onToggleSelect?: () => void }) {
   return (
-    <div className={`person-card status-person-${person.status}`}>
+    <div className={`person-card status-person-${person.status}${selected ? ' selected' : ''}`}>
+      {onToggleSelect && (
+        <input type="checkbox" className="person-select no-print" checked={!!selected} onChange={onToggleSelect} aria-label={`Select ${person.name}`} />
+      )}
       <HrAvatar person={person} size={40} />
       <div className="person-main">
         {onOpen

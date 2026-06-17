@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
  * when the value actually changed.
  */
 export function EditableCell({
-  value, onCommit, type = 'text', ariaLabel, placeholder = '—', align = 'left',
+  value, onCommit, type = 'text', ariaLabel, placeholder = '—', align = 'left', coords,
 }: {
   value: string;
   onCommit: (next: string) => void;
@@ -14,6 +14,7 @@ export function EditableCell({
   ariaLabel: string;
   placeholder?: string;
   align?: 'left' | 'right';
+  coords?: { r: number; c: number };
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -51,6 +52,8 @@ export function EditableCell({
       type="button"
       className={`editable-cell${value.trim() ? '' : ' empty'}`}
       aria-label={ariaLabel}
+      data-r={coords?.r}
+      data-c={coords?.c}
       style={{ textAlign: align, width: '100%' }}
       onClick={() => setEditing(true)}
     >

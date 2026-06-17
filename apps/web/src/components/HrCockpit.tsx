@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useData } from '../data/DataContext';
 import { nodeById, isBranch } from '../domain/org';
 import {
@@ -252,6 +252,21 @@ function EstablishmentBuilder({
   }
   async function remove(id: string) { await provider.deleteHrUnit(nodeId, id); onChange(); }
 
+  const gridRef = useRef<HTMLDivElement>(null);
+  function onGridKey(e: React.KeyboardEvent) {
+    const el = document.activeElement as HTMLElement | null;
+    if (!el || el.dataset.r === undefined || el.dataset.c === undefined) return;
+    const r = Number(el.dataset.r), c = Number(el.dataset.c);
+    let tr = r, tc = c;
+    if (e.key === 'ArrowDown') tr = r + 1;
+    else if (e.key === 'ArrowUp') tr = r - 1;
+    else if (e.key === 'ArrowRight') tc = c + 1;
+    else if (e.key === 'ArrowLeft') tc = c - 1;
+    else return;
+    const target = gridRef.current?.querySelector<HTMLElement>(`[data-r="${tr}"][data-c="${tc}"]`);
+    if (target) { e.preventDefault(); target.focus(); }
+  }
+
   const byId = new Map(units.map((u) => [u.id, u]));
   const labelFor = (u: HrUnit) => (u.parentId && byId.has(u.parentId) ? `${byId.get(u.parentId)!.title} › ${u.title}` : u.title);
 
@@ -277,23 +292,25 @@ function EstablishmentBuilder({
         <button className="btn" onClick={add}>Add post</button>
       </div>
 
+      <div ref={gridRef} onKeyDown={onGridKey}>
       <table className="data-table" aria-label="Establishment posts" style={{ marginTop: 12 }}>
         <thead><tr><th>Post</th><th>Reports to</th><th>Scale</th><th>Category</th><th className="num">Auth</th><th className="num">Held</th><th></th></tr></thead>
         <tbody>
           {units.length === 0 ? <tr><td colSpan={7} className="muted">No posts yet.</td></tr> :
-            units.map((u) => (
+            units.map((u, r) => (
               <tr key={u.id}>
-                <td><EditableCell value={u.title} ariaLabel={`Title ${u.id}`} onCommit={(v) => v.trim() && patch(u, { title: v.trim() })} /></td>
+                <td><EditableCell coords={{ r, c: 0 }} value={u.title} ariaLabel={`Title ${u.id}`} onCommit={(v) => v.trim() && patch(u, { title: v.trim() })} /></td>
                 <td className="muted small">{u.parentId && byId.has(u.parentId) ? byId.get(u.parentId)!.title : '— head —'}</td>
-                <td className="small"><EditableCell value={u.scale ?? ''} ariaLabel={`Scale ${u.id}`} onCommit={(v) => patch(u, { scale: v.trim() || undefined })} /></td>
-                <td className="small"><EditableCell value={u.category ?? ''} ariaLabel={`Category ${u.id}`} onCommit={(v) => patch(u, { category: v.trim() || undefined })} /></td>
-                <td className="num"><EditableCell type="number" align="right" value={String(u.auth)} ariaLabel={`Auth ${u.id}`} onCommit={(v) => patch(u, { auth: Number(v) || 0 })} /></td>
-                <td className="num"><EditableCell type="number" align="right" value={String(u.held)} ariaLabel={`Held ${u.id}`} onCommit={(v) => patch(u, { held: Number(v) || 0 })} /></td>
+                <td className="small"><EditableCell coords={{ r, c: 1 }} value={u.scale ?? ''} ariaLabel={`Scale ${u.id}`} onCommit={(v) => patch(u, { scale: v.trim() || undefined })} /></td>
+                <td className="small"><EditableCell coords={{ r, c: 2 }} value={u.category ?? ''} ariaLabel={`Category ${u.id}`} onCommit={(v) => patch(u, { category: v.trim() || undefined })} /></td>
+                <td className="num"><EditableCell coords={{ r, c: 3 }} type="number" align="right" value={String(u.auth)} ariaLabel={`Auth ${u.id}`} onCommit={(v) => patch(u, { auth: Number(v) || 0 })} /></td>
+                <td className="num"><EditableCell coords={{ r, c: 4 }} type="number" align="right" value={String(u.held)} ariaLabel={`Held ${u.id}`} onCommit={(v) => patch(u, { held: Number(v) || 0 })} /></td>
                 <td><button className="btn-ghost" aria-label={`Delete ${u.title}`} onClick={() => remove(u.id)}>✕</button></td>
               </tr>
             ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

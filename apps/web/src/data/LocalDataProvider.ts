@@ -1561,6 +1561,7 @@ function audit(projectId: string, action: string, entity: string, ref: string, d
     projectId, action, entity, ref, detail,
   });
   writeJson(AUDIT_KEY, all.slice(0, 500)); // cap
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('nlc:audit'));
 }
 
 /** Read JSON from localStorage, seeding (and persisting) a default if absent. */

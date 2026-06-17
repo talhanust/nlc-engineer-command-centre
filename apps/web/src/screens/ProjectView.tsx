@@ -8,6 +8,7 @@ import { useUiState } from '../state/UiState';
 import { KpiCard } from '../components/KpiCard';
 import { RagBadge } from '../components/RagBadge';
 import { SalientsCard } from '../components/SalientsCard';
+import { ActivityFeed } from '../components/ActivityFeed';
 import { ProgressEditor } from '../components/ProgressEditor';
 import { CommercialTab } from './commercial/CommercialTab';
 import { ExecutionTab } from './execution/ExecutionTab';
@@ -102,6 +103,7 @@ export function ProjectView({ nodeId }: { nodeId: string }) {
           </div>
           <SalientsCard projectId={nodeId} />
           <NodeMap nodeId={nodeId} nodes={nodes} projects={projects} onSaved={refresh} height={320} />
+          <ActivityFeed nodeId={nodeId} />
         </>
       )}
       {active === 'gallery' && <PhotoGallery projectId={nodeId} />}

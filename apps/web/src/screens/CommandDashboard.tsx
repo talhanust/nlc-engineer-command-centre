@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useData } from '../data/DataContext';
 import { useUiState } from '../state/UiState';
 import { computeNodeRollup } from '../domain/rollup';
+import { descendantNodes } from '../domain/org';
 import { applyFilter } from '../domain/filter';
 import { formatMoney, formatPct } from '../domain/money';
 import { KpiCard } from '../components/KpiCard';
@@ -18,6 +19,7 @@ import { nodeBreakdownCsv, nodeBreakdownAoa } from '../domain/exporters';
 import { downloadWorkbook } from '../components/xlsxExport';
 import { NewProjectModal } from '../components/NewProjectModal';
 import { NodeMap } from '../components/NodeMap';
+import { ActivityFeed } from '../components/ActivityFeed';
 import { CollapsibleCard } from '../components/CollapsibleCard';
 
 export function CommandDashboard({ nodeId }: { nodeId: string }) {
@@ -151,12 +153,17 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
       </CollapsibleCard>
 
       <div className="panel-grid">
-        <LeagueTable rows={children} />
+        <LeagueTable
+          rows={children}
+          projectIds={new Set(projects.map((p) => p.id))}
+          onDetails={(id) => window.dispatchEvent(new CustomEvent('nlc:project-drawer', { detail: { projectId: id } }))}
+        />
         <Exceptions nodeId={nodeId} projects={filtered} />
       </div>
       <BillingFunnel totals={totals} />
       <PortfolioSCurve nodeId={nodeId} projects={filtered} />
       <HrCockpit nodeId={nodeId} nodes={nodes} />
+      <ActivityFeed nodeId={nodeId} scopeIds={[nodeId, ...descendantNodes(nodes, nodeId).map((n) => n.id)]} />
       <NodeMap nodeId={nodeId} nodes={nodes} projects={projects} onSaved={refresh} hero={node.type === 'hq'} />
     </section>
   );

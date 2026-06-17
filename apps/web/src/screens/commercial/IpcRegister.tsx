@@ -7,10 +7,12 @@ import { computeDeductions, DEFAULT_DEDUCTION_SETTINGS } from '../../domain/dedu
 import { useBulkSelection } from '../../components/useBulkSelection';
 import { ROLE_LABEL } from '../../domain/chains';
 import { IpcDetailModal } from '../../components/IpcDetailModal';
+import { useToast } from '../../components/Toast';
 import type { Ipc } from '../../data/types';
 
 export function IpcRegister({ projectId }: { projectId: string }) {
   const { provider } = useData();
+  const { toast } = useToast();
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
   const [detailIpc, setDetailIpc] = useState<Ipc | null>(null);
   const [period, setPeriod] = useState('');
@@ -35,6 +37,7 @@ export function IpcRegister({ projectId }: { projectId: string }) {
       setIpcs((prev) => [...prev, created]);
       setPeriod('');
       setGross('');
+      toast({ message: `IPC ${created.ipcNo} created`, kind: 'success' });
     } finally {
       setBusy(false);
     }
@@ -45,6 +48,7 @@ export function IpcRegister({ projectId }: { projectId: string }) {
     if (!t) return;
     const updated = await provider.transitionIpc(projectId, ipc.ipcNo, t.action);
     setIpcs((prev) => prev.map((i) => (i.ipcNo === updated.ipcNo ? updated : i)));
+    toast({ message: `${updated.ipcNo} → ${IPC_STATUS_LABEL[updated.status]}`, kind: 'success' });
   }
 
   async function reverse(ipc: Ipc) {

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useData } from '../data/DataContext';
 import { useUiState } from '../state/UiState';
 import { computeNodeRollup } from '../domain/rollup';
-import { descendantNodes } from '../domain/org';
+import { descendantNodes, descendantProjectIds } from '../domain/org';
 import { applyFilter } from '../domain/filter';
 import { formatMoney, formatPct } from '../domain/money';
 import { KpiCard } from '../components/KpiCard';
@@ -20,6 +20,7 @@ import { downloadWorkbook } from '../components/xlsxExport';
 import { NewProjectModal } from '../components/NewProjectModal';
 import { NodeMap } from '../components/NodeMap';
 import { ActivityFeed } from '../components/ActivityFeed';
+import { RagFilterChips } from '../components/RagFilterChips';
 import { CollapsibleCard } from '../components/CollapsibleCard';
 
 export function CommandDashboard({ nodeId }: { nodeId: string }) {
@@ -30,6 +31,8 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
 
   // True re-aggregation: filter the project set, then roll up over it.
   const filtered = applyFilter(projects, nodes, filter, rag);
+  const scopeIds = new Set(descendantProjectIds(nodes, nodeId));
+  const scopeProjects = projects.filter((p) => scopeIds.has(p.id));
   const rollup = computeNodeRollup(nodes, filtered, nodeId, { rag });
   if (!rollup) return <p>Node not found.</p>;
   const { totals, children, node } = rollup;
@@ -80,6 +83,7 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
       </div>
 
       <FilterBar />
+      <RagFilterChips projects={scopeProjects} />
       {filterActive && (
         <p className="muted small filter-note">
           Filtered view — {totals.projectCount} project{totals.projectCount === 1 ? '' : 's'} match; all figures re-aggregated.

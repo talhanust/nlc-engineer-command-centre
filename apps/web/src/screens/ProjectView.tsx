@@ -9,6 +9,7 @@ import { KpiCard } from '../components/KpiCard';
 import { RagBadge } from '../components/RagBadge';
 import { SalientsCard } from '../components/SalientsCard';
 import { ActivityFeed } from '../components/ActivityFeed';
+import { useToast } from '../components/Toast';
 import { ProgressEditor } from '../components/ProgressEditor';
 import { CommercialTab } from './commercial/CommercialTab';
 import { ExecutionTab } from './execution/ExecutionTab';
@@ -30,6 +31,7 @@ export function ProjectView({ nodeId }: { nodeId: string }) {
   const { nodes, projects, provider, refresh } = useData();
   const { rag } = useUiState();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const { tab } = useParams();
   const [editProgress, setEditProgress] = useState(false);
   const active: Tab = (TABS as readonly string[]).includes(tab ?? '') ? (tab as Tab) : 'executive';
@@ -40,10 +42,13 @@ export function ProjectView({ nodeId }: { nodeId: string }) {
   const slippage = project.actualPct - project.plannedPct;
 
   async function archive() {
-    if (!confirm(`Archive ${node!.name}? It will be hidden from the tree (restore in Settings).`)) return;
     await provider.archiveProject(nodeId);
     await refresh();
     navigate('/node/hq-nlc');
+    toast({
+      message: `Archived “${node!.name}”`, kind: 'info', actionLabel: 'Undo',
+      onAction: async () => { await provider.restoreProject(nodeId); await refresh(); navigate(`/node/${nodeId}`); },
+    });
   }
 
   return (

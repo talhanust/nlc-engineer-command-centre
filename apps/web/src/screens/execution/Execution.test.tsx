@@ -246,6 +246,21 @@ describe('HR cockpit + organogram', () => {
     expect(await screen.findByRole('table', { name: 'Vacancies' })).toBeInTheDocument();
   });
 
+  it('inline-edits an establishment table cell', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-rwp-ring/hr');
+    await screen.findByText(/HR command/);
+    await user.click(screen.getByRole('tab', { name: 'Establishment' }));
+    const table = await screen.findByRole('table', { name: 'Establishment posts' });
+    await user.click(within(table).getByText('Coordination'));
+    const input = within(table).getByDisplayValue('Coordination');
+    await user.clear(input);
+    await user.type(input, 'Coordination Wing');
+    await user.keyboard('{Enter}');
+    expect(await within(table).findByText('Coordination Wing')).toBeInTheDocument();
+    expect(await screen.findByText(/Updated/)).toBeInTheDocument();
+  });
+
   it('switches the organogram to an outline with search', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-rwp-ring/hr');
@@ -279,6 +294,17 @@ describe('HR cockpit + organogram', () => {
     expect(within(board).getByText('HQ PD Centre')).toBeInTheDocument();
   });
 
+  it('opens a person detail drawer from the roster', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-rwp-ring/hr');
+    await screen.findByText(/HR command/);
+    await user.click(screen.getByRole('tab', { name: 'Roster' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Hamza Sheikh' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Hamza Sheikh' });
+    expect(within(dialog).getByText(/Credentials/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/CIVIL\/12345/)).toBeInTheDocument();
+  });
+
   it('lists credentials and flags expiry', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-rwp-ring/hr');
@@ -287,6 +313,11 @@ describe('HR cockpit + organogram', () => {
     const table = await screen.findByRole('table', { name: 'Credentials' });
     expect(within(table).getByText('CIVIL/12345')).toBeInTheDocument();
     expect(screen.getByText(/need attention/)).toBeInTheDocument();
+    // Delete with undo restores the credential.
+    await user.click(screen.getByRole('button', { name: 'Delete credential CIVIL/12345' }));
+    await waitFor(() => expect(screen.queryByText('CIVIL/12345')).not.toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(await screen.findByText('CIVIL/12345')).toBeInTheDocument();
   });
 
   it('advances a posting through approval', async () => {
@@ -308,6 +339,7 @@ describe('HR cockpit + organogram', () => {
     await user.click(screen.getByRole('tab', { name: 'Versions' }));
     await user.click(screen.getByRole('button', { name: 'Snapshot current' }));
     expect(await screen.findByText(/v1 ·/)).toBeInTheDocument();
+    expect(await screen.findByText(/Snapshot v1 captured/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Diff vs current/ }));
     expect(await screen.findByText(/No changes/)).toBeInTheDocument();
   });

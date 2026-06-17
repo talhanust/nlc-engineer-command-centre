@@ -7,9 +7,11 @@ import { nextRarTransition, RAR_STATUS_LABEL } from '../../domain/rar';
 import { useBulkSelection } from '../../components/useBulkSelection';
 import { CategoryBar } from '../../components/CategoryCharts';
 import type { Rar, Subcontractor, Ipc, RarIpcLink } from '../../data/types';
+import { useToast } from '../../components/Toast';
 
 export function RarRegister({ projectId }: { projectId: string }) {
   const { provider } = useData();
+  const { toast } = useToast();
   const [rars, setRars] = useState<Rar[]>([]);
   const [detailRar, setDetailRar] = useState<Rar | null>(null);
   const [subs, setSubs] = useState<Subcontractor[]>([]);
@@ -52,6 +54,7 @@ export function RarRegister({ projectId }: { projectId: string }) {
     setRars((prev) => [...prev, created]);
     setPeriod('');
     setGross('');
+    toast({ message: `${created.rarNo} created`, kind: 'success' });
   }
 
   async function advance(rar: Rar) {
@@ -59,6 +62,7 @@ export function RarRegister({ projectId }: { projectId: string }) {
     if (!t) return;
     const updated = await provider.transitionRar(projectId, rar.rarNo, t.action);
     setRars((prev) => prev.map((r) => (r.rarNo === updated.rarNo ? updated : r)));
+    toast({ message: `${updated.rarNo} → ${RAR_STATUS_LABEL[updated.status]}`, kind: 'success' });
   }
 
   async function advanceSelected() {

@@ -109,6 +109,7 @@ describe('Phase 3 — Commercial tab', () => {
     const row = within(table).getByText('IPC-03').closest('tr')! as HTMLElement;
     await user.click(within(row).getByRole('button', { name: 'Submit to client' }));
     await waitFor(() => expect(within(row).getByText('With client')).toBeInTheDocument());
+    expect(await screen.findByText(/IPC-03 → With client/)).toBeInTheDocument();
   });
 
   it('creates a new draft IPC', async () => {

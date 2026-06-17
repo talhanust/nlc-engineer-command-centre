@@ -484,7 +484,7 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .orgo-branch-bar { height: 2px; background: var(--border-strong); width: min(96%, 100%); margin: 0 auto; }
 
 /* Section grid */
-.orgo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 14px; margin-top: 12px; }
+.orgo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 14px; margin-top: 12px; }
 .orgo-section { position: relative; background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r); padding: 12px 13px; box-shadow: var(--shadow-1); box-shadow: inset 3px 0 0 var(--st), var(--shadow-1);
   transition: transform .12s ease, box-shadow .12s ease; }
@@ -513,12 +513,12 @@ code { font-family: var(--font-mono); font-size: .9em; }
 
 /* Posts (designation level) */
 .orgo-posts { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 6px; }
-.orgo-post { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px;
-  border-radius: var(--r-sm); font-size: 12.5px; }
+.orgo-post { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 3px 8px;
+  padding: 5px 8px; border-radius: var(--r-sm); font-size: 12.5px; }
 .orgo-post.has-kids { cursor: pointer; }
 .orgo-post:hover { background: var(--surface-2); }
-.orgo-post-main { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.orgo-post-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.orgo-post-main { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1 1 60%; }
+.orgo-post-title { white-space: normal; overflow-wrap: anywhere; line-height: 1.2; font-weight: 500; }
 .orgo-post-num { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); flex: 0 0 auto; }
 
 /* status tags reused in KPIs */
@@ -561,7 +561,7 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .orgo-seatchip .seat-named { color: var(--muted); }
 .orgo-seatchip .seat-sep { color: var(--border-strong); }
 .orgo-seatchip .seat-empty { color: var(--rag-amber); font-weight: 700; margin-left: 3px; }
-.orgo-post-right, .orgo-foot-right { display: inline-flex; align-items: center; gap: 8px; }
+.orgo-post-right, .orgo-foot-right { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; margin-left: auto; }
 .orgo-section.selected, .orgo-command.selected, .orgo-post.selected { outline: 2px solid var(--primary); outline-offset: 1px; }
 .orgo-section { cursor: pointer; }
 
@@ -643,3 +643,11 @@ code { font-family: var(--font-mono); font-size: .9em; }
 
 .orgo-empty-edit { text-align: center; padding: 24px; }
 .unit-editor { border: 1px solid var(--primary); margin-bottom: 12px; }
+
+/* occupant names under posts */
+.orgo-occupants { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 0 2px 22px; }
+.orgo-occ { display: inline-flex; align-items: center; gap: 5px; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 1px 8px 1px 3px; font-size: 11px; }
+.orgo-occ .hr-avatar-initials { width: 16px; height: 16px; font-size: 8px; }
+.orgo-occ .occ-name { color: var(--text); }
+.orgo-occ.vacant { color: var(--muted); font-style: italic; padding-left: 8px; border-style: dashed; }

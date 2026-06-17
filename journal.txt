@@ -1,6 +1,92 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-16 — Consistency pass: commercial billing toasts
+- Extended save confirmations to the core billing registers. IPC: create ("IPC-04
+  created") and each stage transition ("IPC-03 → With client"). RAR: create and
+  stage transition ("RAR-… → …"). Reuses the toast primitive (useToast added to
+  IpcRegister/RarRegister). Asserted the IPC advance toast in the commercial test.
+  Web 234; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Consistency pass: HR admin save confirmations
+- Wired success toasts through the HR admin workflows that previously saved
+  silently: credential add ("Added … credential"), posting raise/effect/reject,
+  and establishment snapshot ("Snapshot vN captured") / sanction ("Sanctioned
+  vN"). Reuses the toast primitive (useToast added to PostingsView/VersionsView).
+  Feedback is now uniform across HR. Extended the version test to assert the
+  snapshot toast. Web 234; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Cross-linked drawers (peek from palette + activity)
+- Command palette: selecting a person now opens their detail drawer in place
+  (dispatches nlc:person-drawer) instead of navigating to the HR page — a fast
+  Linear-style peek from anywhere. Nodes/projects still navigate.
+- Activity feed: project-scoped entries (entity ≠ Node) are now clickable and
+  open that project's detail drawer, so you can jump from an event straight to
+  the project's numbers. Keyboard-accessible (Enter/Space).
+- Updated the palette test to assert the person drawer opens. Web 234; server 8;
+  typecheck clean; both builds green.
+
+2026-06-16 — Person detail drawer
+- Clicking a person's name in the roster (or bench) now opens a right-hand
+  drawer (reusing DetailDrawer) with their post, status badge, rank, category,
+  CNIC, contact and posting date, plus their Credentials (kind · ref + expiry
+  badge) and Postings (destination + stage) pulled live from the node's stores.
+  New PersonDrawerHost mounted at app root listens for an 'nlc:person-drawer'
+  event; PersonCard gained an onOpen (clickable name). "Open HR →" jumps to the
+  cockpit. Test opens Hamza Sheikh and asserts his PEC credential shows. Web 234;
+  server 8; typecheck clean; both builds green.
+
+2026-06-16 — Cross-filtering (shared RAG lens)
+- The map's status filter is no longer a private control: it now reads/writes the
+  shared UiState RAG filter, so the map, league table, exceptions, S-curve and
+  KPIs all respond to one health filter together.
+- Added one-click RagFilterChips on dashboards — On track / At risk / Behind with
+  live subtree counts; tapping one sets the shared filter (tap again to clear),
+  active chip highlighted. Saved map views still capture the RAG lens.
+- Test taps the Behind chip and asserts the shared map status filter follows.
+  Web 233; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Inline-edit table cells
+- New reusable EditableCell: click (or Enter/Space) turns a cell into an input
+  that commits on Enter/blur and cancels on Esc, firing onCommit only when the
+  value changed. Applied across the establishment table (title, scale, category,
+  auth, held) — every cell is now click-to-edit with an optimistic save and a
+  brief "Updated …" toast; edits flow straight through to the organogram. The
+  old bare auth/held blur-inputs are replaced by the unified primitive. Test
+  edits a title cell inline and asserts the new value + toast. Web 232; server 8;
+  typecheck clean; both builds green.
+
+2026-06-16 — Undo for destructive actions
+- Project archive no longer uses a blocking confirm(); it archives, navigates to
+  HQ, and shows an "Archived …" toast with Undo that restores the project and
+  returns to it. HR credential delete (Skills) likewise shows an Undo toast that
+  re-adds the credential. Both reuse the toast primitive's action button; the
+  reversible-op pattern (capture → delete → re-create on undo) is now used in
+  three places (photos, credentials, archive). Tests cover archive→undo→restored
+  and credential delete→undo→restored. Web 231; server 8; typecheck clean; both
+  builds green.
+
+2026-06-16 — Saved map views
+- The map can now save its current lens — view filter (HQ+projects / projects /
+  sites), RAG status filter, and basemap — as a named, persisted view and recall
+  it from a dropdown. Stored browser-local in UiState under nlc-ecc.mapviews
+  (mirrors the named-layouts pattern) with saveMapView/deleteMapView; views are
+  global so they apply on any node's map. Save confirms with a toast; delete from
+  the selected view. Controls only show in Overview mode on tiers with
+  descendants. Test saves a view, changes the filter, recalls it. Web 230;
+  server 8; typecheck clean; both builds green.
+
+2026-06-16 — Toast notifications + undo primitive
+- New ToastProvider/useToast mounted at app root: a bottom-right stack of
+  success/info/error toasts that auto-dismiss (longer when an action is present),
+  each with an optional action button and manual close. Reusable app-wide; the
+  default context is a no-op so callers never crash without the provider.
+- Wired first uses: progress save now confirms with a "Progress updated" toast
+  instead of saving silently; deleting a progress photo shows an "Undo" toast
+  that re-adds it (reversible-op pattern). Tests cover both the success toast and
+  the delete→undo→restore flow. Web 229; server 8; typecheck clean; both builds
+  green.
+
 2026-06-16 — Per-node activity timeline
 - New ActivityFeed surfaces the append-only audit log as a readable, day-grouped
   timeline (coloured entity tag · action · ref · detail, with a connector rail).

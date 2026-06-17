@@ -1,6 +1,21 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-16 — Fix clipped post titles + show occupant names on the chart
+- Bug: inside a narrow section card the post row laid title (left) against a
+  growing right cluster (seat chip + held/auth + the three edit buttons); with
+  deep indentation the title flex-shrank to zero and was clipped by ellipsis, so
+  designations vanished while the numbers stayed. Fix: row now wraps, the title
+  takes priority (flex 1 1 60%, wraps instead of clipping), the right cluster is
+  flex:0 0 auto / margin-left:auto, indentation reduced + capped, section cards
+  widened to 232px.
+- Names on the chart: HrOrganogram now takes `people` and renders occupant chips
+  (avatar + name) under each post/leaf section, with dashed "vacant" chips for
+  unfilled seats — so designations AND the people holding them are visible
+  without leaving the organogram (full roster still one click away).
+- Test asserts a leaf-section occupant name + titled child posts render.
+  Web 225; server 8; typecheck clean; both builds green.
+
 2026-06-16 — Editable organogram (HR staff edit on the chart)
 - The organogram is now an editing surface. An "Edit organogram" toggle on the
   Organogram tab turns on inline affordances: ＋ add a post under any box, ✎ edit

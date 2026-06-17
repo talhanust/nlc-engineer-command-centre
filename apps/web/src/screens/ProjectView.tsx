@@ -16,8 +16,7 @@ import { FinancialTab } from './financial/FinancialTab';
 import { ProcurementTab } from './procurement/ProcurementTab';
 import { HrCockpit } from '../components/HrCockpit';
 import { PhotoGallery } from '../components/PhotoGallery';
-import { LevelMap } from '../components/LevelMap';
-import { LocationEditor } from '../components/LocationEditor';
+import { NodeMap } from '../components/NodeMap';
 
 const TABS = ['executive', 'commercial', 'execution', 'mapping', 'procurement', 'financial', 'hr', 'gallery'] as const;
 type Tab = (typeof TABS)[number];
@@ -102,10 +101,7 @@ export function ProjectView({ nodeId }: { nodeId: string }) {
             />
           </div>
           <SalientsCard projectId={nodeId} />
-          <div className="panel-grid">
-            <LocationEditor project={project} onSaved={refresh} />
-            <LevelMap nodeId={nodeId} nodes={nodes} projects={projects} height={260} />
-          </div>
+          <NodeMap nodeId={nodeId} nodes={nodes} projects={projects} onSaved={refresh} height={320} />
         </>
       )}
       {active === 'gallery' && <PhotoGallery projectId={nodeId} />}

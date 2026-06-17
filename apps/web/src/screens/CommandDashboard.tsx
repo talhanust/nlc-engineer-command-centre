@@ -17,8 +17,7 @@ import { HrCockpit } from '../components/HrCockpit';
 import { nodeBreakdownCsv, nodeBreakdownAoa } from '../domain/exporters';
 import { downloadWorkbook } from '../components/xlsxExport';
 import { NewProjectModal } from '../components/NewProjectModal';
-import { LevelMap } from '../components/LevelMap';
-import { NodeLocationEditor } from '../components/NodeLocationEditor';
+import { NodeMap } from '../components/NodeMap';
 import { CollapsibleCard } from '../components/CollapsibleCard';
 
 export function CommandDashboard({ nodeId }: { nodeId: string }) {
@@ -158,10 +157,7 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
       <BillingFunnel totals={totals} />
       <PortfolioSCurve nodeId={nodeId} projects={filtered} />
       <HrCockpit nodeId={nodeId} nodes={nodes} />
-      <LevelMap nodeId={nodeId} nodes={nodes} projects={projects} hero={node.type === 'hq'} />
-      {(node.type === 'hq' || node.type === 'pd_hq') && (
-        <NodeLocationEditor node={node} onSaved={refresh} />
-      )}
+      <NodeMap nodeId={nodeId} nodes={nodes} projects={projects} onSaved={refresh} hero={node.type === 'hq'} />
     </section>
   );
 }

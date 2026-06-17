@@ -246,6 +246,17 @@ describe('HR cockpit + organogram', () => {
     expect(await screen.findByRole('table', { name: 'Vacancies' })).toBeInTheDocument();
   });
 
+  it('switches the organogram to an outline with search', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-rwp-ring/hr');
+    await screen.findByText(/HR command/);
+    await user.click(screen.getByRole('button', { name: 'Outline' }));
+    // Outline shows full-width rows with titles + a search box.
+    expect(screen.getByText('Dir Proj (Centre)')).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Search posts'), 'F&A');
+    expect(await screen.findByText('F&A Sec')).toBeInTheDocument();
+  });
+
   it('lets HR staff edit the organogram (add a section)', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-rwp-ring/hr');

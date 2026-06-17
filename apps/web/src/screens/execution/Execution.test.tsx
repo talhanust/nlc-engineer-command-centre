@@ -246,6 +246,23 @@ describe('HR cockpit + organogram', () => {
     expect(await screen.findByRole('table', { name: 'Vacancies' })).toBeInTheDocument();
   });
 
+  it('keyboard-navigates establishment cells with arrow keys', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-rwp-ring/hr');
+    await screen.findByText(/HR command/);
+    await user.click(screen.getByRole('tab', { name: 'Establishment' }));
+    const table = await screen.findByRole('table', { name: 'Establishment posts' });
+    const cell0 = table.querySelector('[data-r="0"][data-c="0"]') as HTMLElement;
+    const cell1 = table.querySelector('[data-r="1"][data-c="0"]') as HTMLElement;
+    expect(cell0).toBeTruthy();
+    expect(cell1).toBeTruthy();
+    cell0.focus();
+    await user.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(cell1);
+    await user.keyboard('{ArrowRight}');
+    expect((document.activeElement as HTMLElement).getAttribute('data-c')).toBe('1');
+  });
+
   it('inline-edits an establishment table cell', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-rwp-ring/hr');
@@ -292,6 +309,18 @@ describe('HR cockpit + organogram', () => {
     await user.click(screen.getByRole('tab', { name: 'Org board' }));
     const board = await screen.findByRole('table', { name: 'Org-wide HR board' });
     expect(within(board).getByText('HQ PD Centre')).toBeInTheDocument();
+  });
+
+  it('bulk-updates attendance from the roster', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-rwp-ring/hr');
+    await screen.findByText(/HR command/);
+    await user.click(screen.getByRole('tab', { name: 'Roster' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Select Hamza Sheikh' }));
+    const bar = await screen.findByRole('region', { name: 'Bulk attendance' });
+    await user.selectOptions(within(bar).getByLabelText('Bulk attendance status'), 'leave');
+    await user.click(within(bar).getByRole('button', { name: 'Apply' }));
+    expect(await screen.findByText(/1 marked On leave/)).toBeInTheDocument();
   });
 
   it('opens a person detail drawer from the roster', async () => {

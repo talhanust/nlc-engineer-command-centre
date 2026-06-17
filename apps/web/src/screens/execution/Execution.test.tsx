@@ -223,6 +223,9 @@ describe('HR cockpit + organogram', () => {
     await screen.findByText(/HR command/);
     expect(screen.getByText('Dir Proj (Centre)')).toBeInTheDocument();
     expect(screen.getByText('Adm / Coord Sec')).toBeInTheDocument();
+    // Occupant names appear on a leaf section directly on the chart.
+    expect(screen.getByText('Sadia Rauf')).toBeInTheDocument();
+    // A section with children expands to its (titled) posts.
     await user.click(screen.getByRole('button', { name: /Expand Adm \/ Coord Sec/ }));
     expect(await screen.findByText('Coordination')).toBeInTheDocument();
   });

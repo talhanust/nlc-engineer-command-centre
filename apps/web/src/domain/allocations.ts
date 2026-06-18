@@ -92,3 +92,39 @@ export function canApproveContract(role: string, type: ExecutionType, value: num
   if (ceil === undefined) return false;
   return ceil === null || value <= ceil;
 }
+
+/** Per-item sublet (S/C) cost = Σ sublet rate×qty. */
+export function itemScCost(item: BoqItem, allocs: Allocation[]): number {
+  return itemAllocations(allocs, item.id).filter((a) => a.executionType === 'sublet').reduce((s, a) => s + a.rate * a.qty, 0);
+}
+/** Per-item labour-only (L/O) cost = Σ labor rate×qty. */
+export function itemLoCost(item: BoqItem, allocs: Allocation[]): number {
+  return itemAllocations(allocs, item.id).filter((a) => a.executionType === 'labor').reduce((s, a) => s + a.rate * a.qty, 0);
+}
+/** Summary mode for a BOQ item based on its allocation lines. */
+export function itemModeLabel(item: BoqItem, allocs: Allocation[]): 'Unassigned' | 'Self' | 'Sublet' | 'Labor' | 'Mixed' {
+  const lines = itemAllocations(allocs, item.id);
+  if (lines.length === 0) return 'Unassigned';
+  const types = new Set(lines.map((a) => a.executionType));
+  if (types.size > 1) return 'Mixed';
+  const only = [...types][0];
+  return only === 'nlc_direct' ? 'Self' : only === 'sublet' ? 'Sublet' : 'Labor';
+}
+/** Item margin % over the BOQ value of its labor+sublet allocation. */
+export function itemMarginPct(item: BoqItem, allocs: Allocation[]): number {
+  const revenue = itemAllocations(allocs, item.id).filter((a) => a.executionType !== 'nlc_direct').reduce((s, a) => s + item.rate * a.qty, 0);
+  return revenue > 0 ? +((itemMargin(item, allocs) / revenue) * 100).toFixed(1) : 0;
+}
+
+export interface PlanTotals { amount: number; scCost: number; loCost: number; margin: number; marginPct: number }
+export function planTotals(items: BoqItem[], allocs: Allocation[]): PlanTotals {
+  let amount = 0, scCost = 0, loCost = 0, margin = 0;
+  for (const item of items) {
+    amount += item.amount;
+    scCost += itemScCost(item, allocs);
+    loCost += itemLoCost(item, allocs);
+    margin += itemMargin(item, allocs);
+  }
+  const revenue = boqMargin(items, allocs).revenue;
+  return { amount, scCost, loCost, margin, marginPct: revenue > 0 ? +((margin / revenue) * 100).toFixed(1) : 0 };
+}

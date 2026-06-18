@@ -43,3 +43,28 @@ export function escalationAmount(
   const factor = lines.reduce((a, l) => a + l.contribution, 0);
   return { base, fixedPortion, factor, amount: base * factor, lines };
 }
+
+/** PBS index master default (FIDIC-style Pₙ). Weights — including the fixed
+ *  portion — sum to 1.000; Pₙ = Σ wᵢ·(Cᵢ/Bᵢ). */
+export const DEFAULT_PBS_COMPONENTS: EscalationComponent[] = [
+  { label: 'Fixed (non-escalable portion)', weight: 0.15, baseIndex: 100, currentIndex: 100 },
+  { label: 'Cement (PBS WPI Cement)', weight: 0.18, baseIndex: 100, currentIndex: 108.5 },
+  { label: 'Steel (PBS WPI Iron & Steel)', weight: 0.22, baseIndex: 100, currentIndex: 115.2 },
+  { label: 'Bitumen (PBS WPI Bitumen)', weight: 0.12, baseIndex: 100, currentIndex: 122.7 },
+  { label: 'POL (PBS WPI Petroleum)', weight: 0.13, baseIndex: 100, currentIndex: 119.4 },
+  { label: 'Labour (PBS WPI Wages)', weight: 0.20, baseIndex: 100, currentIndex: 112 },
+];
+
+export interface PnLine { label: string; weight: number; baseIndex: number; currentIndex: number; ratio: number; contribution: number }
+export interface PnResult { pn: number; factor: number; sumWeights: number; lines: PnLine[] }
+
+/** Price-adjustment coefficient Pₙ = Σ wᵢ·(Cᵢ/Bᵢ). EPC amount on an IPC = gross·(Pₙ − 1). */
+export function pnCoefficient(components: EscalationComponent[]): PnResult {
+  const lines: PnLine[] = components.map((c) => {
+    const ratio = c.baseIndex === 0 ? 1 : c.currentIndex / c.baseIndex;
+    return { label: c.label, weight: c.weight, baseIndex: c.baseIndex, currentIndex: c.currentIndex, ratio, contribution: c.weight * ratio };
+  });
+  const pn = lines.reduce((a, l) => a + l.contribution, 0);
+  const sumWeights = components.reduce((a, c) => a + c.weight, 0);
+  return { pn, factor: pn - 1, sumWeights, lines };
+}

@@ -3,16 +3,16 @@ import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
 import { useData } from '../../data/DataContext';
-import { formatMoney } from '../../domain/money';
-import { retentionTimeline, releaseSchedule, type RetentionPoint } from '../../domain/retention';
+import { formatMoney, toNum } from '../../domain/money';
+import { retentionTimeline, retentionSummary, type RetentionPoint } from '../../domain/retention';
 import { ChartCard, chartPalette } from '../../components/chartUtils';
-import { KpiCard } from '../../components/KpiCard';
 import type { Ipc } from '../../data/types';
 
 const cr = (n: number) => `${(n / 1e7).toFixed(1)} Cr`;
+const money = (n: number) => (n > 0 ? formatMoney(n) : '0');
 
 export function RetentionTab({ projectId }: { projectId: string }) {
-  const { provider } = useData();
+  const { provider, projects } = useData();
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
   useEffect(() => {
     let a = true;
@@ -20,24 +20,46 @@ export function RetentionTab({ projectId }: { projectId: string }) {
     return () => { a = false; };
   }, [provider, projectId]);
 
+  const contractValue = toNum(projects.find((p) => p.id === projectId)?.contractValue ?? '0');
   const points: RetentionPoint[] = retentionTimeline(ipcs);
-  const release = releaseSchedule(points);
+  const sum = retentionSummary(ipcs, contractValue);
   const c = chartPalette();
 
   return (
     <div>
-      <div className="section-head"><h3>Retention timeline</h3><span className="muted">10% withheld per IPC</span></div>
+      <div className="section-head">
+        <div>
+          <h3>Retention</h3>
+          <p className="muted small" style={{ margin: '2px 0 0' }}>Cumulative retention deducted across all IPCs. DLP (Defects Liability Period) split happens when the Final Bill is client-approved.</p>
+        </div>
+      </div>
+
+      <div className="kpi-row" aria-label="Retention summary">
+        <Kpi label="Cumulative retention deducted" value={money(sum.deducted)} sub={`${sum.ipcCount} IPCs`} />
+        <Kpi label="Released at substantial completion" value={money(sum.releasedAtCompletion)} sub={sum.finalBillApproved ? '50%' : '— Final Bill not approved'} />
+        <Kpi label="Held for DLP" value={money(sum.heldForDlp)} sub={sum.finalBillApproved ? '50%' : 'full balance'} />
+        <Kpi label="Released after DLP" value={money(sum.releasedAfterDlp)} sub="—" />
+        <Kpi label="Written-off" value={money(sum.writtenOff)} sub="—" />
+      </div>
+
+      {contractValue > 0 && (
+        <div className="card" style={{ marginTop: 12 }} aria-label="Retention cap">
+          <div className="section-head" style={{ marginBottom: 6 }}>
+            <h4 style={{ margin: 0 }}>Retention cap</h4>
+            <span className="muted small">{sum.capPct}% of contract · {formatMoney(sum.cap)} ceiling</span>
+          </div>
+          <div className="boq-status" style={{ maxWidth: 480 }} title={`${Math.round(sum.capUsedPct * 100)}% of cap used`}>
+            <span className="boq-prog" aria-hidden><span className="boq-prog-fill" style={{ width: `${Math.round(sum.capUsedPct * 100)}%`, background: sum.atCapped ? 'var(--rag-red)' : 'var(--rag-amber)' }} /></span>
+            <span className="boq-pct mono small">{Math.round(sum.capUsedPct * 100)}%</span>
+          </div>
+          {sum.atCapped && <p className="muted small" style={{ color: 'var(--rag-red)', margin: '6px 0 0' }}>Retention has reached the contract cap — no further deduction on subsequent IPCs.</p>}
+        </div>
+      )}
 
       {points.length === 0 ? (
-        <p className="muted">No IPCs yet — retention accrues as IPCs are certified.</p>
+        <p className="muted" style={{ marginTop: 14 }}>No Final Bill raised yet. The DLP retention split is computed when the Final Bill is client-approved; the cumulative retention across paid IPCs will then be split per the contract: a portion released at Substantial Completion, the rest held for the Defects Liability Period and released on DLP expiry (or written off if defects are not rectified).</p>
       ) : (
         <>
-          <div className="kpi-grid">
-            <KpiCard label="Total held" value={formatMoney(release.totalHeld)} />
-            <KpiCard label="Release at completion" value={formatMoney(release.atCompletion)} sub={<span className="muted">50%</span>} />
-            <KpiCard label="Release after DLP" value={formatMoney(release.afterDlp)} sub={<span className="muted">50%</span>} />
-          </div>
-
           <ChartCard title="Cumulative retention held" subtitle="by IPC period" ariaLabel="Retention timeline">
             <ResponsiveContainer width="100%" height={240}>
               <AreaChart data={points} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
@@ -62,7 +84,7 @@ export function RetentionTab({ projectId }: { projectId: string }) {
               <tbody>
                 {points.map((p) => (
                   <tr key={p.ipcNo}>
-                    <td>{p.ipcNo}</td><td>{p.period}</td>
+                    <td className="mono small">{p.ipcNo}</td><td>{p.period}</td>
                     <td className="num">{formatMoney(p.gross)}</td>
                     <td className="num">{formatMoney(p.held)}</td>
                     <td className="num">{formatMoney(p.cumHeld)}</td>
@@ -73,6 +95,16 @@ export function RetentionTab({ projectId }: { projectId: string }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="kpi-card">
+      <div className="kpi-label">{label}</div>
+      <div className="kpi-value">{value}</div>
+      {sub && <div className="muted small">{sub}</div>}
     </div>
   );
 }

@@ -2,16 +2,19 @@ import { useState } from 'react';
 import { BoqRegister } from './BoqRegister';
 import { IpcRegister } from './IpcRegister';
 import { RarRegister } from './RarRegister';
-import { EpcRegister } from './EpcRegister';
+import { EscalationTab } from './EscalationTab';
 import { RetentionTab } from './RetentionTab';
 import { ReconciliationTab } from './ReconciliationTab';
 import { DistributionsTab } from './DistributionsTab';
 import { DistributionPlanner } from './DistributionPlanner';
+import { ExecutionTracker } from './ExecutionTracker';
+import { GenerateIpc } from './GenerateIpc';
 import { ContractorProfiles } from './ContractorProfiles';
 import { AdvancesTab } from './AdvancesTab';
 
 const SUBS = [
   ['boq', 'Bill of Quantities'],
+  ['genipc', 'Generate IPC'],
   ['ipc', 'IPC register'],
   ['rar', 'RAR & recovery'],
   ['recon', 'Reconciliation'],
@@ -19,6 +22,7 @@ const SUBS = [
   ['epc', 'Escalation'],
   ['subs', 'Contractors'],
   ['planner', 'Distribution planner'],
+  ['exectrack', 'Execution tracker'],
   ['dist', 'Distributions'],
   ['adv', 'Advances'],
 ] as const;
@@ -42,13 +46,15 @@ export function CommercialTab({ projectId }: { projectId: string }) {
         ))}
       </div>
       {sub === 'boq' && <BoqRegister projectId={projectId} />}
+      {sub === 'genipc' && <GenerateIpc projectId={projectId} onGenerated={() => setSub('ipc')} />}
       {sub === 'ipc' && <IpcRegister projectId={projectId} />}
       {sub === 'rar' && <RarRegister projectId={projectId} />}
       {sub === 'recon' && <ReconciliationTab projectId={projectId} />}
       {sub === 'retention' && <RetentionTab projectId={projectId} />}
-      {sub === 'epc' && <EpcRegister projectId={projectId} />}
+      {sub === 'epc' && <EscalationTab projectId={projectId} />}
       {sub === 'subs' && <ContractorProfiles projectId={projectId} />}
       {sub === 'planner' && <DistributionPlanner projectId={projectId} />}
+      {sub === 'exectrack' && <ExecutionTracker projectId={projectId} onManageDistribution={() => setSub('dist')} />}
       {sub === 'dist' && <DistributionsTab projectId={projectId} />}
       {sub === 'adv' && <AdvancesTab projectId={projectId} />}
     </div>

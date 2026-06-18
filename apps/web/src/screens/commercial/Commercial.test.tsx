@@ -22,6 +22,45 @@ describe('Phase 3 — Commercial tab', () => {
     expect(screen.getByText('Dense bituminous macadam')).toBeInTheDocument();
   });
 
+  it('shows BOQ bill/section grouping, mode badges and a grand total', async () => {
+    renderAt('/node/proj-f14f15/commercial');
+    const table = await screen.findByRole('table', { name: 'Bill of Quantities' });
+    // Bill + section headers.
+    expect(within(table).getByText(/Bill #1 — Road Work/)).toBeInTheDocument();
+    expect(within(table).getByText('Earthworks')).toBeInTheDocument();
+    // New columns + unassigned mode badge + grand total footer.
+    expect(within(table).getByText('Receivable')).toBeInTheDocument();
+    expect(within(table).getAllByText(/Unassigned/).length).toBeGreaterThan(0);
+    expect(within(table).getByText(/Grand total · 8 items/)).toBeInTheDocument();
+  });
+
+  it('filters the BOQ by search text', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByRole('table', { name: 'Bill of Quantities' });
+    await user.type(screen.getByLabelText('Search BOQ'), 'macadam');
+    expect(await screen.findByText('Dense bituminous macadam')).toBeInTheDocument();
+    expect(screen.queryByText('Site clearance & grubbing')).not.toBeInTheDocument();
+    expect(screen.getByText(/1 of 8 items/)).toBeInTheDocument();
+  });
+
+  it('generates an IPC via the deduction-to-net waterfall', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'Generate IPC' }));
+    const table = await screen.findByRole('table', { name: 'Generate IPC' });
+    await user.click(within(table).getByLabelText('Select I-101'));
+    const qty = within(table).getByLabelText('This IPC qty I-101');
+    await user.clear(qty);
+    await user.type(qty, '1000');
+    const panel = screen.getByLabelText('IPC deduction summary');
+    expect(within(panel).getByText(/Less retention @ 10%/)).toBeInTheDocument();
+    expect(within(panel).getByText(/Less income tax @ 7%/)).toBeInTheDocument();
+    await user.click(within(panel).getByRole('button', { name: 'Generate IPC' }));
+    expect(await screen.findByText(/generated/)).toBeInTheDocument();
+  });
+
   it('shows the IPC register on the IPC sub-tab', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
@@ -64,11 +103,68 @@ describe('Phase 3 — Commercial tab', () => {
     await user.click(screen.getByRole('tab', { name: 'Distribution planner' }));
     const grid = await screen.findByRole('table', { name: 'Distribution planner' });
     // open the first BOQ item's allocation editor
-    const expanders = within(grid).getAllByRole('button', { name: /Allocate / });
+    const expanders = within(grid).getAllByRole('button', { name: /Plan / });
     await user.click(expanders[0]);
     await user.click(screen.getByRole('button', { name: '+ Add allocation' }));
     // a contracts table should now exist with an approve action
     expect(await screen.findByRole('table', { name: 'Contracts' })).toBeInTheDocument();
+  });
+
+  it('shows S/C, L/O cost and margin columns with a totals footer in the planner', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'Distribution planner' }));
+    const grid = await screen.findByRole('table', { name: 'Distribution planner' });
+    expect(within(grid).getByText('S/C cost')).toBeInTheDocument();
+    expect(within(grid).getByText('L/O cost')).toBeInTheDocument();
+    expect(within(grid).getByText('Margin %')).toBeInTheDocument();
+    expect(within(grid).getByText(/Totals · 8 items/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Mark filtered 100% Self/ })).toBeInTheDocument();
+  });
+
+  it('records executed quantities in the execution tracker', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'Execution tracker' }));
+    const table = await screen.findByRole('table', { name: 'Execution tracker' });
+    // Hide-unassigned is on by default → only the 4 assigned items, with party names.
+    expect(within(table).getAllByText(/NLC Self-execution/).length).toBeGreaterThan(0);
+    expect(within(table).getByText(/Frontier Works Org/)).toBeInTheDocument();
+    // Record 50% execution against I-101 (allocated 45,000).
+    const input = within(table).getByLabelText('Executed I-101');
+    await user.clear(input);
+    await user.type(input, '22500');
+    await user.tab();
+    expect(await within(table).findByText('50%')).toBeInTheDocument();
+  });
+
+  it('shows the two-sided advances ledger with KPIs and a bank-guarantee register', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'Advances' }));
+    expect(await screen.findByRole('heading', { name: 'Advances Ledger' })).toBeInTheDocument();
+    expect(screen.getByText('Received from client')).toBeInTheDocument();
+    expect(screen.getByText(/Outstanding \(client → NLC\)/)).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Bank Guarantees' }));
+    const bgTable = await screen.findByRole('table', { name: 'Bank guarantees' });
+    expect(within(bgTable).getByText('BG/MOB/2026/014')).toBeInTheDocument();
+    expect(within(bgTable).getByText('Valid')).toBeInTheDocument();
+  });
+
+  it('shows the retention summary KPIs and contract cap', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'Retention' }));
+    expect(await screen.findByRole('heading', { name: 'Retention' })).toBeInTheDocument();
+    expect(screen.getByText('Cumulative retention deducted')).toBeInTheDocument();
+    expect(screen.getByText('Held for DLP')).toBeInTheDocument();
+    expect(screen.getByText('Written-off')).toBeInTheDocument();
+    expect(screen.getByLabelText('Retention cap')).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Retention ledger' })).toBeInTheDocument();
   });
 
   it('drives the BOQ lifecycle to locked and gates editing', async () => {
@@ -94,7 +190,7 @@ describe('Phase 3 — Commercial tab', () => {
     await user.click(screen.getByRole('tab', { name: 'RAR & recovery' }));
     expect(await screen.findByRole('button', { name: 'Export Excel' })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Advances' }));
-    expect(await screen.findByRole('button', { name: 'Export Excel' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Export' })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Distributions' }));
     expect(await screen.findByRole('button', { name: 'Export Excel' })).toBeInTheDocument();
   });
@@ -202,14 +298,12 @@ describe('Phase 3 #11/#12 — RAR, subs, recovery, EPC, advances, distributions,
     expect(await screen.findByRole('table', { name: 'Recovery links' })).toBeInTheDocument();
   });
 
-  it('creates and advances an EPC', async () => {
+  it('generates EPC drafts from eligible IPCs and advances one', async () => {
     const user = await gotoSub('Escalation');
-    await user.type(screen.getByLabelText('EPC period'), 'Jun-2026');
-    await user.type(screen.getByLabelText('EPC amount'), '250000000');
-    await user.click(screen.getByRole('button', { name: 'New EPC' }));
+    await user.click(screen.getByRole('button', { name: /Generate drafts for all eligible IPCs/ }));
     const table = await screen.findByRole('table', { name: 'EPC register' });
     const row = within(table).getByText('EPC-01').closest('tr')! as HTMLElement;
-    await user.click(within(row).getByRole('button', { name: 'Validate & submit' }));
+    await user.click(within(row).getByRole('button', { name: 'Advance EPC-01' }));
     await waitFor(() => expect(within(row).getByText('Submitted to consultant')).toBeInTheDocument());
   });
 
@@ -229,10 +323,13 @@ describe('Phase 3 #11/#12 — RAR, subs, recovery, EPC, advances, distributions,
     expect(within(table).getByText(/Income-tax WHT/)).toBeInTheDocument();
   });
 
-  it('computes escalation in the calculator', async () => {
+  it('shows the PBS index master driving Pₙ', async () => {
     await gotoSub('Escalation');
-    const table = await screen.findByRole('table', { name: 'Escalation components' });
-    expect(within(table).getByText('Steel')).toBeInTheDocument();
-    expect(within(table).getByLabelText('Current index Steel')).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: 'PBS index master' });
+    expect(within(table).getByText(/Steel/)).toBeInTheDocument();
+    expect(within(table).getByLabelText('Current 2')).toBeInTheDocument();
+    // Σ weights = 1.000 and Pₙ = 1.1252 with the seeded indices.
+    expect(within(table).getByText('1.000')).toBeInTheDocument();
+    expect(within(table).getByText('1.1252')).toBeInTheDocument();
   });
 });

@@ -1,24 +1,33 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
+import { useToast } from '../../components/Toast';
+import { downloadWorkbook } from '../../components/xlsxExport';
 import { formatMoney } from '../../domain/money';
 import { ROLE_LABEL } from '../../domain/chains';
 import {
-  EXECUTION_LABEL, allocatedQty, remainingQty, isOverAllocated, itemMargin,
+  EXECUTION_LABEL, allocatedQty, remainingQty, isOverAllocated,
   boqMargin, contractSummaries, requiredAuthority, canApproveContract,
+  itemScCost, itemLoCost, itemModeLabel, itemMarginPct, planTotals,
 } from '../../domain/allocations';
 import { canAwardByPec, pecLimitLabel } from '../../domain/pec';
 import type { Allocation, BoqItem, ContractApproval, ExecutionType, Subcontractor } from '../../data/types';
 
 const EXEC_TYPES: ExecutionType[] = ['labor', 'sublet', 'nlc_direct'];
+const num = (n: number) => n.toLocaleString('en-PK');
+const money = (n: number) => (n > 0 ? formatMoney(n) : '—');
+const MODE_CLASS: Record<string, string> = { Unassigned: 'mode-unassigned', Self: 'mode-self', Sublet: 'mode-sublet', Labor: 'mode-labor', Mixed: 'mode-mixed' };
 
 export function DistributionPlanner({ projectId }: { projectId: string }) {
   const { provider } = useData();
+  const { toast } = useToast();
   const [items, setItems] = useState<BoqItem[]>([]);
   const [subs, setSubs] = useState<Subcontractor[]>([]);
   const [allocs, setAllocs] = useState<Allocation[]>([]);
   const [contracts, setContracts] = useState<ContractApproval[]>([]);
   const [role, setRole] = useState('pd');
   const [openItem, setOpenItem] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [bill, setBill] = useState('all');
 
   async function load() {
     const [b, s, a, c] = await Promise.all([
@@ -34,6 +43,13 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
   const summaries = contractSummaries(items, allocs);
   const statusOf = (key: string) => contracts.find((c) => c.key === key)?.status ?? 'draft';
 
+  const billNos = useMemo(() => Array.from(new Set(items.map((i) => i.billNo))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), [items]);
+  const filtered = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return items.filter((it) => (bill === 'all' || it.billNo === bill) && (!s || `${it.code} ${it.description}`.toLowerCase().includes(s)));
+  }, [items, search, bill]);
+  const totals = useMemo(() => planTotals(filtered, allocs), [filtered, allocs]);
+
   async function addLine(item: BoqItem) {
     const rem = remainingQty(item, allocs);
     const next = await provider.upsertAllocation(projectId, {
@@ -48,6 +64,21 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
   async function removeLine(id: string) {
     setAllocs([...(await provider.deleteAllocation(projectId, id))]);
   }
+  async function markFilteredSelf() {
+    for (const item of filtered) {
+      for (const a of allocs.filter((x) => x.boqItemId === item.id)) await provider.deleteAllocation(projectId, a.id);
+      await provider.upsertAllocation(projectId, { boqItemId: item.id, executionType: 'nlc_direct', qty: item.qty, rate: 0 });
+    }
+    await load();
+    toast({ message: `Marked ${filtered.length} item${filtered.length === 1 ? '' : 's'} as 100% self`, kind: 'success' });
+  }
+  function exportPlan() {
+    void downloadWorkbook([{ name: 'Distribution', aoa: [
+      ['Code', 'Description', 'Unit', 'Contract Qty', 'Rate', 'Amount', 'Mode', 'Allocated %', 'S/C Cost', 'L/O Cost', 'Margin %'],
+      ...filtered.map((it) => [it.code, it.description, it.unit, it.qty, it.rate, Math.round(it.amount), itemModeLabel(it, allocs),
+        Math.round((allocatedQty(allocs, it.id) / (it.qty || 1)) * 100), Math.round(itemScCost(it, allocs)), Math.round(itemLoCost(it, allocs)), itemMarginPct(it, allocs)]),
+    ] }], `${projectId}-distribution.xlsx`);
+  }
   async function approve(key: string, type: ExecutionType, value: number) {
     const contractorId = key.split(':')[1];
     const sub = subs.find((s) => s.id === contractorId);
@@ -59,74 +90,119 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
   return (
     <div>
       <div className="section-head">
-        <h3>Distribution planner</h3>
+        <div>
+          <h3>Distribution Planner</h3>
+          <p className="muted small" style={{ margin: '2px 0 0' }}>Allocate each BOQ item across Self-Execution and Subcontractors. Plans are soft — execution can deviate but will be flagged.</p>
+        </div>
         <span className="muted">Gross margin {formatMoney(margin.margin)} · {margin.marginPct}%</span>
       </div>
-      <p className="muted small">
-        Distribute each BOQ item's quantity across labor / sublet contractors (with rates) or NLC-direct.
-        Distributed quantity may not exceed the BOQ quantity. Margin = (BOQ rate − contractor rate) × qty.
-      </p>
 
       {items.length === 0 ? (
         <p className="muted">Import a BOQ first.</p>
       ) : (
-        <table className="data-table" aria-label="Distribution planner">
-          <thead>
-            <tr><th>Code</th><th>Description</th><th className="num">BOQ qty</th><th className="num">Allocated</th><th className="num">Remaining</th><th className="num">Item margin</th><th></th></tr>
-          </thead>
-          <tbody>
-            {items.map((item) => {
-              const lines = allocs.filter((a) => a.boqItemId === item.id);
-              const over = isOverAllocated(item, allocs);
-              const open = openItem === item.id;
-              return (
-                <Fragment key={item.id}>
-                  <tr className={over ? 'row-flag' : ''}>
-                    <td>{item.code}</td>
-                    <td>{item.description}</td>
-                    <td className="num">{item.qty}</td>
-                    <td className="num">{allocatedQty(allocs, item.id)}</td>
-                    <td className={`num ${over ? 'neg' : ''}`}>{remainingQty(item, allocs)}{over ? ' ⚠' : ''}</td>
-                    <td className="num">{formatMoney(itemMargin(item, allocs))}</td>
-                    <td><button className="btn-ghost" aria-label={`Allocate ${item.code}`} onClick={() => setOpenItem(open ? null : item.id)}>{open ? '▾' : '▸'}</button></td>
-                  </tr>
-                  {open && (
-                    <tr key={`${item.id}-detail`}>
-                      <td colSpan={7}>
-                        <table className="data-table" aria-label={`Allocations for ${item.code}`}>
-                          <thead><tr><th>Execution</th><th>Contractor</th><th className="num">Qty</th><th className="num">Rate</th><th className="num">Value</th><th></th></tr></thead>
-                          <tbody>
-                            {lines.map((a) => (
-                              <tr key={a.id}>
-                                <td>
-                                  <select aria-label={`Type ${a.id}`} value={a.executionType} onChange={(e) => patch(a, { executionType: e.target.value as ExecutionType })}>
-                                    {EXEC_TYPES.map((t) => (<option key={t} value={t}>{EXECUTION_LABEL[t]}</option>))}
-                                  </select>
-                                </td>
-                                <td>
-                                  {a.executionType === 'nlc_direct' ? <span className="muted">—</span> : (
-                                    <select aria-label={`Contractor ${a.id}`} value={a.contractorId ?? ''} onChange={(e) => patch(a, { contractorId: e.target.value })}>
-                                      {subs.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
-                                    </select>
-                                  )}
-                                </td>
-                                <td className="num"><input className="qty-input" aria-label={`Qty ${a.id}`} defaultValue={a.qty} onBlur={(e) => patch(a, { qty: Number(e.target.value) || 0 })} /></td>
-                                <td className="num"><input className="qty-input" aria-label={`Rate ${a.id}`} defaultValue={a.rate} onBlur={(e) => patch(a, { rate: Number(e.target.value) || 0 })} /></td>
-                                <td className="num">{formatMoney(a.rate * a.qty)}</td>
-                                <td><button className="btn-ghost" aria-label={`Remove ${a.id}`} onClick={() => removeLine(a.id)}>✕</button></td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        <button className="btn-ghost" style={{ marginTop: 6 }} onClick={() => addLine(item)}>+ Add allocation</button>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
+        <>
+          <div className="filter-bar card" role="group" aria-label="Planner filters">
+            <input className="input" aria-label="Search items" placeholder="Search description, code…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <select aria-label="Bill filter" value={bill} onChange={(e) => setBill(e.target.value)}>
+              <option value="all">All bills</option>
+              {billNos.map((b) => <option key={b} value={b}>Bill {b}</option>)}
+            </select>
+            <span className="muted small">{filtered.length} of {items.length} items</span>
+            <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
+              <button className="btn-ghost btn-mini" onClick={markFilteredSelf} title="Set every filtered item to 100% NLC self-execution">⚡ Mark filtered 100% Self</button>
+              <button className="btn-ghost btn-mini" onClick={exportPlan}>Export Plan (XLSX)</button>
+            </span>
+          </div>
+
+          <div className="table-wrap">
+            <table className="data-table plan-table" aria-label="Distribution planner">
+              <thead>
+                <tr>
+                  <th>Code</th><th>Description</th><th>Unit</th>
+                  <th className="num">Contract qty</th><th className="num">Rate</th><th className="num">Amount</th>
+                  <th>Mode</th><th>Allocation</th>
+                  <th className="num">S/C cost</th><th className="num">L/O cost</th><th className="num">Margin %</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((item) => {
+                  const lines = allocs.filter((a) => a.boqItemId === item.id);
+                  const over = isOverAllocated(item, allocs);
+                  const open = openItem === item.id;
+                  const pct = item.qty > 0 ? Math.min(1, allocatedQty(allocs, item.id) / item.qty) : 0;
+                  const mode = itemModeLabel(item, allocs);
+                  const mpct = itemMarginPct(item, allocs);
+                  return (
+                    <Fragment key={item.id}>
+                      <tr className={over ? 'row-flag' : ''}>
+                        <td className="mono small">{item.code}</td>
+                        <td>{item.description}</td>
+                        <td className="small">{item.unit}</td>
+                        <td className="num">{num(item.qty)}</td>
+                        <td className="num">{num(item.rate)}</td>
+                        <td className="num">{formatMoney(item.amount)}</td>
+                        <td><span className={`mode-badge ${MODE_CLASS[mode]}`}>{mode === 'Unassigned' ? '⚠ ' : ''}{mode}</span></td>
+                        <td>
+                          <div className="boq-status" title={`${Math.round(pct * 100)}% allocated`}>
+                            <span className="boq-prog" aria-hidden><span className="boq-prog-fill" style={{ width: `${Math.round(pct * 100)}%`, background: over ? 'var(--rag-red)' : undefined }} /></span>
+                            <span className="boq-pct mono small">{Math.round(pct * 100)}%</span>
+                          </div>
+                        </td>
+                        <td className="num">{money(itemScCost(item, allocs))}</td>
+                        <td className="num">{money(itemLoCost(item, allocs))}</td>
+                        <td className={`num ${mpct < 0 ? 'neg' : ''}`}>{mode === 'Unassigned' ? '—' : `${mpct}%`}</td>
+                        <td><button className="btn-ghost" aria-label={`Plan ${item.code}`} onClick={() => setOpenItem(open ? null : item.id)}>{open ? '▾ Close' : 'Plan'}</button></td>
+                      </tr>
+                      {open && (
+                        <tr key={`${item.id}-detail`}>
+                          <td colSpan={12}>
+                            <table className="data-table" aria-label={`Allocations for ${item.code}`}>
+                              <thead><tr><th>Execution</th><th>Contractor</th><th className="num">Qty</th><th className="num">Rate</th><th className="num">Value</th><th></th></tr></thead>
+                              <tbody>
+                                {lines.map((a) => (
+                                  <tr key={a.id}>
+                                    <td>
+                                      <select aria-label={`Type ${a.id}`} value={a.executionType} onChange={(e) => patch(a, { executionType: e.target.value as ExecutionType })}>
+                                        {EXEC_TYPES.map((t) => (<option key={t} value={t}>{EXECUTION_LABEL[t]}</option>))}
+                                      </select>
+                                    </td>
+                                    <td>
+                                      {a.executionType === 'nlc_direct' ? <span className="muted">—</span> : (
+                                        <select aria-label={`Contractor ${a.id}`} value={a.contractorId ?? ''} onChange={(e) => patch(a, { contractorId: e.target.value })}>
+                                          {subs.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+                                        </select>
+                                      )}
+                                    </td>
+                                    <td className="num"><input className="qty-input" aria-label={`Qty ${a.id}`} defaultValue={a.qty} onBlur={(e) => patch(a, { qty: Number(e.target.value) || 0 })} /></td>
+                                    <td className="num"><input className="qty-input" aria-label={`Rate ${a.id}`} defaultValue={a.rate} onBlur={(e) => patch(a, { rate: Number(e.target.value) || 0 })} /></td>
+                                    <td className="num">{formatMoney(a.rate * a.qty)}</td>
+                                    <td><button className="btn-ghost" aria-label={`Remove ${a.id}`} onClick={() => removeLine(a.id)}>✕</button></td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            <button className="btn-ghost" style={{ marginTop: 6 }} onClick={() => addLine(item)}>+ Add allocation</button>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="boq-total-row">
+                  <td colSpan={5}><strong>Totals · {filtered.length} items</strong></td>
+                  <td className="num"><strong>{formatMoney(totals.amount)}</strong></td>
+                  <td /><td />
+                  <td className="num"><strong>{money(totals.scCost)}</strong></td>
+                  <td className="num"><strong>{money(totals.loCost)}</strong></td>
+                  <td className="num"><strong>{totals.marginPct}%</strong></td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </>
       )}
 
       {summaries.length > 0 && (

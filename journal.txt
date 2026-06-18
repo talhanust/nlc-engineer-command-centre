@@ -1,6 +1,68 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-18 — Commercial parity (11/n): Reconciliation — 3 views + auto-link
+- Rebuilt Reconciliation to the reference build. Five KPIs: NLC revenue (IPCs),
+  Distributed cost (cost via subs/labour), RAR booked (gross) with paid sub-line,
+  Overall coverage (RAR ÷ distributed) and Working capital (distributed − RAR paid).
+- Three views via a segmented control:
+  • Per-IPC View — IPC No · Period · IPC Gross · Dist. Cost · Linked RARs · Coverage ·
+    Status (Linked/Unlinked), with a totals row.
+  • Per-Contractor View — Code (SUB-0N) · Name (Type) · Dist. Cost · RAR Gross ·
+    RAR Paid · Coverage · Status (Over-claimed when RAR gross exceeds distributed cost).
+  • RAR ↔ IPC Linker — RAR · Contractor · Current Links · Suggested top-3 (by BoQ
+    line-item overlap; "no BoQ overlap" when none) · RAR Gross · per-row Link action,
+    plus a header "⚡ Auto-link all RARs" that links each RAR to its best-overlap IPC.
+- New pure reconcile helpers (reconKpis/perIpcRows/perContractorRows/suggestIpcsForRar/
+  linkerRows) alongside the original reconcileRarIpc; domain + UI tests. The BoQ-overlap
+  suggestions are powered by the RarLine/IpcLine items captured at generation. Web 266
+  (42 files); server 8; typecheck clean; both builds green.
+
+2026-06-18 — Commercial parity (10/n): RAR split — Generate RAR + RAR Register
+- Split the old combined "RAR & recovery" tab into two, matching the reference:
+  • Generate RAR wizard (new sub-tab): "Generate Running Account Receipt (RAR)" with
+    a RAR SETUP bar (Select Contractor · Period · date · "N items · PKR"), an empty
+    "Select a contractor to begin" state, and — once a contractor is picked — their
+    distributed BoQ work eligible for billing (rate, allocated, already-billed,
+    pending, editable This-RAR qty, amount) with Bill-all-pending / Clear and a live
+    gross. Generate creates the RAR with line items and jumps to the register.
+  • RAR Register: retitled "RAR Register (Subcontractor & Labour Billing)" with the
+    6-stage pipeline subtitle, a Filter bar (All Contractors / All Stages) and a
+    summary line "N RARs · GROSS · PAID". Inline create removed (now via the wizard);
+    table is filter-aware; screenshot-style empty state.
+- New RarLine model + lines/date on Rar; createRar persists line items (foundation
+  for the reconciliation BoQ-overlap linker, next). Provider + Api updated. Tab order
+  now …IPC Register · Generate RAR · RAR Register · Reconciliation… Updated the RAR
+  tab-name tests; added a Generate-RAR UI test. Web 263 (42 files); server 8;
+  typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (9/n): Cash Flow + Commercial Dashboard
+- Cash Flow sub-tab: client IPC net inflow vs subcontractor RAR net outflow by
+  period, a composed bar+line chart (inflow/outflow bars + cumulative-net line),
+  KPI strip (total inflow, total outflow, net position) and a per-period table.
+  New domain commercialcashflow.ts (commercialCashflow/cashflowTotals) unit-tested.
+- Commercial Dashboard landing sub-tab: nine roll-up tiles (contract value, BOQ
+  value, IPC gross billed, IPC net certified, RAR booked, coverage, retention held,
+  escalation, outstanding advances) — each clickable to drill into its register.
+  Default landing stays BOQ to match the reference. Two new sub-tabs; the Commercial
+  bar is now Dashboard · BOQ · Generate IPC · IPC · RAR · Reconciliation · Cash flow ·
+  Retention · Escalation · Contractors · Distribution planner · Execution tracker ·
+  Distributions · Advances · Aging · Margin analytics. Two UI tests + one domain test.
+  Web 262; server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (8/n): Aging + Margin Analytics
+- Aging dashboard: every in-pipeline IPC/RAR/EPC (not yet paid) with days-in-stage
+  from the billing period, an ×threshold ratio and an urgency badge (Critical ≥2×,
+  High 1.5×, Due 1×, On track). KPI strip (In pipeline, Total value, Critical, High,
+  Medium), Group by All/Stage/Owner/Urgency, and a "Breached only" filter.
+- Margin Analytics: KPIs — Gross revenue (executed), S/C cost, L/O cost, Gross margin
+  (% on revenue), Net working capital (paid IPC net − paid RAR net) — plus a Top
+  contractors bar list (by allocated value) and an "Items at margin risk" table
+  (contractor rate ÷ BOQ rate > 90%).
+- New pure domains aging.ts (buildAging/agingTotals/urgencyOf/periodToDate) and
+  marginanalytics.ts, each unit-tested; two UI tests. Two new Commercial sub-tabs.
+  Web 259 (42 files); server 8; typecheck clean; both builds green.
+
 2026-06-17 — Commercial parity (7/n): Retention cap + DLP split
 - Reframed the Retention tab to the reference build's five KPIs — Cumulative
   retention deducted (N IPCs), Released at substantial completion, Held for DLP,

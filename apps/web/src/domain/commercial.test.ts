@@ -130,3 +130,61 @@ describe('retention cap + DLP split', () => {
     expect(s.heldForDlp).toBe(50);
   });
 });
+
+import { buildAging, agingTotals, urgencyOf, periodToDate } from './aging';
+import { marginAnalytics } from './marginanalytics';
+import type { Ipc as IpcT, Allocation, ProgressUpdate, BoqItem as BoqT, Subcontractor } from '../data/types';
+
+describe('aging', () => {
+  const ipc = (no: string, status: IpcT['status'], period: string, gross: number): IpcT =>
+    ({ id: no, projectId: 'p', ipcNo: no, seq: 1, period, status, gross, netPayable: 0, cumGross: 0 });
+  it('ages in-pipeline docs and flags breaches', () => {
+    const today = new Date('2026-06-18T00:00:00');
+    const docs = buildAging([ipc('IPC-01', 'paid', 'Jan-2026', 1000), ipc('IPC-02', 'vetted', 'May-2026', 2000)], [], [], today);
+    expect(docs).toHaveLength(1);            // paid excluded
+    expect(docs[0].ref).toBe('IPC-02');
+    expect(docs[0].urgency).toBe('critical'); // ~48 days / 14 ≈ 3.4×
+    expect(agingTotals(docs).critical).toBe(1);
+  });
+  it('classifies urgency and parses periods', () => {
+    expect(urgencyOf(2)).toBe('critical');
+    expect(urgencyOf(1.5)).toBe('high');
+    expect(urgencyOf(1)).toBe('medium');
+    expect(urgencyOf(0.4)).toBe('low');
+    expect(periodToDate('May-2026')?.getMonth()).toBe(4);
+  });
+});
+
+describe('margin analytics', () => {
+  const boqItem = (id: string, rate: number): BoqT => ({ id, projectId: 'p', billNo: '1', code: id, description: id, unit: 'U', qty: 100, rate, amount: 100 * rate });
+  it('computes revenue, costs, margin and risk items', () => {
+    const boq = [boqItem('a', 100), boqItem('b', 200)];
+    const allocs: Allocation[] = [
+      { id: '1', projectId: 'p', boqItemId: 'a', executionType: 'sublet', contractorId: 's1', qty: 10, rate: 95 },
+      { id: '2', projectId: 'p', boqItemId: 'b', executionType: 'labor', qty: 5, rate: 50 },
+    ];
+    const progress: ProgressUpdate[] = [{ id: 'pr', projectId: 'p', boqItemId: 'a', period: 'P', executedQty: 10, status: 'validated' }];
+    const subs: Subcontractor[] = [{ id: 's1', projectId: 'p', name: 'FWO' } as Subcontractor];
+    const m = marginAnalytics(boq, allocs, progress, subs, [], []);
+    expect(m.grossRevenue).toBe(1000);
+    expect(m.scCost).toBe(950);
+    expect(m.loCost).toBe(250);
+    expect(m.riskItems).toHaveLength(1);   // 95/100 = 0.95 > 0.9
+    expect(m.topContractors[0].name).toBe('FWO');
+  });
+});
+
+import { commercialCashflow, cashflowTotals } from './commercialcashflow';
+import type { Rar as RarT } from '../data/types';
+describe('commercial cashflow', () => {
+  const ipcCF = (no: string, period: string, net: number): IpcT => ({ id: no, projectId: 'p', ipcNo: no, seq: 1, period, status: 'paid', gross: net, netPayable: net, cumGross: 0 });
+  const rarCF = (period: string, net: number): RarT => ({ id: `r${period}`, projectId: 'p', rarNo: 'R', seq: 1, period, status: 'paid', subcontractorId: 's', gross: net, netPayable: net });
+  it('aggregates inflow/outflow by period with a running net', () => {
+    const pts = commercialCashflow([ipcCF('IPC-01', 'Jan-2026', 900), ipcCF('IPC-02', 'Feb-2026', 500)], [rarCF('Jan-2026', 400)]);
+    expect(pts[0].period).toBe('Jan-2026');
+    expect(pts[0].net).toBe(500);
+    expect(pts[0].cumNet).toBe(500);
+    expect(pts[1].cumNet).toBe(1000);
+    expect(cashflowTotals(pts).inflow).toBe(1400);
+  });
+});

@@ -143,16 +143,20 @@ export interface ContractApproval {
 
 export type RarStatus = 'draft' | 'submitted' | 'verified' | 'approved' | 'marked_payment' | 'paid';
 
+export interface RarLine { boqItemId: string; qty: number; rate: number; amount: number }
+
 export interface Rar {
   id: string;
   projectId: string;
   rarNo: string;
   seq: number;
   period: string;
+  date?: string;
   status: RarStatus;
   subcontractorId: string;
   gross: number;
   netPayable: number;
+  lines?: RarLine[];
   note?: string;
   // Billing approval chain (interim vs final bill)
   isFinal?: boolean;
@@ -651,7 +655,7 @@ export interface DataProvider {
   listRars(projectId: string): Promise<Rar[]>;
   createRar(
     projectId: string,
-    input: { period: string; subcontractorId: string; gross: number },
+    input: { period: string; subcontractorId: string; gross: number; date?: string; lines?: RarLine[] },
   ): Promise<Rar>;
   transitionRar(projectId: string, rarNo: string, action: string): Promise<Rar>;
   setRarFinal(projectId: string, rarNo: string, isFinal: boolean): Promise<Rar>;

@@ -33,3 +33,32 @@ describe('RAR ↔ IPC reconciliation', () => {
     expect(recon.totals.ipcGross).toBeGreaterThan(0);
   });
 });
+
+import { reconKpis, perContractorRows, suggestIpcsForRar } from './reconcile';
+import type { Distribution, BoqItem, Subcontractor } from '../data/types';
+
+describe('reconciliation 3-view domain', () => {
+  const boq: BoqItem[] = [{ id: 'a', projectId: 'p', billNo: '1', code: 'I-1', description: 'x', unit: 'U', qty: 100, rate: 100, amount: 10000 }];
+  const dists: Distribution[] = [{ boqItemId: 'a', projectId: 'p', mode: 'sublet', subcontractorId: 's1', allocatedQty: 10 }];
+  const ipcs: Ipc[] = [{ id: 'i1', projectId: 'p', ipcNo: 'IPC-01', seq: 1, period: 'Jan', status: 'paid', gross: 5000, netPayable: 4150, cumGross: 5000, lines: [{ boqItemId: 'a', qty: 1, rate: 100, amount: 100 }] }];
+  const rars: Rar[] = [{ id: 'r1', projectId: 'p', rarNo: 'RAR-01', seq: 1, subcontractorId: 's1', period: 'Jan', status: 'paid', gross: 2000, netPayable: 1660, lines: [{ boqItemId: 'a', qty: 5, rate: 100, amount: 500 }] }];
+  const subs: Subcontractor[] = [{ id: 's1', projectId: 'p', name: 'FWO', trade: 'Earthworks', kind: 'sublet' }];
+
+  it('computes KPIs and flags over-claimed contractors', () => {
+    const k = reconKpis(ipcs, rars, dists, boq);
+    expect(k.nlcRevenue).toBe(5000);
+    expect(k.distributedCost).toBe(1000);   // 10 × 100
+    expect(k.rarBooked).toBe(2000);
+    expect(k.workingCapital).toBe(1000 - 1660);
+    const rows = perContractorRows(rars, dists, boq, subs);
+    expect(rows[0].code).toBe('SUB-01');
+    expect(rows[0].overClaimed).toBe(true);  // 2000 > 1000
+  });
+
+  it('suggests IPCs that share BoQ items with a RAR', () => {
+    const sug = suggestIpcsForRar(rars[0], ipcs);
+    expect(sug).toHaveLength(1);
+    expect(sug[0].ipcNo).toBe('IPC-01');
+    expect(suggestIpcsForRar({ ...rars[0], lines: [] }, ipcs)).toHaveLength(0);
+  });
+});

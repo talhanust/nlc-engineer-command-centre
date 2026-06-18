@@ -1,6 +1,6 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
-  Subcontractor, Rar, RarIpcLink, Epc, Advance, BankGuarantee, Distribution,
+  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution,
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
@@ -176,7 +176,7 @@ export class ApiDataProvider implements DataProvider {
   }
   async createRar(
     projectId: string,
-    input: { period: string; subcontractorId: string; gross: number },
+    input: { period: string; subcontractorId: string; gross: number; date?: string; lines?: RarLine[] },
   ): Promise<Rar> {
     return this.send<Rar>(`/api/projects/${projectId}/rars`, 'POST', input);
   }

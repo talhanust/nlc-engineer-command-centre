@@ -1,6 +1,6 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
-  Subcontractor, Rar, RarIpcLink, Epc, Advance, BankGuarantee, Distribution,
+  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution,
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
@@ -369,7 +369,7 @@ export class LocalDataProvider implements DataProvider {
   }
   async createRar(
     projectId: string,
-    input: { period: string; subcontractorId: string; gross: number },
+    input: { period: string; subcontractorId: string; gross: number; date?: string; lines?: RarLine[] },
   ): Promise<Rar> {
     const all = readJson<Rar[]>(rarKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_RARS : []));
     const seq = all.reduce((m, r) => Math.max(m, r.seq), 0) + 1;
@@ -379,13 +379,16 @@ export class LocalDataProvider implements DataProvider {
       rarNo: `RAR-${String(seq).padStart(2, '0')}`,
       seq,
       period: input.period,
+      date: input.date,
       status: 'draft',
       subcontractorId: input.subcontractorId,
       gross: input.gross,
       netPayable: computeNet(input.gross),
+      lines: input.lines,
     };
     all.push(rar);
     writeJson(rarKey(projectId), all);
+    audit(projectId, 'create', 'RAR', rar.rarNo, `PKR ${Math.round(rar.gross).toLocaleString('en-PK')}`);
     return rar;
   }
   async transitionRar(projectId: string, rarNo: string, action: string): Promise<Rar> {

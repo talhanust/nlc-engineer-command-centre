@@ -9,15 +9,23 @@ import { DistributionsTab } from './DistributionsTab';
 import { DistributionPlanner } from './DistributionPlanner';
 import { ExecutionTracker } from './ExecutionTracker';
 import { GenerateIpc } from './GenerateIpc';
+import { GenerateRar } from './GenerateRar';
+import { AgingTab } from './AgingTab';
+import { MarginAnalyticsTab } from './MarginAnalyticsTab';
+import { CashFlowTab } from './CashFlowTab';
+import { CommercialDashboard } from './CommercialDashboard';
 import { ContractorProfiles } from './ContractorProfiles';
 import { AdvancesTab } from './AdvancesTab';
 
 const SUBS = [
+  ['dashboard', 'Dashboard'],
   ['boq', 'Bill of Quantities'],
   ['genipc', 'Generate IPC'],
   ['ipc', 'IPC register'],
-  ['rar', 'RAR & recovery'],
+  ['genrar', 'Generate RAR'],
+  ['rar', 'RAR Register'],
   ['recon', 'Reconciliation'],
+  ['cashflow', 'Cash flow'],
   ['retention', 'Retention'],
   ['epc', 'Escalation'],
   ['subs', 'Contractors'],
@@ -25,6 +33,8 @@ const SUBS = [
   ['exectrack', 'Execution tracker'],
   ['dist', 'Distributions'],
   ['adv', 'Advances'],
+  ['aging', 'Aging'],
+  ['margin', 'Margin analytics'],
 ] as const;
 type Sub = (typeof SUBS)[number][0];
 
@@ -46,9 +56,12 @@ export function CommercialTab({ projectId }: { projectId: string }) {
         ))}
       </div>
       {sub === 'boq' && <BoqRegister projectId={projectId} />}
+      {sub === 'dashboard' && <CommercialDashboard projectId={projectId} onNavigate={(s) => setSub(s as Sub)} />}
+      {sub === 'cashflow' && <CashFlowTab projectId={projectId} />}
       {sub === 'genipc' && <GenerateIpc projectId={projectId} onGenerated={() => setSub('ipc')} />}
       {sub === 'ipc' && <IpcRegister projectId={projectId} />}
       {sub === 'rar' && <RarRegister projectId={projectId} />}
+      {sub === 'genrar' && <GenerateRar projectId={projectId} onGenerated={() => setSub('rar')} />}
       {sub === 'recon' && <ReconciliationTab projectId={projectId} />}
       {sub === 'retention' && <RetentionTab projectId={projectId} />}
       {sub === 'epc' && <EscalationTab projectId={projectId} />}
@@ -57,6 +70,8 @@ export function CommercialTab({ projectId }: { projectId: string }) {
       {sub === 'exectrack' && <ExecutionTracker projectId={projectId} onManageDistribution={() => setSub('dist')} />}
       {sub === 'dist' && <DistributionsTab projectId={projectId} />}
       {sub === 'adv' && <AdvancesTab projectId={projectId} />}
+      {sub === 'aging' && <AgingTab projectId={projectId} />}
+      {sub === 'margin' && <MarginAnalyticsTab projectId={projectId} />}
     </div>
   );
 }

@@ -3,9 +3,8 @@ import { useData } from '../../data/DataContext';
 import { RarDetailModal } from '../../components/RarDetailModal';
 import { downloadWorkbook } from '../../components/xlsxExport';
 import { formatMoney } from '../../domain/money';
-import { nextRarTransition, RAR_STATUS_LABEL } from '../../domain/rar';
+import { nextRarTransition, RAR_STATUS_LABEL, RAR_PIPELINE } from '../../domain/rar';
 import { useBulkSelection } from '../../components/useBulkSelection';
-import { CategoryBar } from '../../components/CategoryCharts';
 import type { Rar, Subcontractor, Ipc, RarIpcLink } from '../../data/types';
 import { useToast } from '../../components/Toast';
 
@@ -17,9 +16,8 @@ export function RarRegister({ projectId }: { projectId: string }) {
   const [subs, setSubs] = useState<Subcontractor[]>([]);
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
   const [links, setLinks] = useState<RarIpcLink[]>([]);
-  const [period, setPeriod] = useState('');
-  const [subId, setSubId] = useState('');
-  const [gross, setGross] = useState('');
+  const [fSub, setFSub] = useState('all');
+  const [fStage, setFStage] = useState('all');
   const sel = useBulkSelection();
 
   useEffect(() => {
@@ -35,7 +33,6 @@ export function RarRegister({ projectId }: { projectId: string }) {
       setSubs(s);
       setIpcs(i);
       setLinks(l);
-      if (s[0]) setSubId(s[0].id);
     });
     return () => {
       alive = false;
@@ -46,16 +43,6 @@ export function RarRegister({ projectId }: { projectId: string }) {
     const m = new Map(subs.map((s) => [s.id, s.name]));
     return (id: string) => m.get(id) ?? id;
   }, [subs]);
-
-  async function create() {
-    const g = Number(gross.replace(/,/g, ''));
-    if (!period.trim() || !subId || !Number.isFinite(g) || g <= 0) return;
-    const created = await provider.createRar(projectId, { period: period.trim(), subcontractorId: subId, gross: g });
-    setRars((prev) => [...prev, created]);
-    setPeriod('');
-    setGross('');
-    toast({ message: `${created.rarNo} created`, kind: 'success' });
-  }
 
   async function advance(rar: Rar) {
     const t = nextRarTransition(rar.status);
@@ -86,13 +73,19 @@ export function RarRegister({ projectId }: { projectId: string }) {
 
   const advanceableSelected = rars.filter((r) => sel.selected.has(r.rarNo) && nextRarTransition(r.status)).length;
 
+  const shown = useMemo(() => rars.filter((r) => (fSub === 'all' || r.subcontractorId === fSub) && (fStage === 'all' || r.status === fStage)), [rars, fSub, fStage]);
+  const totalGross = shown.reduce((s, r) => s + r.gross, 0);
+  const totalPaid = shown.filter((r) => r.status === 'paid').reduce((s, r) => s + r.netPayable, 0);
+
   return (
     <div>
       {detailRar && <RarDetailModal projectId={projectId} rar={detailRar} onClose={() => setDetailRar(null)} />}
       <div className="section-head">
-        <h3>RAR register</h3>
+        <div>
+          <h3>RAR Register <span className="muted" style={{ fontWeight: 400 }}>(Subcontractor &amp; Labour Billing)</span></h3>
+          <p className="muted small" style={{ margin: '2px 0 0' }}>All Running Account Receipts issued · 6-stage pipeline (draft → validated → verified → approved → marked → paid).</p>
+        </div>
         <div className="head-tools">
-          <span className="muted">{rars.length} certificates</span>
           <button className="btn-ghost" disabled={rars.length === 0}
             onClick={() => void downloadWorkbook([{ name: 'RAR register', aoa: [
               ['RAR', 'Period', 'Subcontractor', 'Status', 'Gross', 'Net payable'],
@@ -101,26 +94,17 @@ export function RarRegister({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      {rars.length > 0 && (() => {
-        const bySub = new Map<string, number>();
-        for (const r of rars) bySub.set(r.subcontractorId, (bySub.get(r.subcontractorId) ?? 0) + r.gross);
-        const data = Array.from(bySub.entries())
-          .map(([id, value]) => ({ name: subName(id), value }))
-          .sort((a, b) => b.value - a.value)
-          .slice(0, 6);
-        return <CategoryBar title="Top subcontractors (by RAR gross)" data={data} money ariaLabel="Top subcontractors" />;
-      })()}
-
-      <div className="card create-row">
-        <input aria-label="RAR period" placeholder="Period (e.g. Jun-2026)" value={period} onChange={(e) => setPeriod(e.target.value)} />
-        <select aria-label="RAR subcontractor" value={subId} onChange={(e) => setSubId(e.target.value)}>
-          {subs.length === 0 && <option value="">Add a subcontractor first</option>}
-          {subs.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
+      <div className="filter-bar card" role="group" aria-label="RAR filter">
+        <span className="muted small" style={{ fontWeight: 600 }}>Filter</span>
+        <select aria-label="Filter contractor" value={fSub} onChange={(e) => setFSub(e.target.value)}>
+          <option value="all">All Contractors</option>
+          {subs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        <input aria-label="RAR gross amount" placeholder="Gross (PKR)" value={gross} onChange={(e) => setGross(e.target.value)} />
-        <button className="btn" onClick={create} disabled={subs.length === 0}>New draft RAR</button>
+        <select aria-label="Filter stage" value={fStage} onChange={(e) => setFStage(e.target.value)}>
+          <option value="all">All Stages</option>
+          {RAR_PIPELINE.map((st) => <option key={st} value={st}>{RAR_STATUS_LABEL[st]}</option>)}
+        </select>
+        <span className="muted small filter-count">{shown.length} RARs · GROSS {formatMoney(totalGross)} · PAID {formatMoney(totalPaid)}</span>
       </div>
 
       {sel.count > 0 && (
@@ -133,8 +117,12 @@ export function RarRegister({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      {rars.length === 0 ? (
-        <p className="muted">No RARs yet.</p>
+      {shown.length === 0 ? (
+        <div className="empty-state card" style={{ textAlign: 'center', padding: 40 }}>
+          <div style={{ fontSize: 36 }}>📋</div>
+          <h4 style={{ margin: '8px 0 4px' }}>{rars.length === 0 ? 'No RARs yet' : 'No RARs match the filter'}</h4>
+          <p className="muted small" style={{ margin: 0 }}>{rars.length === 0 ? 'Generate the first RAR from the "Generate RAR" tab.' : 'Try a different contractor or stage.'}</p>
+        </div>
       ) : (
         <table className="data-table" aria-label="RAR register">
           <thead>
@@ -143,8 +131,8 @@ export function RarRegister({ projectId }: { projectId: string }) {
                 <input
                   type="checkbox"
                   aria-label="Select all RARs"
-                  checked={sel.count === rars.length && rars.length > 0}
-                  onChange={(e) => sel.setAll(rars.map((r) => r.rarNo), e.target.checked)}
+                  checked={sel.count === shown.length && shown.length > 0}
+                  onChange={(e) => sel.setAll(shown.map((r) => r.rarNo), e.target.checked)}
                 />
               </th>
               <th>RAR</th>
@@ -158,7 +146,7 @@ export function RarRegister({ projectId }: { projectId: string }) {
             </tr>
           </thead>
           <tbody>
-            {rars.map((rar) => {
+            {shown.map((rar) => {
               const t = nextRarTransition(rar.status);
               return (
                 <tr key={rar.rarNo}>

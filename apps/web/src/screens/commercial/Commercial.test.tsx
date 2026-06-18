@@ -87,7 +87,7 @@ describe('Phase 3 — Commercial tab', () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
     await screen.findByRole('heading', { name: 'Bill of Quantities' });
-    await user.click(screen.getByRole('tab', { name: 'RAR & recovery' }));
+    await user.click(screen.getByRole('tab', { name: 'RAR Register' }));
     const btns = await screen.findAllByRole('button', { name: /Details for RAR-/ });
     await user.click(btns[0]);
     const dialog = await screen.findByRole('dialog', { name: /RAR-.* detail/ });
@@ -167,6 +167,68 @@ describe('Phase 3 — Commercial tab', () => {
     expect(screen.getByRole('table', { name: 'Retention ledger' })).toBeInTheDocument();
   });
 
+  it('shows the aging dashboard with urgency KPIs and grouping', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'Aging' }));
+    expect(await screen.findByRole('heading', { name: 'Aging' })).toBeInTheDocument();
+    expect(screen.getByText('In pipeline')).toBeInTheDocument();
+    expect(screen.getByText('Critical (≥2×)')).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'By stage' }));
+    expect(screen.getByRole('table', { name: 'Aging documents' })).toBeInTheDocument();
+  });
+
+  it('shows the margin analytics dashboard', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'Margin analytics' }));
+    expect(await screen.findByRole('heading', { name: 'Margin Analytics' })).toBeInTheDocument();
+    expect(screen.getByText('Gross revenue (executed)')).toBeInTheDocument();
+    expect(screen.getByText('Gross margin')).toBeInTheDocument();
+    expect(screen.getByText(/Items at margin risk/)).toBeInTheDocument();
+  });
+
+  it('shows the commercial cash flow inflow vs outflow', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'Cash flow' }));
+    expect(await screen.findByRole('heading', { name: 'Cash Flow' })).toBeInTheDocument();
+    expect(screen.getByText('Total inflow (IPC net)')).toBeInTheDocument();
+    expect(screen.getByText('Net position')).toBeInTheDocument();
+  });
+
+  it('shows the commercial dashboard and drills into a tile', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'Dashboard' }));
+    expect(await screen.findByRole('heading', { name: 'Commercial Dashboard' })).toBeInTheDocument();
+    expect(screen.getByText('Contract value')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'BOQ value' }));
+    expect(await screen.findByRole('heading', { name: 'Bill of Quantities' })).toBeInTheDocument();
+  });
+
+  it('shows the three reconciliation views and auto-links RARs', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'Reconciliation' }));
+    expect(await screen.findByRole('heading', { name: 'Reconciliation' })).toBeInTheDocument();
+    expect(screen.getByText('NLC revenue (IPCs)')).toBeInTheDocument();
+    expect(screen.getByText('Working capital')).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Per-IPC reconciliation' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Per-Contractor View' }));
+    const ct = await screen.findByRole('table', { name: 'Per-contractor reconciliation' });
+    expect(within(ct).getByText('SUB-01')).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'RAR ↔ IPC Linker' }));
+    expect(await screen.findByRole('table', { name: 'RAR IPC linker' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Auto-link all RARs/ }));
+    expect(await screen.findByText(/Auto-linked|No RARs with BoQ overlap/)).toBeInTheDocument();
+  });
+
   it('drives the BOQ lifecycle to locked and gates editing', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
@@ -187,7 +249,7 @@ describe('Phase 3 — Commercial tab', () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
     await screen.findByRole('heading', { name: 'Bill of Quantities' });
-    await user.click(screen.getByRole('tab', { name: 'RAR & recovery' }));
+    await user.click(screen.getByRole('tab', { name: 'RAR Register' }));
     expect(await screen.findByRole('button', { name: 'Export Excel' })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Advances' }));
     expect(await screen.findByRole('button', { name: 'Export' })).toBeInTheDocument();
@@ -244,15 +306,26 @@ describe('Phase 3 #11/#12 — RAR, subs, recovery, EPC, advances, distributions,
     return user;
   }
 
+  it('generates a RAR for a contractor from distributed work', async () => {
+    const user = await gotoSub('Generate RAR');
+    expect(await screen.findByRole('heading', { name: 'Generate Running Account Receipt (RAR)' })).toBeInTheDocument();
+    expect(screen.getByText('Select a contractor to begin')).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Select contractor'), 'sub-proj-f14f15-1');
+    const table = await screen.findByRole('table', { name: 'Generate RAR' });
+    await user.click(within(table).getByLabelText('Select I-102'));
+    await user.click(screen.getByRole('button', { name: 'Generate RAR' }));
+    expect(await screen.findByText(/generated/)).toBeInTheDocument();
+  });
+
   it('shows the seeded RAR register with subcontractor names', async () => {
-    await gotoSub('RAR & recovery');
+    await gotoSub('RAR Register');
     const table = await screen.findByRole('table', { name: 'RAR register' });
     expect(within(table).getByText('RAR-01')).toBeInTheDocument();
     expect(within(table).getByText('Frontier Works Org (FWO)')).toBeInTheDocument();
   });
 
   it('advances a RAR through its pipeline', async () => {
-    const user = await gotoSub('RAR & recovery');
+    const user = await gotoSub('RAR Register');
     const table = await screen.findByRole('table', { name: 'RAR register' });
     const row = within(table).getByText('RAR-03').closest('tr')! as HTMLElement; // submitted -> verify
     await user.click(within(row).getByRole('button', { name: 'Verify' }));
@@ -289,7 +362,7 @@ describe('Phase 3 #11/#12 — RAR, subs, recovery, EPC, advances, distributions,
   });
 
   it('records a RAR-IPC recovery link', async () => {
-    const user = await gotoSub('RAR & recovery');
+    const user = await gotoSub('RAR Register');
     await screen.findByRole('table', { name: 'RAR register' });
     await user.selectOptions(screen.getByLabelText('Recovery RAR'), 'rar-proj-f14f15-2');
     await user.selectOptions(screen.getByLabelText('Recovery IPC'), 'ipc-proj-f14f15-1');

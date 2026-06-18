@@ -1,6 +1,7 @@
 // The data layer is abstracted behind one interface so the SAME React app
 import type { BaselineWorkflowState } from '../domain/schedulebaseline';
 import type { BoqWorkflowState } from '../domain/boqworkflow';
+import type { EscalationComponent } from '../domain/escalation';
 // runs two ways: ApiDataProvider against the on-prem backend, or
 // LocalDataProvider (client-only) for the static GitHub Pages demo.
 
@@ -62,6 +63,8 @@ export interface BoqItem {
   id: string;
   projectId: string;
   billNo: string;
+  billName?: string;
+  section?: string;
   code: string;
   description: string;
   unit: string;
@@ -79,16 +82,25 @@ export type IpcStatus =
   | 'paid_pending_ack'
   | 'paid';
 
+export interface IpcLine {
+  boqItemId: string;
+  qty: number;
+  rate: number;
+  amount: number;
+}
+
 export interface Ipc {
   id: string;
   projectId: string;
   ipcNo: string;
   seq: number;
   period: string;
+  date?: string;
   status: IpcStatus;
   gross: number;
   netPayable: number;
   cumGross: number;
+  lines?: IpcLine[];
   note?: string;
 }
 
@@ -166,6 +178,7 @@ export interface Epc {
   period: string;
   status: IpcStatus;
   amount: number;
+  ipcNo?: string;
   note?: string;
 }
 
@@ -178,6 +191,21 @@ export interface Advance {
   amount: number;
   dated: string;
   note?: string;
+}
+
+/** Bank guarantee backing an advance (mobilisation/secure) — client-side (NLC→FGEHA) or sub-side (S/C→NLC). */
+export interface BankGuarantee {
+  id: string;
+  projectId: string;
+  kind: 'mob' | 'secure';
+  party: 'client' | 'sub';
+  subcontractorId?: string;
+  bgNo: string;
+  bank: string;
+  amount: number;
+  issued?: string;
+  expires?: string;
+  status: 'active' | 'released' | 'expired';
 }
 
 export type DistributionMode = 'unassigned' | 'self' | 'sublet';
@@ -613,7 +641,7 @@ export interface DataProvider {
   listContractApprovals(projectId: string): Promise<ContractApproval[]>;
   approveContract(projectId: string, key: string, role: string, value: number): Promise<ContractApproval[]>;
   listIpcs(projectId: string): Promise<Ipc[]>;
-  createIpc(projectId: string, input: { period: string; gross: number }): Promise<Ipc>;
+  createIpc(projectId: string, input: { period: string; gross: number; date?: string; lines?: IpcLine[] }): Promise<Ipc>;
   transitionIpc(projectId: string, ipcNo: string, action: string): Promise<Ipc>;
   setIpcNote(projectId: string, ipcNo: string, note: string): Promise<Ipc>;
   // Commercial — subcontractors, RAR, recovery, EPC, advances, distributions
@@ -633,10 +661,15 @@ export interface DataProvider {
   listRarIpcLinks(projectId: string): Promise<RarIpcLink[]>;
   addRarIpcLink(projectId: string, input: { rarId: string; ipcId: string; amount: number }): Promise<RarIpcLink>;
   listEpcs(projectId: string): Promise<Epc[]>;
-  createEpc(projectId: string, input: { period: string; amount: number }): Promise<Epc>;
+  createEpc(projectId: string, input: { period: string; amount: number; ipcNo?: string }): Promise<Epc>;
+  listEscalationComponents(projectId: string): Promise<EscalationComponent[]>;
+  setEscalationComponents(projectId: string, components: EscalationComponent[]): Promise<void>;
   transitionEpc(projectId: string, epcNo: string, action: string): Promise<Epc>;
   listAdvances(projectId: string): Promise<Advance[]>;
   addAdvance(projectId: string, input: Omit<Advance, 'id' | 'projectId'>): Promise<Advance>;
+  listBankGuarantees(projectId: string): Promise<BankGuarantee[]>;
+  addBankGuarantee(projectId: string, input: Omit<BankGuarantee, 'id' | 'projectId'>): Promise<BankGuarantee>;
+  setBankGuaranteeStatus(projectId: string, id: string, status: BankGuarantee['status']): Promise<BankGuarantee[]>;
   listDistributions(projectId: string): Promise<Distribution[]>;
   setDistribution(projectId: string, dist: Distribution): Promise<Distribution>;
   // Execution & baselines

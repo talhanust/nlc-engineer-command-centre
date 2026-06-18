@@ -1,6 +1,6 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
-  Subcontractor, Rar, RarIpcLink, Epc, Advance, Distribution,
+  Subcontractor, Rar, RarIpcLink, Epc, Advance, BankGuarantee, Distribution,
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
@@ -10,6 +10,7 @@ import {
 } from './types';
 import type { BoqWorkflowState } from '../domain/boqworkflow';
 import type { BaselineWorkflowState } from '../domain/schedulebaseline';
+import type { EscalationComponent } from '../domain/escalation';
 import { LocalDataProvider, setKvStore } from './LocalDataProvider';
 import { RemoteKvStore } from './RemoteKvStore';
 
@@ -129,7 +130,7 @@ export class ApiDataProvider implements DataProvider {
     const body = await this.get<{ items: Ipc[] }>(`/api/projects/${projectId}/ipcs`);
     return body.items;
   }
-  async createIpc(projectId: string, input: { period: string; gross: number }): Promise<Ipc> {
+  async createIpc(projectId: string, input: { period: string; gross: number; date?: string; lines?: import('./types').IpcLine[] }): Promise<Ipc> {
     const res = await fetch(`${this.baseUrl}/api/projects/${projectId}/ipcs`, {
       method: 'POST',
       headers: this.headers(true),
@@ -206,8 +207,14 @@ export class ApiDataProvider implements DataProvider {
   async listEpcs(projectId: string): Promise<Epc[]> {
     return (await this.get<{ items: Epc[] }>(`/api/projects/${projectId}/epcs`)).items;
   }
-  async createEpc(projectId: string, input: { period: string; amount: number }): Promise<Epc> {
+  async createEpc(projectId: string, input: { period: string; amount: number; ipcNo?: string }): Promise<Epc> {
     return this.send<Epc>(`/api/projects/${projectId}/epcs`, 'POST', input);
+  }
+  async listEscalationComponents(projectId: string): Promise<EscalationComponent[]> {
+    return (await this.get<{ items: EscalationComponent[] }>(`/api/projects/${projectId}/escalation-indices`)).items;
+  }
+  async setEscalationComponents(projectId: string, components: EscalationComponent[]): Promise<void> {
+    await this.send(`/api/projects/${projectId}/escalation-indices`, 'POST', { components });
   }
   async transitionEpc(projectId: string, epcNo: string, action: string): Promise<Epc> {
     return this.send<Epc>(`/api/projects/${projectId}/epcs/${epcNo}/transitions`, 'POST', { action });
@@ -217,6 +224,15 @@ export class ApiDataProvider implements DataProvider {
   }
   async addAdvance(projectId: string, input: Omit<Advance, 'id' | 'projectId'>): Promise<Advance> {
     return this.send<Advance>(`/api/projects/${projectId}/advances`, 'POST', input);
+  }
+  async listBankGuarantees(projectId: string): Promise<BankGuarantee[]> {
+    return (await this.get<{ items: BankGuarantee[] }>(`/api/projects/${projectId}/bank-guarantees`)).items;
+  }
+  async addBankGuarantee(projectId: string, input: Omit<BankGuarantee, 'id' | 'projectId'>): Promise<BankGuarantee> {
+    return this.send<BankGuarantee>(`/api/projects/${projectId}/bank-guarantees`, 'POST', input);
+  }
+  async setBankGuaranteeStatus(projectId: string, id: string, status: BankGuarantee['status']): Promise<BankGuarantee[]> {
+    return (await this.send<{ items: BankGuarantee[] }>(`/api/projects/${projectId}/bank-guarantees/${id}`, 'POST', { status })).items;
   }
   async listDistributions(projectId: string): Promise<Distribution[]> {
     return (await this.get<{ items: Distribution[] }>(`/api/projects/${projectId}/distributions`)).items;

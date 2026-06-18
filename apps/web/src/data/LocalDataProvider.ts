@@ -1,6 +1,6 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
-  Subcontractor, Rar, RarIpcLink, Epc, Advance, Distribution,
+  Subcontractor, Rar, RarIpcLink, Epc, Advance, BankGuarantee, Distribution,
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
@@ -10,6 +10,7 @@ import {
 } from './types';
 import { itemAmount } from '../domain/boq';
 import { applyAction, computeNet, IPC_PIPELINE } from '../domain/ipc';
+import { DEFAULT_PBS_COMPONENTS, type EscalationComponent } from '../domain/escalation';
 import { INITIAL_BOQ_WORKFLOW, pendingBoqStage, advanceBoq, raiseVo, type BoqWorkflowState } from '../domain/boqworkflow';
 import { pendingRarStage, advanceRar, isRarPaid } from '../domain/rarchain';
 import { INITIAL_BASELINE_WORKFLOW, pendingBaselineStage, advanceBaseline, amendBaseline } from '../domain/schedulebaseline';
@@ -291,23 +292,27 @@ export class LocalDataProvider implements DataProvider {
   async listIpcs(projectId: string): Promise<Ipc[]> {
     return readIpcs(projectId);
   }
-  async createIpc(projectId: string, input: { period: string; gross: number }): Promise<Ipc> {
+  async createIpc(projectId: string, input: { period: string; gross: number; date?: string; lines?: import('./types').IpcLine[] }): Promise<Ipc> {
     const all = readIpcs(projectId);
     const seq = all.reduce((m, i) => Math.max(m, i.seq), 0) + 1;
     const prevCum = all.reduce((m, i) => Math.max(m, i.cumGross), 0);
+    const gross = input.lines && input.lines.length ? input.lines.reduce((a, l) => a + l.amount, 0) : input.gross;
     const ipc: Ipc = {
       id: `ipc-${projectId}-${seq}`,
       projectId,
       ipcNo: `IPC-${String(seq).padStart(2, '0')}`,
       seq,
       period: input.period,
+      date: input.date,
       status: 'draft',
-      gross: input.gross,
-      netPayable: computeNet(input.gross),
-      cumGross: prevCum + input.gross,
+      gross,
+      netPayable: computeNet(gross),
+      cumGross: prevCum + gross,
+      lines: input.lines,
     };
     all.push(ipc);
     writeJson(ipcKey(projectId), all);
+    audit(projectId, 'create', 'IPC', ipc.ipcNo, `${input.lines?.length ?? 0} items`);
     return ipc;
   }
   async transitionIpc(projectId: string, ipcNo: string, action: string): Promise<Ipc> {
@@ -464,7 +469,7 @@ export class LocalDataProvider implements DataProvider {
   async listEpcs(projectId: string): Promise<Epc[]> {
     return readJson(epcKey(projectId), () => []);
   }
-  async createEpc(projectId: string, input: { period: string; amount: number }): Promise<Epc> {
+  async createEpc(projectId: string, input: { period: string; amount: number; ipcNo?: string }): Promise<Epc> {
     const all = readJson<Epc[]>(epcKey(projectId), () => []);
     const seq = all.reduce((m, e) => Math.max(m, e.seq), 0) + 1;
     const epc: Epc = {
@@ -475,10 +480,18 @@ export class LocalDataProvider implements DataProvider {
       period: input.period,
       status: 'draft',
       amount: input.amount,
+      ipcNo: input.ipcNo,
     };
     all.push(epc);
     writeJson(epcKey(projectId), all);
+    audit(projectId, 'create', 'EPC', epc.epcNo, input.ipcNo ? `for ${input.ipcNo}` : undefined);
     return epc;
+  }
+  async listEscalationComponents(projectId: string): Promise<EscalationComponent[]> {
+    return readJson(escIdxKey(projectId), () => DEFAULT_PBS_COMPONENTS);
+  }
+  async setEscalationComponents(projectId: string, components: EscalationComponent[]): Promise<void> {
+    writeJson(escIdxKey(projectId), components);
   }
   async transitionEpc(projectId: string, epcNo: string, action: string): Promise<Epc> {
     const all = readJson<Epc[]>(epcKey(projectId), () => []);
@@ -503,10 +516,27 @@ export class LocalDataProvider implements DataProvider {
     writeJson(advKey(projectId), all);
     return adv;
   }
+  async listBankGuarantees(projectId: string): Promise<BankGuarantee[]> {
+    return readJson(bgKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_BGS : []));
+  }
+  async addBankGuarantee(projectId: string, input: Omit<BankGuarantee, 'id' | 'projectId'>): Promise<BankGuarantee> {
+    const all = readJson<BankGuarantee[]>(bgKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_BGS : []));
+    const bg: BankGuarantee = { id: `bg-${Date.now()}`, projectId, ...input, bgNo: sanitize(input.bgNo), bank: sanitize(input.bank) };
+    all.push(bg);
+    writeJson(bgKey(projectId), all);
+    audit(projectId, 'add', 'BankGuarantee', bg.bgNo, `PKR ${Math.round(bg.amount).toLocaleString('en-PK')}`);
+    return bg;
+  }
+  async setBankGuaranteeStatus(projectId: string, id: string, status: BankGuarantee['status']): Promise<BankGuarantee[]> {
+    const all = readJson<BankGuarantee[]>(bgKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_BGS : []));
+    const bg = all.find((x) => x.id === id);
+    if (bg) { bg.status = status; writeJson(bgKey(projectId), all); audit(projectId, 'update', 'BankGuarantee', bg.bgNo, status); }
+    return all;
+  }
 
   // ---- Distributions ----
   async listDistributions(projectId: string): Promise<Distribution[]> {
-    return readJson(distKey(projectId), () => []);
+    return readJson(distKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_DISTRIBUTIONS : []));
   }
   async setDistribution(projectId: string, dist: Distribution): Promise<Distribution> {
     const all = readJson<Distribution[]>(distKey(projectId), () => []);
@@ -1467,7 +1497,9 @@ const subKey = (pid: string) => `nlc-ecc.subs.${pid}`;
 const rarKey = (pid: string) => `nlc-ecc.rars.${pid}`;
 const linkKey = (pid: string) => `nlc-ecc.rarlinks.${pid}`;
 const epcKey = (pid: string) => `nlc-ecc.epcs.${pid}`;
+const escIdxKey = (pid: string) => `nlc-ecc.escindices.${pid}`;
 const advKey = (pid: string) => `nlc-ecc.advances.${pid}`;
+const bgKey = (pid: string) => `nlc-ecc.bankguarantees.${pid}`;
 const distKey = (pid: string) => `nlc-ecc.dists.${pid}`;
 const schedKey = (pid: string) => `nlc-ecc.sched.${pid}`;
 const seriesKey = (pid: string) => `nlc-ecc.series.${pid}`;
@@ -1577,6 +1609,18 @@ function readJson<T>(key: string, seed: () => T): T {
   return JSON.parse(JSON.stringify(seeded)) as T;
 }
 
+const SEED_BGS: BankGuarantee[] = [
+  { id: 'bg-f14-mob-1', projectId: 'proj-f14f15', kind: 'mob', party: 'client', bgNo: 'BG/MOB/2026/014', bank: 'National Bank of Pakistan', amount: 2100000000, issued: '2026-01-10', expires: '2026-12-31', status: 'active' },
+  { id: 'bg-f14-sec-1', projectId: 'proj-f14f15', kind: 'secure', party: 'sub', subcontractorId: 'sub-proj-f14f15-1', bgNo: 'BG/SEC/2026/041', bank: 'Habib Bank Ltd', amount: 350000000, issued: '2026-02-01', expires: '2026-08-15', status: 'active' },
+];
+
+const SEED_DISTRIBUTIONS: Distribution[] = [
+  { boqItemId: 'boq-proj-f14f15-0', projectId: 'proj-f14f15', mode: 'self', allocatedQty: 45000 },
+  { boqItemId: 'boq-proj-f14f15-1', projectId: 'proj-f14f15', mode: 'sublet', subcontractorId: 'sub-proj-f14f15-1', allocatedQty: 120000 },
+  { boqItemId: 'boq-proj-f14f15-3', projectId: 'proj-f14f15', mode: 'sublet', subcontractorId: 'sub-proj-f14f15-2', allocatedQty: 38000 },
+  { boqItemId: 'boq-proj-f14f15-4', projectId: 'proj-f14f15', mode: 'self', allocatedQty: 21000 },
+];
+
 const SEED_SUBS: Subcontractor[] = [
   { id: 'sub-proj-f14f15-1', projectId: 'proj-f14f15', name: 'Frontier Works Org (FWO)', trade: 'Earthworks', kind: 'sublet', owner: 'FWO', cnic: '—', pecCategory: 'C-A', enlistment: 'NLC/EN/001', address: 'Rawalpindi', contact: '051-000000', performanceSecurity: 50_000_000 },
   { id: 'sub-proj-f14f15-2', projectId: 'proj-f14f15', name: 'Sardar & Sons', trade: 'Bituminous works', kind: 'sublet', owner: 'A. Sardar', cnic: '37405-0000000-0', pecCategory: 'C-3', enlistment: 'NLC/EN/014', address: 'Islamabad', contact: '051-111111', performanceSecurity: 12_000_000 },
@@ -1680,11 +1724,14 @@ function readIpcs(projectId: string): Ipc[] {
 }
 
 const SEED_BOQ: Array<Omit<BoqItem, 'id' | 'projectId' | 'amount'>> = [
-  { billNo: '1', code: 'I-101', description: 'Site clearance & grubbing', unit: 'Sqm', qty: 45000, rate: 85 },
-  { billNo: '1', code: 'I-102', description: 'Common excavation', unit: 'Cum', qty: 120000, rate: 420 },
-  { billNo: '2', code: 'I-201', description: 'Sub-base course (aggregate)', unit: 'Cum', qty: 38000, rate: 5400 },
-  { billNo: '2', code: 'I-202', description: 'Dense bituminous macadam', unit: 'Cum', qty: 21000, rate: 23500 },
-  { billNo: '3', code: 'I-301', description: 'RCC for box culverts', unit: 'Cum', qty: 6400, rate: 41000 },
+  { billNo: '1', billName: 'Road Work', section: 'Earthworks', code: 'I-101', description: 'Site clearance & grubbing', unit: 'Sqm', qty: 45000, rate: 85 },
+  { billNo: '1', billName: 'Road Work', section: 'Earthworks', code: 'I-102', description: 'Common excavation', unit: 'Cum', qty: 120000, rate: 420 },
+  { billNo: '1', billName: 'Road Work', section: 'Pavement', code: 'I-103', description: 'Granular sub-base', unit: 'Cum', qty: 32000, rate: 4800 },
+  { billNo: '2', billName: 'Carpeting', section: 'Bituminous', code: 'I-201', description: 'Sub-base course (aggregate)', unit: 'Cum', qty: 38000, rate: 5400 },
+  { billNo: '2', billName: 'Carpeting', section: 'Bituminous', code: 'I-202', description: 'Dense bituminous macadam', unit: 'Cum', qty: 21000, rate: 23500 },
+  { billNo: '2', billName: 'Carpeting', section: 'Surface', code: 'I-203', description: 'Asphaltic wearing course', unit: 'Cum', qty: 14500, rate: 27800 },
+  { billNo: '3', billName: 'Structures', section: 'Culverts', code: 'I-301', description: 'RCC for box culverts', unit: 'Cum', qty: 6400, rate: 41000 },
+  { billNo: '3', billName: 'Structures', section: 'Drainage', code: 'I-302', description: 'RCC pipe culvert (1200mm)', unit: 'Rm', qty: 1800, rate: 18500 },
 ];
 
 const SEED_IPCS: Ipc[] = [

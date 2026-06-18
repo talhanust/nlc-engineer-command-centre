@@ -1,0 +1,517 @@
+NLC Engineer Command Centre — work journal
+(Newest entries first. Prose, commit-style.)
+
+2026-06-18 — Commercial parity (11/n): Reconciliation — 3 views + auto-link
+- Rebuilt Reconciliation to the reference build. Five KPIs: NLC revenue (IPCs),
+  Distributed cost (cost via subs/labour), RAR booked (gross) with paid sub-line,
+  Overall coverage (RAR ÷ distributed) and Working capital (distributed − RAR paid).
+- Three views via a segmented control:
+  • Per-IPC View — IPC No · Period · IPC Gross · Dist. Cost · Linked RARs · Coverage ·
+    Status (Linked/Unlinked), with a totals row.
+  • Per-Contractor View — Code (SUB-0N) · Name (Type) · Dist. Cost · RAR Gross ·
+    RAR Paid · Coverage · Status (Over-claimed when RAR gross exceeds distributed cost).
+  • RAR ↔ IPC Linker — RAR · Contractor · Current Links · Suggested top-3 (by BoQ
+    line-item overlap; "no BoQ overlap" when none) · RAR Gross · per-row Link action,
+    plus a header "⚡ Auto-link all RARs" that links each RAR to its best-overlap IPC.
+- New pure reconcile helpers (reconKpis/perIpcRows/perContractorRows/suggestIpcsForRar/
+  linkerRows) alongside the original reconcileRarIpc; domain + UI tests. The BoQ-overlap
+  suggestions are powered by the RarLine/IpcLine items captured at generation. Web 266
+  (42 files); server 8; typecheck clean; both builds green.
+
+2026-06-18 — Commercial parity (10/n): RAR split — Generate RAR + RAR Register
+- Split the old combined "RAR & recovery" tab into two, matching the reference:
+  • Generate RAR wizard (new sub-tab): "Generate Running Account Receipt (RAR)" with
+    a RAR SETUP bar (Select Contractor · Period · date · "N items · PKR"), an empty
+    "Select a contractor to begin" state, and — once a contractor is picked — their
+    distributed BoQ work eligible for billing (rate, allocated, already-billed,
+    pending, editable This-RAR qty, amount) with Bill-all-pending / Clear and a live
+    gross. Generate creates the RAR with line items and jumps to the register.
+  • RAR Register: retitled "RAR Register (Subcontractor & Labour Billing)" with the
+    6-stage pipeline subtitle, a Filter bar (All Contractors / All Stages) and a
+    summary line "N RARs · GROSS · PAID". Inline create removed (now via the wizard);
+    table is filter-aware; screenshot-style empty state.
+- New RarLine model + lines/date on Rar; createRar persists line items (foundation
+  for the reconciliation BoQ-overlap linker, next). Provider + Api updated. Tab order
+  now …IPC Register · Generate RAR · RAR Register · Reconciliation… Updated the RAR
+  tab-name tests; added a Generate-RAR UI test. Web 263 (42 files); server 8;
+  typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (9/n): Cash Flow + Commercial Dashboard
+- Cash Flow sub-tab: client IPC net inflow vs subcontractor RAR net outflow by
+  period, a composed bar+line chart (inflow/outflow bars + cumulative-net line),
+  KPI strip (total inflow, total outflow, net position) and a per-period table.
+  New domain commercialcashflow.ts (commercialCashflow/cashflowTotals) unit-tested.
+- Commercial Dashboard landing sub-tab: nine roll-up tiles (contract value, BOQ
+  value, IPC gross billed, IPC net certified, RAR booked, coverage, retention held,
+  escalation, outstanding advances) — each clickable to drill into its register.
+  Default landing stays BOQ to match the reference. Two new sub-tabs; the Commercial
+  bar is now Dashboard · BOQ · Generate IPC · IPC · RAR · Reconciliation · Cash flow ·
+  Retention · Escalation · Contractors · Distribution planner · Execution tracker ·
+  Distributions · Advances · Aging · Margin analytics. Two UI tests + one domain test.
+  Web 262; server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (8/n): Aging + Margin Analytics
+- Aging dashboard: every in-pipeline IPC/RAR/EPC (not yet paid) with days-in-stage
+  from the billing period, an ×threshold ratio and an urgency badge (Critical ≥2×,
+  High 1.5×, Due 1×, On track). KPI strip (In pipeline, Total value, Critical, High,
+  Medium), Group by All/Stage/Owner/Urgency, and a "Breached only" filter.
+- Margin Analytics: KPIs — Gross revenue (executed), S/C cost, L/O cost, Gross margin
+  (% on revenue), Net working capital (paid IPC net − paid RAR net) — plus a Top
+  contractors bar list (by allocated value) and an "Items at margin risk" table
+  (contractor rate ÷ BOQ rate > 90%).
+- New pure domains aging.ts (buildAging/agingTotals/urgencyOf/periodToDate) and
+  marginanalytics.ts, each unit-tested; two UI tests. Two new Commercial sub-tabs.
+  Web 259 (42 files); server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (7/n): Retention cap + DLP split
+- Reframed the Retention tab to the reference build's five KPIs — Cumulative
+  retention deducted (N IPCs), Released at substantial completion, Held for DLP,
+  Released after DLP, Written-off — with Final-Bill-aware logic (until the Final
+  Bill is client-approved the whole balance sits in "Held for DLP" and completion
+  release reads "Final Bill not approved").
+- Added a Retention cap card: ceiling = 5% of contract value with a progress-to-cap
+  bar that turns red and stops further deduction once reached. Kept the cumulative
+  timeline chart + per-IPC ledger. New domain retentionSummary (+ DEFAULT_RETENTION_
+  CAP_PCT) with unit tests (cap + 50/50 split); UI test covers the KPIs, cap and
+  ledger. Web 254; server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (6/n): Escalation / EPC engine
+- Rebuilt the Escalation tab to the formula-based EPC engine. Overview KPIs (sublet
+  escalation approved/paid/pending + Client EPCs issued) above the PBS INDEX MASTER:
+  Component · Base idx · Current (editable) · Ratio · Weight (editable) · Contribution,
+  footed with Σ weights and the live price-adjustment coefficient Pₙ = Σ wᵢ·(Cᵢ/Bᵢ).
+  Seeded indices give Pₙ = 1.1252 (+12.52%), matching the reference build.
+- EPC pipeline: "⚡ Generate drafts for all eligible IPCs" creates one EPC per
+  vetted-or-later IPC (idempotent via ipcNo), amount = IPC_gross × (Pₙ − 1); rows
+  advance through the shared IPC pipeline with toasts. PBS indices persist per project.
+- New domain pnCoefficient + DEFAULT_PBS_COMPONENTS (unit-tested to 1.1252); Epc gained
+  ipcNo; new provider methods list/setEscalationComponents (interface + Local seeded +
+  Api stub). Rewrote the two legacy EPC tests; deleted the now-dead EpcRegister +
+  EscalationCalculator. Web 251 (42 files); server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (5/n): Advances ledger + Bank Guarantees
+- Rebuilt Advances into the two-sided ledger. Kind tabs (Mobilisation / Secure
+  Advance (Material)); a six-KPI strip per kind — Received from client, Recovered
+  (client, via IPCs), Outstanding (client→NLC), Disbursed to S/C, Outstanding
+  (S/C→NLC), and Active BG cover; and three views: Client Receipts (FGEHA→NLC),
+  Subcontractor Disbursements (NLC→S/C), and a new Bank Guarantee register. Each
+  ledger view has an add form, totals row and export.
+- New BankGuarantee model + provider methods (list/add/setStatus) across interface,
+  Local (seeded 2 BGs for proj-f14f15) and Api stub; bgExpiryStatus drives a Valid/
+  Expiring/Expired badge with a Release action. New domain/advances.ts
+  (advanceSummary/bgExpiryStatus/bgActiveCover) with unit tests; UI test covers the
+  KPIs + BG register. Recovery KPI wires to the IPC pipeline next. Web 250 (42 files);
+  server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (4/n): Generate IPC + deduction-to-net
+- New "Generate IPC" wizard sub-tab. Per BOQ item: Rate, Executed (cumulative from
+  progress), In IPC (already claimed across existing IPC lines), Pending, an editable
+  This-IPC-qty (checkbox-gated), and Amount. Controls: Period + date + bill + search,
+  Select-all-pending, Suggest-from-progress, Clear, with a live "N items · PKR" count
+  and over-claim (qty > pending) flagging.
+- Deduction-to-net panel: Gross → −retention(10%) → −income tax(7%) → −advance
+  recovery → Net payable. "Generate IPC" creates the certificate with line items and
+  jumps to the register.
+- Cross-link: BOQ register now feeds Vetted/Paid from IPC line items by status
+  (vetted-or-later → Vetted, paid → Paid), so generating an IPC lights up those BOQ
+  columns. New domain helpers ipcDeductionBreakdown / ipcVettedPaidByItem /
+  ipcClaimedQtyByItem with unit tests; a UI test drives select→qty→generate. Web 247;
+  server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (3/n): Execution Tracker
+- New Execution Tracker sub-tab. Per BOQ item it shows Description / Party (NLC
+  Self-execution or the subcontractor name from the distribution), Unit, Allocated,
+  Rate, an editable Executed cell (cumulative, written via ProgressUpdate), Balance,
+  Revenue and a progress bar — turning red and flagging "exceeds plan" when executed
+  runs past the allocation. Filter bar (search + bill), a "Hide unassigned" toggle
+  (on by default), a "⚙ Manage Distribution" jump to the Distributions tab, and a
+  totals footer (allocated value, balance, executed revenue). Recorded execution
+  feeds the BOQ Executed column.
+- Seeded distributions for proj-f14f15 (2 self + 2 sublet) so the tracker and the
+  BOQ Mode column show real assignments. Added an execution-tracker test (party
+  names + record 50% → progress). Web 244; server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (2/n): Distribution Planner
+- Brought the planner up to the HTML build. The per-item row now carries the full
+  column set — Code, Description, Unit, Contract qty, Rate, Amount, Mode badge
+  (Self/Sublet/Labor/Mixed/⚠Unassigned), an allocation % bar (red when over), and
+  S/C cost, L/O cost and Margin % derived from the allocation lines — over a
+  grand-totals footer (Σ amount, S/C, L/O, weighted margin %).
+- Added a filter bar (search + bill + live count), a "⚡ Mark filtered 100% Self"
+  bulk action (with toast), and Export Plan (XLSX). Kept the richer expandable
+  allocation editor and the Contracts/PEC approval section intact.
+- New domain helpers in allocations.ts (itemScCost/itemLoCost/itemModeLabel/
+  itemMarginPct/planTotals). Updated the allocate test (Plan button) and added a
+  columns/totals/bulk test. Web 243; server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (1/n): BOQ register overhaul
+- First slice bringing the React Commercial module up to the HTML build's standard.
+  Rebuilt the BOQ register to match it: bill → section grouping with subtotals, the
+  full 12-column layout (Item ref, Description, Unit, Contract qty, Rate, Amount,
+  Mode, Executed, Vetted, Paid, Receivable, Status), per-row Mode badge (Self /
+  Sublet / ⚠ Unassigned from distributions), a % progress bar (executed ÷ contract
+  from progress updates), a filter bar (search + bill + status with live "x of y"
+  count), and a grand-total footer. Export now emits the enriched columns.
+- BoqItem gained optional billName/section (non-breaking); seed enriched to 8 items
+  across 3 named bills/sections. New pure domain module domain/boqrollup.ts
+  (buildBoqRows/groupBoq/boqTotals/filterBoqRows) with 4 unit tests; 3 new UI tests
+  (grouping + badges + grand total, and search filter). Vetted/Paid wire in with the
+  IPC-pipeline slice next. Web 242 (41 files); server 8; typecheck clean; both builds green.
+
+2026-06-16 — Keyboard-first establishment grid
+- The inline-editable establishment table is now arrow-key navigable. EditableCell
+  emits data-r/data-c on its display button; a grid keydown handler on the table
+  wrapper moves focus between adjacent editable cells (↑↓ rows, ←→ columns),
+  skipping the static Reports-to column. Arrows only navigate when a cell is
+  focused (not while editing an input), so text editing is unaffected; Enter/click
+  still opens the editor. Test focuses a cell and asserts ArrowDown/Right move
+  focus. Web 236; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Bulk attendance in the roster
+- Roster person cards gained selection checkboxes (reusing useBulkSelection).
+  Selecting one or more reveals a bulk bar to set attendance (Present / On leave
+  / Detached / Training) for all at once via upsertPerson, with a success toast
+  and Undo that restores each person's prior status. Selected cards are
+  outlined. Test selects a person, applies "On leave", asserts the toast. Web
+  235; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Consistency pass: commercial billing toasts
+- Extended save confirmations to the core billing registers. IPC: create ("IPC-04
+  created") and each stage transition ("IPC-03 → With client"). RAR: create and
+  stage transition ("RAR-… → …"). Reuses the toast primitive (useToast added to
+  IpcRegister/RarRegister). Asserted the IPC advance toast in the commercial test.
+  Web 234; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Consistency pass: HR admin save confirmations
+- Wired success toasts through the HR admin workflows that previously saved
+  silently: credential add ("Added … credential"), posting raise/effect/reject,
+  and establishment snapshot ("Snapshot vN captured") / sanction ("Sanctioned
+  vN"). Reuses the toast primitive (useToast added to PostingsView/VersionsView).
+  Feedback is now uniform across HR. Extended the version test to assert the
+  snapshot toast. Web 234; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Cross-linked drawers (peek from palette + activity)
+- Command palette: selecting a person now opens their detail drawer in place
+  (dispatches nlc:person-drawer) instead of navigating to the HR page — a fast
+  Linear-style peek from anywhere. Nodes/projects still navigate.
+- Activity feed: project-scoped entries (entity ≠ Node) are now clickable and
+  open that project's detail drawer, so you can jump from an event straight to
+  the project's numbers. Keyboard-accessible (Enter/Space).
+- Updated the palette test to assert the person drawer opens. Web 234; server 8;
+  typecheck clean; both builds green.
+
+2026-06-16 — Person detail drawer
+- Clicking a person's name in the roster (or bench) now opens a right-hand
+  drawer (reusing DetailDrawer) with their post, status badge, rank, category,
+  CNIC, contact and posting date, plus their Credentials (kind · ref + expiry
+  badge) and Postings (destination + stage) pulled live from the node's stores.
+  New PersonDrawerHost mounted at app root listens for an 'nlc:person-drawer'
+  event; PersonCard gained an onOpen (clickable name). "Open HR →" jumps to the
+  cockpit. Test opens Hamza Sheikh and asserts his PEC credential shows. Web 234;
+  server 8; typecheck clean; both builds green.
+
+2026-06-16 — Cross-filtering (shared RAG lens)
+- The map's status filter is no longer a private control: it now reads/writes the
+  shared UiState RAG filter, so the map, league table, exceptions, S-curve and
+  KPIs all respond to one health filter together.
+- Added one-click RagFilterChips on dashboards — On track / At risk / Behind with
+  live subtree counts; tapping one sets the shared filter (tap again to clear),
+  active chip highlighted. Saved map views still capture the RAG lens.
+- Test taps the Behind chip and asserts the shared map status filter follows.
+  Web 233; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Inline-edit table cells
+- New reusable EditableCell: click (or Enter/Space) turns a cell into an input
+  that commits on Enter/blur and cancels on Esc, firing onCommit only when the
+  value changed. Applied across the establishment table (title, scale, category,
+  auth, held) — every cell is now click-to-edit with an optimistic save and a
+  brief "Updated …" toast; edits flow straight through to the organogram. The
+  old bare auth/held blur-inputs are replaced by the unified primitive. Test
+  edits a title cell inline and asserts the new value + toast. Web 232; server 8;
+  typecheck clean; both builds green.
+
+2026-06-16 — Undo for destructive actions
+- Project archive no longer uses a blocking confirm(); it archives, navigates to
+  HQ, and shows an "Archived …" toast with Undo that restores the project and
+  returns to it. HR credential delete (Skills) likewise shows an Undo toast that
+  re-adds the credential. Both reuse the toast primitive's action button; the
+  reversible-op pattern (capture → delete → re-create on undo) is now used in
+  three places (photos, credentials, archive). Tests cover archive→undo→restored
+  and credential delete→undo→restored. Web 231; server 8; typecheck clean; both
+  builds green.
+
+2026-06-16 — Saved map views
+- The map can now save its current lens — view filter (HQ+projects / projects /
+  sites), RAG status filter, and basemap — as a named, persisted view and recall
+  it from a dropdown. Stored browser-local in UiState under nlc-ecc.mapviews
+  (mirrors the named-layouts pattern) with saveMapView/deleteMapView; views are
+  global so they apply on any node's map. Save confirms with a toast; delete from
+  the selected view. Controls only show in Overview mode on tiers with
+  descendants. Test saves a view, changes the filter, recalls it. Web 230;
+  server 8; typecheck clean; both builds green.
+
+2026-06-16 — Toast notifications + undo primitive
+- New ToastProvider/useToast mounted at app root: a bottom-right stack of
+  success/info/error toasts that auto-dismiss (longer when an action is present),
+  each with an optional action button and manual close. Reusable app-wide; the
+  default context is a no-op so callers never crash without the provider.
+- Wired first uses: progress save now confirms with a "Progress updated" toast
+  instead of saving silently; deleting a progress photo shows an "Undo" toast
+  that re-adds it (reversible-op pattern). Tests cover both the success toast and
+  the delete→undo→restore flow. Web 229; server 8; typecheck clean; both builds
+  green.
+
+2026-06-16 — Per-node activity timeline
+- New ActivityFeed surfaces the append-only audit log as a readable, day-grouped
+  timeline (coloured entity tag · action · ref · detail, with a connector rail).
+  Mounted on the project Executive tab (that project's events) and on branch
+  dashboards with a "This node / All sub-units" scope toggle (self vs descendant
+  ids). Previously the audit log was only visible per entity-reference inside
+  detail modals (AuditTrail).
+- Made it live: audit() now emits a 'nlc:audit' window event and the feed
+  refetches on it, so an action (e.g. Update progress) shows up immediately.
+  Test drives the progress editor and asserts the new 'update' entry appears.
+  Web 229; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Right-hand detail drawer for projects
+- New slide-in DetailDrawer (Esc/backdrop close, animated) + ProjectDrawerHost
+  mounted at app root next to the command palette. It opens on a
+  'nlc:project-drawer' CustomEvent and shows a project's RAG badge, an
+  actual-vs-planned progress bar with slippage, financials (contract, billed,
+  received, outstanding, unbilled) and identity (client, location, code, PD HQ,
+  dates), with Open-project / Close actions — all without navigating away.
+- Triggers: a "Details" button in each map popup (project markers dispatch the
+  event; added to MapMarker.onDetails) and a "Details" button on project rows of
+  the dashboard league table (project rows only, via a projectIds set). The map
+  path stays headless-safe; the league-table path is covered by a new test.
+  Web 228; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Map marker clustering
+- Added leaflet.markercluster (^1.5.3): the map's marker layer is now a themed
+  cluster group, so busy maps (HQ NLC with many project pins) collapse nearby
+  sites into a count bubble that splits on zoom / click. Loaded lazily alongside
+  leaflet (own ~9KB gz chunk) and only on the real-DOM branch; the picker layer
+  and the jsdom OfflineLocator are unchanged, so tests stay green. Cluster
+  bubbles restyled to the command palette tokens (no default green/yellow).
+  getBounds still drives the Fit-to-markers control. Added a module shim in
+  vite-env.d.ts. Web 227; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Command palette: search people, not just nodes
+- ⌘/Ctrl-K palette extended from node/project jump to a true entity search. It
+  now also finds people (by name or rank) across every node via listAllPeople
+  (loaded lazily on first open), showing an avatar + rank · home-unit; Enter
+  opens that person's HR page. Nodes/projects still rank first, then people,
+  capped at 10. Dependency-free, reuses the existing palette + HrAvatar.
+- Test: open palette, search a person, Enter lands on their HR command page.
+  Web 227; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Map: rich click popups + fit-to-markers control
+- Clicking a marker now opens a popup card: title + detail rows (status, actual%,
+  planned%, client, location for projects; type/location for HQ/PD HQ) with an
+  "Open ›" action that navigates to that node/project. Hover still shows the
+  tooltip; popups are skipped in Set-location mode so map-click keeps setting the
+  pin. MapMarker gained optional `detail` rows + `openLabel`; HTML is escaped.
+- Added a "Fit to markers" Leaflet control (⤢, top-left) that refits the view to
+  every plotted location; marker layer switched to a featureGroup so the control
+  reads live bounds. Dependency-free (Leaflet bindPopup + fitBounds); only the
+  real-DOM branch is affected (jsdom uses the OfflineLocator), so tests are
+  untouched. Web 226; server 8; typecheck clean; both builds green (leaflet
+  still lazy-chunked ~43.5KB gz).
+
+2026-06-16 — Outline organogram search + single-map polish; remove dead maps
+- Outline layout (indented tree, already present) gained a search box (matches
+  titles/scales, keeps ancestors+descendants visible) and Expand-all/Collapse-all;
+  per-node collapse lifted to a shared set so search/global controls work.
+- Map: confirmed the single NodeMap (Overview / Set-location modes + view
+  filter) is the only map at every tier; deleted the orphaned LevelMap,
+  NodeLocationEditor and LocationEditor (the old second map). Added a RAG status
+  filter (All / On track / At risk / Behind) and a live "N shown" marker count.
+- Tests: replaced the old Location-editor assertion with a single-map +
+  Set-location-mode check; added an outline+search test. Web 226; server 8;
+  typecheck clean; both builds green.
+
+2026-06-16 — Fix clipped post titles + show occupant names on the chart
+- Bug: inside a narrow section card the post row laid title (left) against a
+  growing right cluster (seat chip + held/auth + the three edit buttons); with
+  deep indentation the title flex-shrank to zero and was clipped by ellipsis, so
+  designations vanished while the numbers stayed. Fix: row now wraps, the title
+  takes priority (flex 1 1 60%, wraps instead of clipping), the right cluster is
+  flex:0 0 auto / margin-left:auto, indentation reduced + capped, section cards
+  widened to 232px.
+- Names on the chart: HrOrganogram now takes `people` and renders occupant chips
+  (avatar + name) under each post/leaf section, with dashed "vacant" chips for
+  unfilled seats — so designations AND the people holding them are visible
+  without leaving the organogram (full roster still one click away).
+- Test asserts a leaf-section occupant name + titled child posts render.
+  Web 225; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Editable organogram (HR staff edit on the chart)
+- The organogram is now an editing surface. An "Edit organogram" toggle on the
+  Organogram tab turns on inline affordances: ＋ add a post under any box, ✎ edit
+  (title / scale / category / auth / held / reports-to), ✕ remove (with confirm;
+  orphans re-parent to the deleted box's parent). An "Add section" tile and an
+  "Add head post" empty-state cover the structural cases.
+- Re-parenting two ways: the editor's Reports-to dropdown and drag-and-drop —
+  drag any box onto another to re-assign its parent, with a cycle guard so a box
+  can't be dropped onto its own descendant.
+- A lightweight UnitEditorPanel (inline, not a modal) handles add/edit; every
+  change persists immediately via upsertHrUnit/deleteHrUnit and the chart
+  re-renders. Editing operates on the authored establishment; if the tier was
+  still category-derived, entering edit first materialises real posts so edits
+  stick. Export buttons follow the edited set.
+- Tests +1 (add a section via the chart) → web 225; server 8; typecheck clean;
+  both builds green.
+
+2026-06-16 — HR admin: postings, skills, versioning, import/export
+- Postings & deployment (HrTransfer, global store): raise a movement for a
+  person to a post/node, run it raised→recommended→approved→effected through a
+  POSTING_CHAIN (or reject); effecting moves the person record between node
+  stores. Writes to the audit log. Cross-node target posts resolved by fetching
+  the destination node's units.
+- Skills / qualifications (HrCredential per node): PEC / licence / certification
+  / training / medical with issue + expiry; domain/credentials.ts computes
+  valid / expiring(≤90d) / expired and an attention list; Skills view shows an
+  alert banner + table. Seeded creds on proj-rwp-ring (one expiring, one
+  expired).
+- Establishment versioning (HrEstablishmentVersion per node): snapshot the
+  current TO&E as vN (draft), sanction it (approval + approver), and diff any
+  snapshot against the live establishment (added / removed / changed +
+  auth/held deltas) via domain/estabversion.ts.
+- Import / export: establishment ⇄ .xlsx/.csv (SheetJS, reusing the existing
+  workbook helpers; Anx-D style sheets parse by header into HrUnits with parent
+  resolution by title), and the organogram exports to SVG, PNG (SVG→canvas) and
+  Print/PDF via a self-contained chart generator (hrExport.ts).
+- Cockpit now: Organogram · Roster · Postings · Skills · Recruitment · Cost ·
+  Establishment · Versions (+ Org board on branches). Domain tests +4,
+  integration +3 → web 224; server 8; typecheck clean; both builds green
+  (xlsx lazy-chunked).
+
+2026-06-16 — HR platform: roster, recruitment, attendance, cost, org board
+- People layer (HrPerson): name/rank/CNIC/contact/photo/posting-date/status,
+  linked to an establishment post (or bench). Provider CRUD on Local + Api.
+  Recruitment requisitions (HrRequisition) with a raised→advertised→interview→
+  offer→joined stage flow + advance/convert-to-hire; writes to the audit log.
+- domain/roster.ts (occupancy, present strength, bench, initials/hue) and
+  domain/hrcost.ts (NLC pay-bands, scale parsing, cost by section/total on a
+  held-or-named basis). Unit-tested (8 new).
+- Organogram is now occupancy-aware: each box shows present/named and empty
+  seats, has a PRESENT summary cell, and is clickable → opens that post's roster.
+- HrCockpit became a full one-window platform: Organogram · Roster ·
+  Recruitment · Cost · Establishment (+ Org board on branch tiers).
+  • Roster: Bitrix-style people cards grouped by post, empty-seat cards for
+    vacancies, a bench group, add/edit/remove with attendance status.
+  • Recruitment: live vacancy list (AUTH−HELD) + a kanban pipeline; raise from a
+    vacancy, advance stages, or convert a 'joined' card into a roster entry.
+  • Cost: monthly burn by section + annualised, held/named basis toggle.
+  • Org board: branch-wide fill% across every sub-unit, worst-fill-first, with
+    present strength and vacancy columns.
+- Seeded a named roster + open requisitions on proj-rwp-ring. Replaced the old
+  HrRollupCard (superseded by Org board). Tests +10 → web 217; server 8;
+  typecheck clean; both builds green.
+
+2026-06-15 — HR organogram at every tier + one-window HR cockpit
+- New establishment model: HrUnit (post/section tree per node, parentId, scale,
+  category, auth/held, order) with provider CRUD (listHrUnits / listAllHrUnits /
+  upsertHrUnit / deleteHrUnit) on Local + Api providers; rides existing JSONB,
+  no migration.
+- domain/organogram.ts: tree build, leaf roll-up (no double counting),
+  establishment totals, fill status/percent, command-spine detection, and a
+  fallback that synthesises an organogram from category strengths so EVERY tier
+  shows something. Unit-tested (6).
+- HrOrganogram component: interactive top-down chart — AUTH/HELD/FILLED/VACANT
+  summary panel, command spine (Director → Deputy), responsive section grid with
+  RAG fill bars, and expandable posts (designation tiers). Themed, not the dated
+  3D look; reads on light/dark.
+- HrCockpit (one window): Organogram / Strength / Establishment sub-tabs.
+  Strength = KPIs + by-category fill + roll-up across sub-units (branch tiers).
+  Establishment = builder table (add/edit/delete posts, re-parent, seed from
+  categories). Wired into the project HR tab AND branch dashboards, and the
+  organogram is Focusable + Dockable (full-screen / pin).
+- Seeded establishments: proj-rwp-ring (image-1 directorate, AUTH 113/HELD 96),
+  proj-e12 (Anx-D Table of Organisation, ~33 posts with designations & scales),
+  pd-centre and hq-engrs (upper tiers). Other nodes fall back to category-
+  derived organograms.
+- Replaced the old HrTab with the cockpit. Tests +7 → web 207 passing; server 8;
+  typecheck clean; both builds green.
+
+2026-06-15 — Workspace power-user layer + OSM basemaps
+- Resizable sidebar: drag handle on its right edge sets width (200–440px,
+  persisted via the workspace key, live during drag).
+- Per-panel collapse: new CollapsibleCard accordions a card to its header,
+  state persisted per id; independent of focus mode. Dashboard breakdown now
+  collapses, expands full-page, and docks.
+- Presentation mode: header button (and Esc to exit) hides all chrome and
+  bumps zoom ×1.12 for briefings. Settings → Workspace saves two named layout
+  slots (sidebar/width/zoom/density/theme).
+- Route cross-fade: RouteFade keys the outlet by path; View-Transitions name
+  set where supported, CSS fade fallback everywhere (respects reduced-motion).
+- Keyboard layer: '[' toggle sidebar, '+/-' zoom, 'g' command palette, 'f'
+  expand the panel under the cursor. Typing targets are ignored.
+- Dock / split view: new Dock (provider + Dockable + right rail). Pin the map
+  or breakdown to a sticky rail that stays put while the page scrolls; clears
+  on navigation. Hidden under 1100px.
+- Density toggle: comfortable/compact table rows (Settings), separate from zoom.
+- Persistence: theme + last-visited node remembered; app reopens where you
+  left off (HomeRedirect → last node).
+- Focus 'Expand' folded onto S-curve, twin S-curve, EVM, cash flow, Gantt,
+  distribution mix, and the receipts/payments/liabilities tables.
+- Maps: Leaflet + OpenStreetMap made first-class — basemap switcher on every
+  map and a default-basemap setting (Auto/OpenStreetMap/Light/Dark); OSM uses
+  the canonical tile.openstreetmap.org tiles. Theme now drives tiles directly.
+  Tests +6 → web 200 passing; server 8; typecheck clean; both builds green.
+
+2026-06-15 — Workspace interactivity (sidebar / focus mode / zoom)
+- Collapsible sidebar: header toggle slides it away with a width/opacity
+  transition and reclaims the space; state persisted (nlc-ecc.workspace). On
+  narrow screens it becomes an off-canvas drawer with a click-away scrim.
+- Focus mode: new reusable Focusable (render-prop) puts an Expand affordance on
+  panels and opens them full-page in an overlay (Esc/✕ to close, background
+  scroll locked). Wired to every level map and the dashboard breakdown table.
+  Full-screen maps enable scroll-wheel zoom + pan via MapView interactiveZoom.
+- Content zoom: header A−/100%/A+ control scales the whole content area
+  (0.8–1.4, persisted); click the value to reset.
+- Fullscreen: header button toggles the browser Fullscreen API for a control-
+  room view.
+- State: UiState gained persisted sidebarOpen + zoom. Tests +3 (Workspace).
+  Web 194 passing, server 8; typecheck clean; both builds green.
+
+2026-06-15 — Map & form aesthetic pass
+- Basemap: switched to free CARTO tiles (Positron/Dark Matter, no key),
+  auto-matched to the app's light/dark theme via a MutationObserver on
+  data-theme so calm terrain lets coloured pins pop.
+- Markers: HQ/PD HQ now render a building-glyph tile; projects a RAG dot. The
+  location picker pin gets a soft pulsing halo. Offline SVG fallback mirrors the
+  square-vs-dot distinction.
+- Create modal: grouped into Identity / Contract dates / Location sections with
+  light dividers and small caps labels.
+- Project header: Code / Commenced / Completion now render as mono pill chips.
+- Dashboard: HQ-level command map gets a hero treatment (taller, stronger card,
+  legend inline in the header). Lower levels keep the legend beneath.
+- Empty state: nodes with no located sites show a friendly "No sites mapped yet"
+  prompt instead of hiding the map.
+- ChartCard gained an optional headerExtra slot (inline legend). Web 191 tests,
+  server 8; typecheck clean; both builds green.
+
+2026-06-15 — Project-creation rework + interactive maps (Leaflet/OSM)
+- New-project window: removed Planned %/Actual % inputs. Fields are now PD HQ
+  (structural), Project Code, Project Name, CA Amount, Date of Commencement,
+  Date of Completion, plus optional Client and a map location picker. New
+  projects default to 0% progress.
+- Maps: added Leaflet 1.9 + free OpenStreetMap tiles (no API key/card). New
+  MapView component (interactive in-browser, jsdom-safe SVG fallback for tests),
+  used as a click-to-pin picker in the create modal, the project LocationEditor,
+  and a new NodeLocationEditor for HQ/PD HQ. Best-effort reverse geocoding via
+  free Nominatim auto-fills the place name.
+- Multi-level maps: OrgNode gained lat/lng/location; HQ + all PD HQs are seeded
+  with coordinates (with backfill onto older cached node sets). New LevelMap
+  plots, per level, the node + its PD HQs + project sites — colour-coded by
+  level and (projects) by RAG, click-through. Wired into CommandDashboard and
+  the project executive tab. Removed the old static PakistanMap (SVG logic moved
+  into domain/geo.ts).
+- Data: createProject persists code/dates/coords; updateProject handles the new
+  fields; new updateNodeLocation provider method (both providers). api mode
+  needs no server/DB change — the new fields ride in the existing /api/state
+  JSONB docs.
+- Tests: +9 (domain/geo, data/projectCreation). Updated ProjectLifecycle UI test
+  to the new field set. Web 191 passing, server 8 passing; typecheck clean;
+  builds green in local and api modes.

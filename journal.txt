@@ -1,6 +1,101 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-17 — Commercial parity (7/n): Retention cap + DLP split
+- Reframed the Retention tab to the reference build's five KPIs — Cumulative
+  retention deducted (N IPCs), Released at substantial completion, Held for DLP,
+  Released after DLP, Written-off — with Final-Bill-aware logic (until the Final
+  Bill is client-approved the whole balance sits in "Held for DLP" and completion
+  release reads "Final Bill not approved").
+- Added a Retention cap card: ceiling = 5% of contract value with a progress-to-cap
+  bar that turns red and stops further deduction once reached. Kept the cumulative
+  timeline chart + per-IPC ledger. New domain retentionSummary (+ DEFAULT_RETENTION_
+  CAP_PCT) with unit tests (cap + 50/50 split); UI test covers the KPIs, cap and
+  ledger. Web 254; server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (6/n): Escalation / EPC engine
+- Rebuilt the Escalation tab to the formula-based EPC engine. Overview KPIs (sublet
+  escalation approved/paid/pending + Client EPCs issued) above the PBS INDEX MASTER:
+  Component · Base idx · Current (editable) · Ratio · Weight (editable) · Contribution,
+  footed with Σ weights and the live price-adjustment coefficient Pₙ = Σ wᵢ·(Cᵢ/Bᵢ).
+  Seeded indices give Pₙ = 1.1252 (+12.52%), matching the reference build.
+- EPC pipeline: "⚡ Generate drafts for all eligible IPCs" creates one EPC per
+  vetted-or-later IPC (idempotent via ipcNo), amount = IPC_gross × (Pₙ − 1); rows
+  advance through the shared IPC pipeline with toasts. PBS indices persist per project.
+- New domain pnCoefficient + DEFAULT_PBS_COMPONENTS (unit-tested to 1.1252); Epc gained
+  ipcNo; new provider methods list/setEscalationComponents (interface + Local seeded +
+  Api stub). Rewrote the two legacy EPC tests; deleted the now-dead EpcRegister +
+  EscalationCalculator. Web 251 (42 files); server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (5/n): Advances ledger + Bank Guarantees
+- Rebuilt Advances into the two-sided ledger. Kind tabs (Mobilisation / Secure
+  Advance (Material)); a six-KPI strip per kind — Received from client, Recovered
+  (client, via IPCs), Outstanding (client→NLC), Disbursed to S/C, Outstanding
+  (S/C→NLC), and Active BG cover; and three views: Client Receipts (FGEHA→NLC),
+  Subcontractor Disbursements (NLC→S/C), and a new Bank Guarantee register. Each
+  ledger view has an add form, totals row and export.
+- New BankGuarantee model + provider methods (list/add/setStatus) across interface,
+  Local (seeded 2 BGs for proj-f14f15) and Api stub; bgExpiryStatus drives a Valid/
+  Expiring/Expired badge with a Release action. New domain/advances.ts
+  (advanceSummary/bgExpiryStatus/bgActiveCover) with unit tests; UI test covers the
+  KPIs + BG register. Recovery KPI wires to the IPC pipeline next. Web 250 (42 files);
+  server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (4/n): Generate IPC + deduction-to-net
+- New "Generate IPC" wizard sub-tab. Per BOQ item: Rate, Executed (cumulative from
+  progress), In IPC (already claimed across existing IPC lines), Pending, an editable
+  This-IPC-qty (checkbox-gated), and Amount. Controls: Period + date + bill + search,
+  Select-all-pending, Suggest-from-progress, Clear, with a live "N items · PKR" count
+  and over-claim (qty > pending) flagging.
+- Deduction-to-net panel: Gross → −retention(10%) → −income tax(7%) → −advance
+  recovery → Net payable. "Generate IPC" creates the certificate with line items and
+  jumps to the register.
+- Cross-link: BOQ register now feeds Vetted/Paid from IPC line items by status
+  (vetted-or-later → Vetted, paid → Paid), so generating an IPC lights up those BOQ
+  columns. New domain helpers ipcDeductionBreakdown / ipcVettedPaidByItem /
+  ipcClaimedQtyByItem with unit tests; a UI test drives select→qty→generate. Web 247;
+  server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (3/n): Execution Tracker
+- New Execution Tracker sub-tab. Per BOQ item it shows Description / Party (NLC
+  Self-execution or the subcontractor name from the distribution), Unit, Allocated,
+  Rate, an editable Executed cell (cumulative, written via ProgressUpdate), Balance,
+  Revenue and a progress bar — turning red and flagging "exceeds plan" when executed
+  runs past the allocation. Filter bar (search + bill), a "Hide unassigned" toggle
+  (on by default), a "⚙ Manage Distribution" jump to the Distributions tab, and a
+  totals footer (allocated value, balance, executed revenue). Recorded execution
+  feeds the BOQ Executed column.
+- Seeded distributions for proj-f14f15 (2 self + 2 sublet) so the tracker and the
+  BOQ Mode column show real assignments. Added an execution-tracker test (party
+  names + record 50% → progress). Web 244; server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (2/n): Distribution Planner
+- Brought the planner up to the HTML build. The per-item row now carries the full
+  column set — Code, Description, Unit, Contract qty, Rate, Amount, Mode badge
+  (Self/Sublet/Labor/Mixed/⚠Unassigned), an allocation % bar (red when over), and
+  S/C cost, L/O cost and Margin % derived from the allocation lines — over a
+  grand-totals footer (Σ amount, S/C, L/O, weighted margin %).
+- Added a filter bar (search + bill + live count), a "⚡ Mark filtered 100% Self"
+  bulk action (with toast), and Export Plan (XLSX). Kept the richer expandable
+  allocation editor and the Contracts/PEC approval section intact.
+- New domain helpers in allocations.ts (itemScCost/itemLoCost/itemModeLabel/
+  itemMarginPct/planTotals). Updated the allocate test (Plan button) and added a
+  columns/totals/bulk test. Web 243; server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (1/n): BOQ register overhaul
+- First slice bringing the React Commercial module up to the HTML build's standard.
+  Rebuilt the BOQ register to match it: bill → section grouping with subtotals, the
+  full 12-column layout (Item ref, Description, Unit, Contract qty, Rate, Amount,
+  Mode, Executed, Vetted, Paid, Receivable, Status), per-row Mode badge (Self /
+  Sublet / ⚠ Unassigned from distributions), a % progress bar (executed ÷ contract
+  from progress updates), a filter bar (search + bill + status with live "x of y"
+  count), and a grand-total footer. Export now emits the enriched columns.
+- BoqItem gained optional billName/section (non-breaking); seed enriched to 8 items
+  across 3 named bills/sections. New pure domain module domain/boqrollup.ts
+  (buildBoqRows/groupBoq/boqTotals/filterBoqRows) with 4 unit tests; 3 new UI tests
+  (grouping + badges + grand total, and search filter). Vetted/Paid wire in with the
+  IPC-pipeline slice next. Web 242 (41 files); server 8; typecheck clean; both builds green.
+
 2026-06-16 — Keyboard-first establishment grid
 - The inline-editable establishment table is now arrow-key navigable. EditableCell
   emits data-r/data-c on its display button; a grid keydown handler on the table

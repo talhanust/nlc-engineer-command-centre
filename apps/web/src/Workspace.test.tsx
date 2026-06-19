@@ -14,6 +14,14 @@ function renderAt(path: string) {
 beforeEach(() => localStorage.clear());
 
 describe('workspace interactivity', () => {
+  it('shows the portfolio earned-value roll-up', async () => {
+    renderAt('/node/hq-nlc');
+    await screen.findByRole('heading', { name: 'HQ NLC' });
+    expect(await screen.findByRole('heading', { name: /Portfolio performance/ })).toBeInTheDocument();
+    expect(screen.getByText('Portfolio SPI')).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Project performance' })).toBeInTheDocument();
+  });
+
   it('collapses and restores the sidebar', async () => {
     const user = userEvent.setup();
     renderAt('/node/hq-nlc');

@@ -204,3 +204,64 @@ describe('trend series', () => {
     expect(trendDelta(s.slice(0, 1))).toBeNull();
   });
 });
+
+import { variationSummary, revisedContractValue, nextVoTransition, applyVoAction } from './variations';
+import type { Variation } from '../data/types';
+describe('variations / change orders', () => {
+  const vo = (no: string, amount: number, status: Variation['status']): Variation =>
+    ({ id: no, projectId: 'p', voNo: no, seq: 1, title: no, type: amount >= 0 ? 'addition' : 'omission', amount, status });
+  it('summarises approved vs pending and revises the contract value', () => {
+    const vos = [vo('VO-01', 185, 'approved'), vo('VO-02', -42, 'recommended'), vo('VO-03', 96, 'submitted'), vo('VO-04', 10, 'rejected')];
+    const s = variationSummary(vos, 1000);
+    expect(s.approvedTotal).toBe(185);
+    expect(s.pendingTotal).toBe(-42 + 96);
+    expect(s.revisedContractValue).toBe(1185);
+    expect(s.count).toBe(3); // rejected excluded
+    expect(revisedContractValue(1000, vos)).toBe(1185);
+  });
+  it('walks the approval pipeline and supports rejection', () => {
+    expect(nextVoTransition('draft')?.to).toBe('submitted');
+    expect(applyVoAction('submitted', 'recommend')).toBe('recommended');
+    expect(applyVoAction('recommended', 'approve')).toBe('approved');
+    expect(applyVoAction('submitted', 'reject')).toBe('rejected');
+    expect(nextVoTransition('approved')).toBeNull();
+  });
+});
+
+import { evm, indexStatus } from './evm';
+describe('earned value (EVM)', () => {
+  it('computes indices, variances and forecasts', () => {
+    const r = evm({ bac: 1000, pv: 600, ev: 540, ac: 600 });
+    expect(r.sv).toBe(-60);          // behind schedule
+    expect(r.cv).toBe(-60);          // over cost
+    expect(r.spi).toBeCloseTo(0.9, 5);
+    expect(r.cpi).toBeCloseTo(0.9, 5);
+    expect(r.eac).toBeCloseTo(1111.11, 1); // BAC / CPI
+    expect(r.vac).toBeCloseTo(-111.11, 1);
+    expect(r.pctComplete).toBeCloseTo(0.54, 5);
+  });
+  it('classifies performance indices', () => {
+    expect(indexStatus(1.05)).toBe('ahead');
+    expect(indexStatus(1.0)).toBe('on');
+    expect(indexStatus(0.9)).toBe('behind');
+  });
+});
+
+import { commercialAlerts, alertCounts } from './alerts';
+import type { Rar as RarA, BankGuarantee, Subcontractor as SubA } from '../data/types';
+describe('commercial alerts', () => {
+  it('flags over-claimed contractors, aged docs and expiring guarantees', () => {
+    const today = new Date('2026-06-19T00:00:00');
+    const boq = [{ id: 'a', projectId: 'p', billNo: '1', code: 'I-1', description: 'x', unit: 'U', qty: 100, rate: 100, amount: 10000 }];
+    const dists = [{ boqItemId: 'a', projectId: 'p', mode: 'sublet' as const, subcontractorId: 's1', allocatedQty: 1 }]; // distCost 100
+    const rars: RarA[] = [{ id: 'r1', projectId: 'p', rarNo: 'RAR-01', seq: 1, period: 'Jan-2026', status: 'submitted', subcontractorId: 's1', gross: 500, netPayable: 415 }];
+    const subs: SubA[] = [{ id: 's1', projectId: 'p', name: 'FWO', trade: 'x', kind: 'sublet' }];
+    const bgs: BankGuarantee[] = [{ id: 'b1', projectId: 'p', kind: 'mob', party: 'client', bgNo: 'BG-1', bank: 'NBP', amount: 100, expires: '2026-07-10', status: 'active' }];
+    const alerts = commercialAlerts({ ipcs: [], rars, epcs: [], dists, boq, subs, bgs, today });
+    expect(alerts.some((a) => a.sub === 'recon')).toBe(true);  // over-claimed (500 > 100)
+    expect(alerts.some((a) => a.sub === 'aging')).toBe(true);  // RAR submitted, Jan period → critically aged
+    expect(alerts.some((a) => a.sub === 'adv')).toBe(true);    // BG expiring within 60d
+    expect(alertCounts(alerts).total).toBe(alerts.length);
+    expect(alerts[0].severity).toBe('critical'); // critical sorted first
+  });
+});

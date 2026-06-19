@@ -1,6 +1,38 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-18 — Quick wins #2–4: sparklines, skeletons, density toggle
+- KPI sparklines & trend deltas: new domain trends.ts (seriesByPeriod/trendDelta) +
+  a dependency-free inline-SVG Sparkline. Commercial Dashboard tiles with a time
+  series (IPC gross, IPC net, RAR booked, Escalation) now show a period-over-period
+  ▲/▼ delta badge and a mini cumulative sparkline (Mercury/Ramp style).
+- Skeleton loaders: new Skeleton primitives (SkeletonBlock/SkeletonTiles/SkeletonRows)
+  with a reduced-motion-aware shimmer; the dashboard renders skeleton tiles while its
+  data resolves instead of an empty grid.
+- Density toggle: wired a compact/comfortable switch into the workspace toolbar
+  (the UiState density + .density-compact CSS already existed but had no control);
+  extended compact styling to the kpi-card/dash-tile components.
+- Domain test for the trend series; UI tests for the density toggle. Web 269 (42
+  files); server 8; typecheck clean; both builds green.
+
+2026-06-18 — Quick win #1: sortable columns (registers)
+- New reusable useSort hook + SortTh header cell (asc → desc → neutral, with an
+  aria-sort indicator and click affordance). Wired into the IPC register, RAR register
+  and the Aging table (sorts within the All-items view and inside each group). Default
+  Aging sort stays ratio-desc; everything else is click-to-sort. Pure CSS for the
+  indicator; NoInfer keeps the column-key types honest. UI test asserts the aria-sort
+  toggle. Web 267 (42 files); server 8; typecheck clean; both builds green.
+
+2026-06-18 — Commercial parity (12/n): coherent seed + sticky headers
+- Seeded line items on the flagship project's IPCs and RARs (realistic per-BoQ-item
+  portions). This makes the whole commercial story cohere out of the box: BOQ
+  Vetted/Paid columns populate from IPC lines by status; the Reconciliation RAR↔IPC
+  linker now shows real top-3 suggestions by BoQ overlap and "Auto-link all RARs"
+  produces actual links; Per-IPC coverage lights up once linked.
+- Added sticky table headers for scrollable registers (header stays put while the body
+  scrolls) — a modern data-grid touch applied globally via .table-wrap. Web 266;
+  server 8; typecheck clean; both builds green.
+
 2026-06-18 — Commercial parity (11/n): Reconciliation — 3 views + auto-link
 - Rebuilt Reconciliation to the reference build. Five KPIs: NLC revenue (IPCs),
   Distributed cost (cost via subs/labour), RAR booked (gross) with paid sub-line,

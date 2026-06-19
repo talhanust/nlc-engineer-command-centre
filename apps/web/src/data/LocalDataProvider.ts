@@ -1631,9 +1631,9 @@ const SEED_SUBS: Subcontractor[] = [
 ];
 
 const SEED_RARS: Rar[] = [
-  { id: 'rar-proj-f14f15-1', projectId: 'proj-f14f15', rarNo: 'RAR-01', seq: 1, period: 'Feb-2026', status: 'paid', subcontractorId: 'sub-proj-f14f15-1', gross: 1800000000, netPayable: computeNet(1800000000) },
-  { id: 'rar-proj-f14f15-2', projectId: 'proj-f14f15', rarNo: 'RAR-02', seq: 2, period: 'Apr-2026', status: 'approved', subcontractorId: 'sub-proj-f14f15-2', gross: 2100000000, netPayable: computeNet(2100000000) },
-  { id: 'rar-proj-f14f15-3', projectId: 'proj-f14f15', rarNo: 'RAR-03', seq: 3, period: 'May-2026', status: 'submitted', subcontractorId: 'sub-proj-f14f15-3', gross: 1450000000, netPayable: computeNet(1450000000) },
+  { id: 'rar-proj-f14f15-1', projectId: 'proj-f14f15', rarNo: 'RAR-01', seq: 1, period: 'Feb-2026', status: 'paid', subcontractorId: 'sub-proj-f14f15-1', gross: 1800000000, netPayable: computeNet(1800000000), lines: [{ boqItemId: 'boq-proj-f14f15-1', qty: 60000, rate: 420, amount: 25200000 }] },
+  { id: 'rar-proj-f14f15-2', projectId: 'proj-f14f15', rarNo: 'RAR-02', seq: 2, period: 'Apr-2026', status: 'approved', subcontractorId: 'sub-proj-f14f15-2', gross: 2100000000, netPayable: computeNet(2100000000), lines: [{ boqItemId: 'boq-proj-f14f15-3', qty: 19000, rate: 5400, amount: 102600000 }] },
+  { id: 'rar-proj-f14f15-3', projectId: 'proj-f14f15', rarNo: 'RAR-03', seq: 3, period: 'May-2026', status: 'submitted', subcontractorId: 'sub-proj-f14f15-3', gross: 1450000000, netPayable: computeNet(1450000000), lines: [{ boqItemId: 'boq-proj-f14f15-4', qty: 6383, rate: 23500, amount: 150000500 }] },
 ];
 
 const SEED_SCHEDULE: ScheduleActivity[] = [
@@ -1738,9 +1738,9 @@ const SEED_BOQ: Array<Omit<BoqItem, 'id' | 'projectId' | 'amount'>> = [
 ];
 
 const SEED_IPCS: Ipc[] = [
-  { id: 'ipc-proj-f14f15-1', projectId: 'proj-f14f15', ipcNo: 'IPC-01', seq: 1, period: 'Jan-2026', status: 'paid', gross: 4200000000, netPayable: computeNet(4200000000), cumGross: 4200000000 },
-  { id: 'ipc-proj-f14f15-2', projectId: 'proj-f14f15', ipcNo: 'IPC-02', seq: 2, period: 'Mar-2026', status: 'approved', gross: 3800000000, netPayable: computeNet(3800000000), cumGross: 8000000000 },
-  { id: 'ipc-proj-f14f15-3', projectId: 'proj-f14f15', ipcNo: 'IPC-03', seq: 3, period: 'May-2026', status: 'vetted', gross: 3200000000, netPayable: computeNet(3200000000), cumGross: 11200000000 },
+  { id: 'ipc-proj-f14f15-1', projectId: 'proj-f14f15', ipcNo: 'IPC-01', seq: 1, period: 'Jan-2026', status: 'paid', gross: 4200000000, netPayable: computeNet(4200000000), cumGross: 4200000000, lines: [{ boqItemId: 'boq-proj-f14f15-0', qty: 27000, rate: 85, amount: 2295000 }, { boqItemId: 'boq-proj-f14f15-1', qty: 72000, rate: 420, amount: 30240000 }, { boqItemId: 'boq-proj-f14f15-2', qty: 12800, rate: 4800, amount: 61440000 }] },
+  { id: 'ipc-proj-f14f15-2', projectId: 'proj-f14f15', ipcNo: 'IPC-02', seq: 2, period: 'Mar-2026', status: 'approved', gross: 3800000000, netPayable: computeNet(3800000000), cumGross: 8000000000, lines: [{ boqItemId: 'boq-proj-f14f15-3', qty: 19000, rate: 5400, amount: 102600000 }, { boqItemId: 'boq-proj-f14f15-4', qty: 8400, rate: 23500, amount: 197400000 }] },
+  { id: 'ipc-proj-f14f15-3', projectId: 'proj-f14f15', ipcNo: 'IPC-03', seq: 3, period: 'May-2026', status: 'vetted', gross: 3200000000, netPayable: computeNet(3200000000), cumGross: 11200000000, lines: [{ boqItemId: 'boq-proj-f14f15-1', qty: 36000, rate: 420, amount: 15120000 }, { boqItemId: 'boq-proj-f14f15-5', qty: 7250, rate: 27800, amount: 201550000 }] },
 ];
 
 function readComments(nodeId: string): NodeComment[] {

@@ -20,7 +20,7 @@ export function AppLayout() {
   const { provider } = useData();
   const {
     theme, setTheme, sidebarOpen, toggleSidebar, sidebarWidth, setSidebarWidth,
-    zoom, setZoom, density, presentation, setPresentation, setLastNode,
+    zoom, setZoom, density, setDensity, presentation, setPresentation, setLastNode,
   } = useUiState();
   const navigate = useNavigate();
   const location = useLocation();
@@ -131,6 +131,10 @@ export function AppLayout() {
             <button className="zoom-value" onClick={() => setZoom(1)} aria-label="Reset zoom" title="Reset to 100%">{Math.round(zoom * 100)}%</button>
             <button className="icon-btn" onClick={() => setZoom(zoom + 0.1)} disabled={zoom >= 1.4} aria-label="Zoom in" title="Zoom in">+</button>
           </div>
+          <button className="icon-btn" onClick={() => setDensity(density === 'compact' ? 'comfortable' : 'compact')}
+            aria-label="Toggle row density" aria-pressed={density === 'compact'} title={density === 'compact' ? 'Comfortable rows' : 'Compact rows'}>
+            {density === 'compact' ? '≡' : '☰'}
+          </button>
           <button className="icon-btn" onClick={() => setPresentation(true)} aria-label="Enter presentation mode" title="Presentation mode">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" />

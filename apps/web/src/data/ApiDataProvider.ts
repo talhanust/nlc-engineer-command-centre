@@ -1,6 +1,6 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
-  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution,
+  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation,
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
@@ -215,6 +215,15 @@ export class ApiDataProvider implements DataProvider {
   }
   async setEscalationComponents(projectId: string, components: EscalationComponent[]): Promise<void> {
     await this.send(`/api/projects/${projectId}/escalation-indices`, 'POST', { components });
+  }
+  async listVariations(projectId: string): Promise<Variation[]> {
+    return (await this.get<{ items: Variation[] }>(`/api/projects/${projectId}/variations`)).items;
+  }
+  async createVariation(projectId: string, input: { title: string; type: Variation['type']; amount: number; boqItemId?: string; date?: string }): Promise<Variation> {
+    return this.send<Variation>(`/api/projects/${projectId}/variations`, 'POST', input);
+  }
+  async transitionVariation(projectId: string, voNo: string, action: string): Promise<Variation> {
+    return this.send<Variation>(`/api/projects/${projectId}/variations/${voNo}/transitions`, 'POST', { action });
   }
   async transitionEpc(projectId: string, epcNo: string, action: string): Promise<Epc> {
     return this.send<Epc>(`/api/projects/${projectId}/epcs/${epcNo}/transitions`, 'POST', { action });

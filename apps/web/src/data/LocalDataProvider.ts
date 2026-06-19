@@ -1,6 +1,6 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
-  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution,
+  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation,
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
@@ -11,6 +11,7 @@ import {
 import { itemAmount } from '../domain/boq';
 import { applyAction, computeNet, IPC_PIPELINE } from '../domain/ipc';
 import { DEFAULT_PBS_COMPONENTS, type EscalationComponent } from '../domain/escalation';
+import { applyVoAction } from '../domain/variations';
 import { INITIAL_BOQ_WORKFLOW, pendingBoqStage, advanceBoq, raiseVo, type BoqWorkflowState } from '../domain/boqworkflow';
 import { pendingRarStage, advanceRar, isRarPaid } from '../domain/rarchain';
 import { INITIAL_BASELINE_WORKFLOW, pendingBaselineStage, advanceBaseline, amendBaseline } from '../domain/schedulebaseline';
@@ -495,6 +496,30 @@ export class LocalDataProvider implements DataProvider {
   }
   async setEscalationComponents(projectId: string, components: EscalationComponent[]): Promise<void> {
     writeJson(escIdxKey(projectId), components);
+  }
+  async listVariations(projectId: string): Promise<Variation[]> {
+    return readJson(voKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_VARIATIONS : []));
+  }
+  async createVariation(projectId: string, input: { title: string; type: Variation['type']; amount: number; boqItemId?: string; date?: string }): Promise<Variation> {
+    const all = readJson<Variation[]>(voKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_VARIATIONS : []));
+    const seq = all.reduce((m, v) => Math.max(m, v.seq), 0) + 1;
+    const vo: Variation = {
+      id: `vo-${projectId}-${seq}`, projectId, voNo: `VO-${String(seq).padStart(2, '0')}`, seq,
+      title: sanitize(input.title), type: input.type, amount: input.amount, status: 'draft',
+      boqItemId: input.boqItemId, date: input.date,
+    };
+    all.push(vo);
+    writeJson(voKey(projectId), all);
+    audit(projectId, 'create', 'Variation', vo.voNo, `${input.amount >= 0 ? '+' : ''}PKR ${Math.round(input.amount).toLocaleString('en-PK')}`);
+    return vo;
+  }
+  async transitionVariation(projectId: string, voNo: string, action: string): Promise<Variation> {
+    const all = readJson<Variation[]>(voKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_VARIATIONS : []));
+    const vo = all.find((v) => v.voNo === voNo);
+    if (!vo) throw new Error(`Variation ${voNo} not found`);
+    const next = applyVoAction(vo.status, action);
+    if (next) { vo.status = next; writeJson(voKey(projectId), all); audit(projectId, 'transition', 'Variation', vo.voNo, next); }
+    return vo;
   }
   async transitionEpc(projectId: string, epcNo: string, action: string): Promise<Epc> {
     const all = readJson<Epc[]>(epcKey(projectId), () => []);
@@ -1501,6 +1526,7 @@ const rarKey = (pid: string) => `nlc-ecc.rars.${pid}`;
 const linkKey = (pid: string) => `nlc-ecc.rarlinks.${pid}`;
 const epcKey = (pid: string) => `nlc-ecc.epcs.${pid}`;
 const escIdxKey = (pid: string) => `nlc-ecc.escindices.${pid}`;
+const voKey = (pid: string) => `nlc-ecc.variations.${pid}`;
 const advKey = (pid: string) => `nlc-ecc.advances.${pid}`;
 const bgKey = (pid: string) => `nlc-ecc.bankguarantees.${pid}`;
 const distKey = (pid: string) => `nlc-ecc.dists.${pid}`;
@@ -1611,6 +1637,12 @@ function readJson<T>(key: string, seed: () => T): T {
   writeJson(key, seeded);
   return JSON.parse(JSON.stringify(seeded)) as T;
 }
+
+const SEED_VARIATIONS: Variation[] = [
+  { id: 'vo-proj-f14f15-1', projectId: 'proj-f14f15', voNo: 'VO-01', seq: 1, title: 'Additional culvert at km 4+200', type: 'addition', amount: 185000000, status: 'approved', date: '2026-03-12' },
+  { id: 'vo-proj-f14f15-2', projectId: 'proj-f14f15', voNo: 'VO-02', seq: 2, title: 'Omission of secondary drain', type: 'omission', amount: -42000000, status: 'recommended', date: '2026-04-20' },
+  { id: 'vo-proj-f14f15-3', projectId: 'proj-f14f15', voNo: 'VO-03', seq: 3, title: 'Rate revision — bitumen escalation', type: 'rate_change', amount: 96000000, status: 'submitted', date: '2026-05-08' },
+];
 
 const SEED_BGS: BankGuarantee[] = [
   { id: 'bg-f14-mob-1', projectId: 'proj-f14f15', kind: 'mob', party: 'client', bgNo: 'BG/MOB/2026/014', bank: 'National Bank of Pakistan', amount: 2100000000, issued: '2026-01-10', expires: '2026-12-31', status: 'active' },

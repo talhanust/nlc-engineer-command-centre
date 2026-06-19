@@ -143,6 +143,24 @@ export interface ContractApproval {
 
 export type RarStatus = 'draft' | 'submitted' | 'verified' | 'approved' | 'marked_payment' | 'paid';
 
+export type VariationStatus = 'draft' | 'submitted' | 'recommended' | 'approved' | 'rejected';
+export type VariationType = 'addition' | 'omission' | 'substitution' | 'rate_change';
+
+/** Variation / change-order against the contract. Signed `amount` (omissions negative). */
+export interface Variation {
+  id: string;
+  projectId: string;
+  voNo: string;
+  seq: number;
+  title: string;
+  type: VariationType;
+  amount: number;
+  status: VariationStatus;
+  boqItemId?: string;
+  date?: string;
+  note?: string;
+}
+
 export interface RarLine { boqItemId: string; qty: number; rate: number; amount: number }
 
 export interface Rar {
@@ -668,6 +686,9 @@ export interface DataProvider {
   createEpc(projectId: string, input: { period: string; amount: number; ipcNo?: string }): Promise<Epc>;
   listEscalationComponents(projectId: string): Promise<EscalationComponent[]>;
   setEscalationComponents(projectId: string, components: EscalationComponent[]): Promise<void>;
+  listVariations(projectId: string): Promise<Variation[]>;
+  createVariation(projectId: string, input: { title: string; type: VariationType; amount: number; boqItemId?: string; date?: string }): Promise<Variation>;
+  transitionVariation(projectId: string, voNo: string, action: string): Promise<Variation>;
   transitionEpc(projectId: string, epcNo: string, action: string): Promise<Epc>;
   listAdvances(projectId: string): Promise<Advance[]>;
   addAdvance(projectId: string, input: Omit<Advance, 'id' | 'projectId'>): Promise<Advance>;

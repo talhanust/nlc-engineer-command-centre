@@ -3,10 +3,11 @@ import { useData } from '../../data/DataContext';
 import { formatMoney, toNum } from '../../domain/money';
 import { retentionSummary } from '../../domain/retention';
 import { advanceSummary } from '../../domain/advances';
+import { revisedContractValue } from '../../domain/variations';
 import { seriesByPeriod, trendDelta } from '../../domain/trends';
 import { Sparkline } from '../../components/Sparkline';
 import { SkeletonTiles } from '../../components/Skeleton';
-import type { BoqItem, Ipc, Rar, Epc, Advance } from '../../data/types';
+import type { BoqItem, Ipc, Rar, Epc, Advance, Variation } from '../../data/types';
 
 const money = (n: number) => (n !== 0 ? formatMoney(n) : '0');
 
@@ -17,19 +18,21 @@ export function CommercialDashboard({ projectId, onNavigate }: { projectId: stri
   const [rars, setRars] = useState<Rar[]>([]);
   const [epcs, setEpcs] = useState<Epc[]>([]);
   const [advs, setAdvs] = useState<Advance[]>([]);
+  const [vos, setVos] = useState<Variation[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let a = true;
     void Promise.all([
       provider.listBoq(projectId), provider.listIpcs(projectId), provider.listRars(projectId),
-      provider.listEpcs(projectId), provider.listAdvances(projectId),
-    ]).then(([b, i, r, e, ad]) => { if (a) { setBoq(b); setIpcs(i); setRars(r); setEpcs(e); setAdvs(ad); setLoading(false); } });
+      provider.listEpcs(projectId), provider.listAdvances(projectId), provider.listVariations(projectId),
+    ]).then(([b, i, r, e, ad, vo]) => { if (a) { setBoq(b); setIpcs(i); setRars(r); setEpcs(e); setAdvs(ad); setVos(vo); setLoading(false); } });
     return () => { a = false; };
   }, [provider, projectId]);
 
   const k = useMemo(() => {
-    const contractValue = toNum(projects.find((p) => p.id === projectId)?.contractValue ?? '0');
+    const original = toNum(projects.find((p) => p.id === projectId)?.contractValue ?? '0');
+    const contractValue = revisedContractValue(original, vos);
     const boqValue = boq.reduce((s, b) => s + b.amount, 0);
     const ipcGross = ipcs.reduce((s, i) => s + i.gross, 0);
     const ipcNet = ipcs.reduce((s, i) => s + i.netPayable, 0);
@@ -40,8 +43,8 @@ export function CommercialDashboard({ projectId, onNavigate }: { projectId: stri
     const sec = advanceSummary(advs, 'secure');
     const outstandingAdv = mob.outstandingClient + sec.outstandingClient;
     const coverage = ipcGross > 0 ? rarBooked / ipcGross : 0;
-    return { contractValue, boqValue, ipcGross, ipcNet, rarBooked, escalation, retention, outstandingAdv, coverage };
-  }, [projects, projectId, boq, ipcs, rars, epcs, advs]);
+    return { contractValue, original, boqValue, ipcGross, ipcNet, rarBooked, escalation, retention, outstandingAdv, coverage };
+  }, [projects, projectId, boq, ipcs, rars, epcs, advs, vos]);
 
   const series = useMemo(() => ({
     ipcGross: seriesByPeriod(ipcs, (i) => i.period, (i) => i.gross),
@@ -51,7 +54,7 @@ export function CommercialDashboard({ projectId, onNavigate }: { projectId: stri
   }), [ipcs, rars, epcs]);
 
   const tiles: Array<{ label: string; value: string; sub?: string; to?: string; trend?: number[]; delta?: number | null }> = [
-    { label: 'Contract value', value: money(k.contractValue), sub: 'FGEHA award' },
+    { label: 'Contract value', value: money(k.contractValue), sub: k.contractValue !== k.original ? `revised · award ${money(k.original)}` : 'FGEHA award', to: 'variations' },
     { label: 'BOQ value', value: money(k.boqValue), sub: `${boq.length} items`, to: 'boq' },
     { label: 'IPC gross billed', value: money(k.ipcGross), sub: `${ipcs.length} IPCs`, to: 'ipc', trend: series.ipcGross.map((p) => p.cum), delta: trendDelta(series.ipcGross) },
     { label: 'IPC net certified', value: money(k.ipcNet), sub: 'after deductions', to: 'genipc', trend: series.ipcNet.map((p) => p.cum), delta: trendDelta(series.ipcNet) },

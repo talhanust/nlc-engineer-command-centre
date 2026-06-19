@@ -14,6 +14,9 @@ import { AgingTab } from './AgingTab';
 import { MarginAnalyticsTab } from './MarginAnalyticsTab';
 import { CashFlowTab } from './CashFlowTab';
 import { CommercialDashboard } from './CommercialDashboard';
+import { VariationsTab } from './VariationsTab';
+import { EvmTab } from './EvmTab';
+import { CommercialAlerts } from './CommercialAlerts';
 import { ContractorProfiles } from './ContractorProfiles';
 import { AdvancesTab } from './AdvancesTab';
 
@@ -31,10 +34,12 @@ const SUBS = [
   ['subs', 'Contractors'],
   ['planner', 'Distribution planner'],
   ['exectrack', 'Execution tracker'],
+  ['variations', 'Variations'],
   ['dist', 'Distributions'],
   ['adv', 'Advances'],
   ['aging', 'Aging'],
   ['margin', 'Margin analytics'],
+  ['evm', 'Earned value'],
 ] as const;
 type Sub = (typeof SUBS)[number][0];
 
@@ -42,6 +47,7 @@ export function CommercialTab({ projectId }: { projectId: string }) {
   const [sub, setSub] = useState<Sub>('boq');
   return (
     <div>
+      <CommercialAlerts projectId={projectId} onNavigate={(s) => setSub(s as Sub)} />
       <div className="subtabs" role="tablist">
         {SUBS.map(([id, label]) => (
           <button
@@ -70,8 +76,10 @@ export function CommercialTab({ projectId }: { projectId: string }) {
       {sub === 'exectrack' && <ExecutionTracker projectId={projectId} onManageDistribution={() => setSub('dist')} />}
       {sub === 'dist' && <DistributionsTab projectId={projectId} />}
       {sub === 'adv' && <AdvancesTab projectId={projectId} />}
+      {sub === 'variations' && <VariationsTab projectId={projectId} />}
       {sub === 'aging' && <AgingTab projectId={projectId} />}
       {sub === 'margin' && <MarginAnalyticsTab projectId={projectId} />}
+      {sub === 'evm' && <EvmTab projectId={projectId} />}
     </div>
   );
 }

@@ -22,6 +22,7 @@ import { NodeMap } from '../components/NodeMap';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { RagFilterChips } from '../components/RagFilterChips';
 import { CollapsibleCard } from '../components/CollapsibleCard';
+import { PortfolioPerformance } from '../components/PortfolioPerformance';
 
 export function CommandDashboard({ nodeId }: { nodeId: string }) {
   const { nodes, projects, refresh } = useData();
@@ -166,6 +167,7 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
       </div>
       <BillingFunnel totals={totals} />
       <PortfolioSCurve nodeId={nodeId} projects={filtered} />
+      <PortfolioPerformance projects={scopeProjects.filter((p) => filtered.some((f) => f.id === p.id))} />
       <HrCockpit nodeId={nodeId} nodes={nodes} />
       <ActivityFeed nodeId={nodeId} scopeIds={[nodeId, ...descendantNodes(nodes, nodeId).map((n) => n.id)]} />
       <NodeMap nodeId={nodeId} nodes={nodes} projects={projects} onSaved={refresh} hero={node.type === 'hq'} />

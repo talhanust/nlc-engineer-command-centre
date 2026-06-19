@@ -5,8 +5,9 @@ import {
 import { useData } from '../../data/DataContext';
 import { formatMoney, toNum } from '../../domain/money';
 import { retentionTimeline, retentionSummary, type RetentionPoint } from '../../domain/retention';
+import { revisedContractValue } from '../../domain/variations';
 import { ChartCard, chartPalette } from '../../components/chartUtils';
-import type { Ipc } from '../../data/types';
+import type { Ipc, Variation } from '../../data/types';
 
 const cr = (n: number) => `${(n / 1e7).toFixed(1)} Cr`;
 const money = (n: number) => (n > 0 ? formatMoney(n) : '0');
@@ -14,13 +15,15 @@ const money = (n: number) => (n > 0 ? formatMoney(n) : '0');
 export function RetentionTab({ projectId }: { projectId: string }) {
   const { provider, projects } = useData();
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
+  const [vos, setVos] = useState<Variation[]>([]);
   useEffect(() => {
     let a = true;
-    provider.listIpcs(projectId).then((x) => a && setIpcs(x));
+    void Promise.all([provider.listIpcs(projectId), provider.listVariations(projectId)]).then(([x, v]) => { if (a) { setIpcs(x); setVos(v); } });
     return () => { a = false; };
   }, [provider, projectId]);
 
-  const contractValue = toNum(projects.find((p) => p.id === projectId)?.contractValue ?? '0');
+  const original = toNum(projects.find((p) => p.id === projectId)?.contractValue ?? '0');
+  const contractValue = revisedContractValue(original, vos);
   const points: RetentionPoint[] = retentionTimeline(ipcs);
   const sum = retentionSummary(ipcs, contractValue);
   const c = chartPalette();

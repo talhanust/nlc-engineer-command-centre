@@ -229,6 +229,44 @@ describe('Phase 3 — Commercial tab', () => {
     expect(await screen.findByText(/Auto-linked|No RARs with BoQ overlap/)).toBeInTheDocument();
   });
 
+  it('surfaces commercial health alerts and drills into the source', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    const banner = await screen.findByRole('status', { name: 'Commercial alerts' });
+    expect(within(banner).getByText(/need attention/)).toBeInTheDocument();
+    await user.click(within(banner).getByText(/need attention/));
+    const overClaim = (await within(banner).findAllByText(/over-claimed/))[0];
+    await user.click(overClaim);
+    expect(await screen.findByRole('heading', { name: 'Reconciliation' })).toBeInTheDocument();
+  });
+
+  it('shows the earned-value (EVM) dashboard with indices', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'Earned value' }));
+    expect(await screen.findByRole('heading', { name: 'Earned Value (EVM)' })).toBeInTheDocument();
+    expect(screen.getByText('Earned value (EV)')).toBeInTheDocument();
+    expect(screen.getByText('SPI · schedule')).toBeInTheDocument();
+    expect(screen.getByText('CPI · cost')).toBeInTheDocument();
+    expect(screen.getByText(/Estimate at completion/)).toBeInTheDocument();
+  });
+
+  it('shows the variations register and revises the contract value on approval', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'Variations' }));
+    expect(await screen.findByRole('heading', { name: 'Variations / Change Orders' })).toBeInTheDocument();
+    expect(screen.getByText('Revised contract')).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: 'Variations register' });
+    // VO-03 is "submitted" — advance it one step
+    const row = within(table).getByText('VO-03').closest('tr')! as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: 'Advance VO-03' }));
+    await waitFor(() => expect(within(row).getByText('Recommended')).toBeInTheDocument());
+  });
+
   it('toggles row density from the workspace toolbar', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');

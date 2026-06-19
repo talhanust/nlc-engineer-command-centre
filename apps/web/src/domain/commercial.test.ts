@@ -188,3 +188,19 @@ describe('commercial cashflow', () => {
     expect(cashflowTotals(pts).inflow).toBe(1400);
   });
 });
+
+import { seriesByPeriod, trendDelta } from './trends';
+describe('trend series', () => {
+  it('buckets by period (sorted) with cumulative + delta', () => {
+    const items = [
+      { period: 'Mar-2026', v: 300 },
+      { period: 'Jan-2026', v: 100 },
+      { period: 'Feb-2026', v: 200 },
+    ];
+    const s = seriesByPeriod(items, (i) => i.period, (i) => i.v);
+    expect(s.map((p) => p.period)).toEqual(['Jan-2026', 'Feb-2026', 'Mar-2026']);
+    expect(s.map((p) => p.cum)).toEqual([100, 300, 600]);
+    expect(trendDelta(s)).toBeCloseTo(0.5, 5); // 300 vs 200
+    expect(trendDelta(s.slice(0, 1))).toBeNull();
+  });
+});

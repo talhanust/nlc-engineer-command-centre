@@ -911,3 +911,41 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .dash-tile { text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 14px 16px; cursor: default; font: inherit; color: inherit; }
 .dash-tile.clickable { cursor: pointer; }
 .dash-tile.clickable:hover { border-color: var(--primary); box-shadow: 0 1px 6px rgba(0,0,0,.06); }
+
+/* sticky headers for scrollable registers (modern data-grid feel) */
+.table-wrap { overflow: auto; max-height: 68vh; }
+.table-wrap .data-table thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--surface-2);
+  box-shadow: inset 0 -1px 0 var(--border-strong);
+}
+
+/* sortable column headers */
+.data-table th.sortable { padding: 0; }
+.sort-btn { width: 100%; display: inline-flex; align-items: center; gap: 6px; justify-content: inherit;
+  background: none; border: 0; font: inherit; color: var(--muted); cursor: pointer; padding: 8px 10px; letter-spacing: inherit; text-transform: inherit; }
+.data-table th.num.sortable .sort-btn { justify-content: flex-end; }
+.sort-btn:hover { color: var(--text); }
+.th.sorted .sort-btn, .sortable.sorted .sort-btn { color: var(--text); }
+.sort-ind { font-size: 9px; opacity: .7; }
+.sortable.sorted .sort-ind { opacity: 1; color: var(--primary); }
+
+/* dashboard tile trend + sparkline */
+.dash-tile-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.dash-tile-foot .sparkline { margin-left: auto; }
+.trend-delta { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 999px; }
+.trend-delta.up { color: var(--rag-green); background: color-mix(in srgb, var(--rag-green) 12%, transparent); }
+.trend-delta.down { color: var(--rag-red); background: color-mix(in srgb, var(--rag-red) 12%, transparent); }
+
+/* skeleton shimmer */
+.skeleton { position: relative; overflow: hidden; background: var(--surface-2); }
+.skeleton::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface-3) 60%, transparent), transparent);
+  animation: shimmer 1.3s infinite; }
+@keyframes shimmer { 100% { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .skeleton::after { animation: none; } }
+
+/* density: newer card types */
+.density-compact .kpi-card { padding: 8px 11px; }
+.density-compact .kpi-value { font-size: 19px; }
+.density-compact .dash-tile { padding: 10px 12px; }

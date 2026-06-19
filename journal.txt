@@ -1,6 +1,56 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-18 — Strategic #4: Coverage health & alerts
+- New alerts.ts domain (commercialAlerts/alertCounts) that aggregates health signals
+  from existing engines: over-claimed contractors (perContractorRows), critically/
+  highly aged in-pipeline docs (buildAging), and expired/expiring bank guarantees
+  (bgExpiryStatus). Severity-ranked (critical first), each carries the target sub-tab.
+  today is injectable for deterministic tests.
+- New CommercialAlerts banner pinned above the Commercial sub-tabs: collapsed it reads
+  "N items need attention" with critical/warning counts; expanded it lists each issue
+  with a one-line detail and drills straight into the relevant register (Reconciliation
+  / Aging / Advances). Live — it re-reads on nlc:audit so resolving an item clears it.
+- Domain + UI tests (over-claimed alert → Reconciliation). Web 279 (43 files); server 8;
+  typecheck clean; both builds green.
+
+2026-06-18 — Strategic #3: Portfolio earned-value roll-up
+- New portfolio.ts domain: portfolioEvm aggregates BAC/PV/EV and value-weighted
+  planned/actual % across a project set, with per-project SPI (= actual%/planned%)
+  and ahead/on/behind status, sorted worst-schedule-first. Unit-tested.
+- New PortfolioPerformance card on the node command dashboard (respects the active
+  RAG/filter scope): KPIs (Portfolio BAC, EV, PV, Portfolio SPI, Outstanding
+  receivable) + a per-project table (contract, planned/actual %, SPI badge) with an
+  Open → drill-through into each project's Commercial module. Slots in under the
+  portfolio S-curve. Reuses the EVM index status from strategic #2, so schedule
+  health now reads at portfolio AND project level. Web 277 (43 files); server 8;
+  typecheck clean; both builds green.
+
+2026-06-18 — Strategic #2: Earned-Value (EVM) layer
+- New pure evm.ts domain: from {BAC, PV, EV, AC} it derives SV/CV, SPI/CPI, EAC/ETC/VAC
+  and %-complete, plus indexStatus (ahead/on/behind). Unit-tested against worked figures.
+- New "Earned value" Commercial sub-tab bridging Execution and Commercial: BAC = revised
+  contract value (incl. approved VOs); PV = planned% × BAC and EV = actual% × BAC from the
+  project's physical progress; AC = RAR booked gross + self-performed work at 85% of earned
+  value (assumption surfaced in the UI). Headline KPIs, a PV/EV/AC bar chart, big SPI/CPI
+  index cards with ahead/on/behind badges, and an SV/CV/EAC/ETC/VAC ledger.
+- UI test covers the indices. This is the first metric that ties the physical-progress and
+  financial-actuals sides of the platform together. Web 275 (42 files); server 8; typecheck
+  clean; both builds green.
+
+2026-06-18 — Strategic #1: Variation / Change-Order register
+- New Variation model (addition/omission/substitution/rate_change, signed amount) with
+  a 4-stage approval pipeline (draft → submitted → recommended → approved) plus a reject
+  off-ramp; provider list/create/transition across interface, Local (seeded VO-01..03 for
+  proj-f14f15) and Api stub. Pure domain variations.ts (variationSummary, revised
+  ContractValue, nextVoTransition/applyVoAction) with unit tests.
+- New Variations sub-tab: KPIs (Original contract, Approved variations ±, Pending ±,
+  Revised contract, count), a raise-VO form, and a register with per-row Advance/Reject.
+- Made contract value LIVE: revised value (original + approved VOs) now flows into the
+  Commercial Dashboard "Contract value" tile (shows revised + award, links to Variations)
+  AND the Retention cap (5% of the *revised* contract). UI test approves a VO and checks
+  the pipeline. Web 272 (42 files); server 8; typecheck clean; both builds green.
+
 2026-06-18 — Quick wins #2–4: sparklines, skeletons, density toggle
 - KPI sparklines & trend deltas: new domain trends.ts (seriesByPeriod/trendDelta) +
   a dependency-free inline-SVG Sparkline. Commercial Dashboard tiles with a time

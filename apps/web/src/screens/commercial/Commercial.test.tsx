@@ -229,6 +229,30 @@ describe('Phase 3 — Commercial tab', () => {
     expect(await screen.findByText(/Auto-linked|No RARs with BoQ overlap/)).toBeInTheDocument();
   });
 
+  it('toggles row density from the workspace toolbar', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    const toggle = screen.getByRole('button', { name: 'Toggle row density' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('sorts the IPC register by a column header', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'IPC register' }));
+    const table = await screen.findByRole('table', { name: 'IPC register' });
+    const th = within(table).getByText('Gross').closest('th')!;
+    expect(th).toHaveAttribute('aria-sort', 'none');
+    await user.click(within(th).getByRole('button'));
+    expect(th).toHaveAttribute('aria-sort', 'ascending');
+    await user.click(within(th).getByRole('button'));
+    expect(th).toHaveAttribute('aria-sort', 'descending');
+  });
+
   it('drives the BOQ lifecycle to locked and gates editing', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');

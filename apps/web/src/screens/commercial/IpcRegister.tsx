@@ -5,6 +5,8 @@ import { formatMoney } from '../../domain/money';
 import { nextTransition, IPC_STATUS_LABEL, computeNet } from '../../domain/ipc';
 import { computeDeductions, DEFAULT_DEDUCTION_SETTINGS } from '../../domain/deductions';
 import { useBulkSelection } from '../../components/useBulkSelection';
+import { useSort } from '../../components/useSort';
+import { SortTh } from '../../components/SortTh';
 import { ROLE_LABEL } from '../../domain/chains';
 import { IpcDetailModal } from '../../components/IpcDetailModal';
 import { useToast } from '../../components/Toast';
@@ -21,6 +23,13 @@ export function IpcRegister({ projectId }: { projectId: string }) {
   const [openIpc, setOpenIpc] = useState<string | null>(null);
   const [filer, setFiler] = useState(true);
   const sel = useBulkSelection();
+  const { sorted, sort, toggle } = useSort(ipcs, {
+    period: (i) => i.period,
+    status: (i) => i.status,
+    gross: (i) => i.gross,
+    net: (i) => i.netPayable,
+    cum: (i) => i.cumGross,
+  });
 
   useEffect(() => {
     let alive = true;
@@ -131,17 +140,17 @@ export function IpcRegister({ projectId }: { projectId: string }) {
                 />
               </th>
               <th>IPC</th>
-              <th>Period</th>
-              <th>Status</th>
-              <th className="num">Gross</th>
-              <th className="num">Net payable</th>
-              <th className="num">Cumulative</th>
+              <SortTh k="period" label="Period" sort={sort} toggle={toggle} />
+              <SortTh k="status" label="Status" sort={sort} toggle={toggle} />
+              <SortTh k="gross" label="Gross" sort={sort} toggle={toggle} className="num" />
+              <SortTh k="net" label="Net payable" sort={sort} toggle={toggle} className="num" />
+              <SortTh k="cum" label="Cumulative" sort={sort} toggle={toggle} className="num" />
               <th>Action</th>
               <th>Note</th>
             </tr>
           </thead>
           <tbody>
-            {ipcs.map((ipc) => {
+            {sorted.map((ipc) => {
               const t = nextTransition(ipc.status);
               return (
                 <Fragment key={ipc.ipcNo}>

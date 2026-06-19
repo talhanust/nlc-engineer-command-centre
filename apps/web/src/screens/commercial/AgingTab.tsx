@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { formatMoney } from '../../domain/money';
 import { buildAging, agingTotals, URGENCY_LABEL, type AgingDoc } from '../../domain/aging';
+import { useSort } from '../../components/useSort';
+import { SortTh } from '../../components/SortTh';
 import type { Ipc, Rar, Epc } from '../../data/types';
 
 type GroupBy = 'all' | 'stage' | 'owner' | 'urgency';
@@ -26,14 +28,24 @@ export function AgingTab({ projectId }: { projectId: string }) {
     return breachedOnly ? all.filter((d) => d.ratio >= 1) : all;
   }, [ipcs, rars, epcs, breachedOnly]);
   const totals = useMemo(() => agingTotals(docs), [docs]);
+  const { sorted, sort, toggle } = useSort(docs, {
+    ref: (d) => d.ref,
+    kind: (d) => d.kind,
+    stage: (d) => d.stage,
+    owner: (d) => d.owner,
+    value: (d) => d.value,
+    days: (d) => d.days,
+    ratio: (d) => d.ratio,
+    urgency: (d) => d.ratio,
+  }, { key: 'ratio', dir: 'desc' });
 
   const groups = useMemo(() => {
-    if (groupBy === 'all') return [{ key: 'All items', rows: docs }];
+    if (groupBy === 'all') return [{ key: 'All items', rows: sorted }];
     const key = (d: AgingDoc) => (groupBy === 'stage' ? d.stage : groupBy === 'owner' ? d.owner : URGENCY_LABEL[d.urgency]);
     const m = new Map<string, AgingDoc[]>();
-    for (const d of docs) { const k = key(d); const arr = m.get(k) ?? []; arr.push(d); m.set(k, arr); }
+    for (const d of sorted) { const k = key(d); const arr = m.get(k) ?? []; arr.push(d); m.set(k, arr); }
     return [...m.entries()].map(([k, rows]) => ({ key: k, rows }));
-  }, [docs, groupBy]);
+  }, [sorted, groupBy]);
 
   return (
     <div>
@@ -71,7 +83,7 @@ export function AgingTab({ projectId }: { projectId: string }) {
       ) : (
         <div className="table-wrap">
           <table className="data-table" aria-label="Aging documents">
-            <thead><tr><th>Ref</th><th>Kind</th><th>Stage</th><th>Owner</th><th className="num">Value</th><th className="num">Days</th><th className="num">×Threshold</th><th>Urgency</th></tr></thead>
+            <thead><tr><SortTh k="ref" label="Ref" sort={sort} toggle={toggle} /><SortTh k="kind" label="Kind" sort={sort} toggle={toggle} /><SortTh k="stage" label="Stage" sort={sort} toggle={toggle} /><SortTh k="owner" label="Owner" sort={sort} toggle={toggle} /><SortTh k="value" label="Value" sort={sort} toggle={toggle} className="num" /><SortTh k="days" label="Days" sort={sort} toggle={toggle} className="num" /><SortTh k="ratio" label="×Threshold" sort={sort} toggle={toggle} className="num" /><SortTh k="urgency" label="Urgency" sort={sort} toggle={toggle} /></tr></thead>
             {groups.map((g) => (
               <tbody key={g.key}>
                 {groupBy !== 'all' && <tr className="boq-section-row"><td colSpan={8}>{g.key} · {g.rows.length}</td></tr>}

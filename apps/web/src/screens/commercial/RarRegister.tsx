@@ -4,6 +4,8 @@ import { RarDetailModal } from '../../components/RarDetailModal';
 import { downloadWorkbook } from '../../components/xlsxExport';
 import { formatMoney } from '../../domain/money';
 import { nextRarTransition, RAR_STATUS_LABEL, RAR_PIPELINE } from '../../domain/rar';
+import { useSort } from '../../components/useSort';
+import { SortTh } from '../../components/SortTh';
 import { useBulkSelection } from '../../components/useBulkSelection';
 import type { Rar, Subcontractor, Ipc, RarIpcLink } from '../../data/types';
 import { useToast } from '../../components/Toast';
@@ -74,6 +76,13 @@ export function RarRegister({ projectId }: { projectId: string }) {
   const advanceableSelected = rars.filter((r) => sel.selected.has(r.rarNo) && nextRarTransition(r.status)).length;
 
   const shown = useMemo(() => rars.filter((r) => (fSub === 'all' || r.subcontractorId === fSub) && (fStage === 'all' || r.status === fStage)), [rars, fSub, fStage]);
+  const { sorted, sort, toggle } = useSort(shown, {
+    period: (r) => r.period,
+    sub: (r) => subName(r.subcontractorId),
+    status: (r) => r.status,
+    gross: (r) => r.gross,
+    net: (r) => r.netPayable,
+  });
   const totalGross = shown.reduce((s, r) => s + r.gross, 0);
   const totalPaid = shown.filter((r) => r.status === 'paid').reduce((s, r) => s + r.netPayable, 0);
 
@@ -136,17 +145,17 @@ export function RarRegister({ projectId }: { projectId: string }) {
                 />
               </th>
               <th>RAR</th>
-              <th>Period</th>
-              <th>Subcontractor</th>
-              <th>Status</th>
-              <th className="num">Gross</th>
-              <th className="num">Net</th>
+              <SortTh k="period" label="Period" sort={sort} toggle={toggle} />
+              <SortTh k="sub" label="Subcontractor" sort={sort} toggle={toggle} />
+              <SortTh k="status" label="Status" sort={sort} toggle={toggle} />
+              <SortTh k="gross" label="Gross" sort={sort} toggle={toggle} className="num" />
+              <SortTh k="net" label="Net" sort={sort} toggle={toggle} className="num" />
               <th>Action</th>
               <th>Note</th>
             </tr>
           </thead>
           <tbody>
-            {shown.map((rar) => {
+            {sorted.map((rar) => {
               const t = nextRarTransition(rar.status);
               return (
                 <tr key={rar.rarNo}>

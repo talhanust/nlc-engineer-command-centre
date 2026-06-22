@@ -1,6 +1,29 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-22 — 20-project detailed seed (from real F-14/F-15 BOQ + baseline) + itemwise IPC/RAR fix
+- Distilled the uploaded F-14/F-15 BOQ (MRS 2nd Bi-Annual, Rs. 19.58 bn) into data/seed/
+  catalog.ts: the real 12-bill structure with each bill's share of contract value, plus an
+  item catalogue with authentic descriptions, units and MRS rates, and subcontractor trade
+  profiles. Baseline dates/sequence taken from the uploaded Primavera XER.
+- New deterministic generator data/seed/commercialSeed.ts (seedFor, memoised): for a project
+  profile it builds a full BOQ scaled so each bill totals share × contract value, plus subs,
+  distributions (sublet vs self), validated progress, 5 cumulative IPCs WITH itemwise lines,
+  per-sub RARs WITH itemwise lines, variations, two bank guarantees, the PBS escalation basket
+  and a 6-activity schedule. Unit-tested (BOQ ≈ CV across 12 bills; IPC/RAR lines reference real
+  BoQ items; monotonic cumulative; deterministic).
+- Roster grown from 8 to 20 projects across all five PD HQs (real Pakistani infrastructure
+  jobs), each with coordinates and commencement/completion dates. LocalDataProvider now seeds
+  every non-flagship project from the generator (flagship proj-f14f15 keeps its hand seed so
+  its reference data — and the existing tests — stay stable). Updated rollup/App tests for the
+  new 20-project totals.
+- FIX (user-reported): opening an IPC or RAR showed no itemwise detail because the detail
+  modals never rendered the line items. Added an "Itemwise breakdown" table (code, description,
+  bill, unit, qty, rate, amount, gross) to both IpcDetailModal and RarDetailModal, resolving
+  each line's BoQ item for its description/unit; falls back to a clear note for lump-sum docs.
+  UI test opens an IPC and asserts the itemwise table.
+- Web 294 (44 files); server 9; typecheck clean; both builds green.
+
 2026-06-22 — Backend cutover verification + commercial docs pass
 - Established that there is no per-entity backend to "wire": the app runs one
   LocalDataProvider over a pluggable KvStore; api mode swaps in RemoteKvStore, which

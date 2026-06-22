@@ -12,6 +12,7 @@ import { itemAmount } from '../domain/boq';
 import { applyAction, computeNet, IPC_PIPELINE } from '../domain/ipc';
 import { DEFAULT_PBS_COMPONENTS, type EscalationComponent } from '../domain/escalation';
 import { applyVoAction } from '../domain/variations';
+import { seedFor, type SeedProfile, type GeneratedSeed } from './seed/commercialSeed';
 import { INITIAL_BOQ_WORKFLOW, pendingBoqStage, advanceBoq, raiseVo, type BoqWorkflowState } from '../domain/boqworkflow';
 import { pendingRarStage, advanceRar, isRarPaid } from '../domain/rarchain';
 import { INITIAL_BASELINE_WORKFLOW, pendingBaselineStage, advanceBaseline, amendBaseline } from '../domain/schedulebaseline';
@@ -42,6 +43,18 @@ const SEED: Seed[] = [
   { id: 'proj-swat-expr', name: 'Swat Expressway Ph-II', pdHqId: 'pd-kpk', client: 'KPHA', cv: '54000000000', billed: '15000000000', received: '12000000000', planned: 35, actual: 22 },
   { id: 'proj-khi-water', name: 'Karachi Water Supply K-IV', pdHqId: 'pd-sindh', client: 'SIDC', cv: '52800000000', billed: '24000000000', received: '21000000000', planned: 44, actual: 41 },
   { id: 'proj-gwadar', name: 'Gwadar Free Zone Works', pdHqId: 'pd-bln', client: 'GDA', cv: '7300000000', billed: '1900000000', received: '1200000000', planned: 20, actual: 11 },
+  { id: 'proj-dha-ph8', name: 'DHA Phase-8 Road Network', pdHqId: 'pd-north', client: 'DHA Islamabad', cv: '15800000000', billed: '6200000000', received: '5100000000', planned: 46, actual: 42 },
+  { id: 'proj-i11-infra', name: 'I-11 Sector Infrastructure', pdHqId: 'pd-north', client: 'CDA', cv: '9450000000', billed: '4800000000', received: '4100000000', planned: 58, actual: 55 },
+  { id: 'proj-margalla-rd', name: 'Margalla Avenue Extension', pdHqId: 'pd-north', client: 'CDA', cv: '21300000000', billed: '8900000000', received: '7400000000', planned: 50, actual: 47 },
+  { id: 'proj-c12-infra', name: 'C-12/C-13 Development', pdHqId: 'pd-centre', client: 'FGEHA', cv: '13700000000', billed: '5100000000', received: '4200000000', planned: 41, actual: 36 },
+  { id: 'proj-attock-byp', name: 'Attock Bypass', pdHqId: 'pd-centre', client: 'NHA', cv: '11200000000', billed: '7300000000', received: '6600000000', planned: 64, actual: 61 },
+  { id: 'proj-chakwal-rd', name: 'Chakwal–Talagang Road', pdHqId: 'pd-centre', client: 'C&W Punjab', cv: '8900000000', billed: '2400000000', received: '1700000000', planned: 31, actual: 24 },
+  { id: 'proj-d-i-khan', name: 'D.I. Khan Northern Bypass', pdHqId: 'pd-kpk', client: 'NHA', cv: '17600000000', billed: '9100000000', received: '7800000000', planned: 53, actual: 49 },
+  { id: 'proj-hazara-exp', name: 'Hazara Expressway Link', pdHqId: 'pd-kpk', client: 'KPHA', cv: '38500000000', billed: '13200000000', received: '10800000000', planned: 38, actual: 30 },
+  { id: 'proj-thar-coal-rd', name: 'Thar Coalfield Access Roads', pdHqId: 'pd-sindh', client: 'SECMC', cv: '14300000000', billed: '8600000000', received: '7900000000', planned: 67, actual: 63 },
+  { id: 'proj-khi-northern', name: 'Karachi Northern Bypass', pdHqId: 'pd-sindh', client: 'NHA', cv: '26800000000', billed: '11400000000', received: '9600000000', planned: 45, actual: 40 },
+  { id: 'proj-rcd-hwy', name: 'RCD Highway Reconstruction', pdHqId: 'pd-bln', client: 'NHA', cv: '33100000000', billed: '12000000000', received: '9500000000', planned: 36, actual: 28 },
+  { id: 'proj-quetta-wss', name: 'Quetta Water Supply Scheme', pdHqId: 'pd-bln', client: 'PHED Bln', cv: '9700000000', billed: '3300000000', received: '2500000000', planned: 34, actual: 27 },
 ];
 
 const NODES: OrgNode[] = [
@@ -64,6 +77,18 @@ const COORDS: Record<string, { lat: number; lng: number; location: string }> = {
   'proj-swat-expr': { lat: 34.80, lng: 72.36, location: 'Swat' },
   'proj-khi-water': { lat: 24.86, lng: 67.00, location: 'Karachi' },
   'proj-gwadar': { lat: 25.13, lng: 62.32, location: 'Gwadar' },
+  'proj-dha-ph8': { lat: 33.52, lng: 73.15, location: 'DHA Phase 8, Islamabad' },
+  'proj-i11-infra': { lat: 33.66, lng: 73.02, location: 'I-11, Islamabad' },
+  'proj-margalla-rd': { lat: 33.73, lng: 73.03, location: 'Margalla Avenue, Islamabad' },
+  'proj-c12-infra': { lat: 33.64, lng: 72.92, location: 'C-12/C-13, Islamabad' },
+  'proj-attock-byp': { lat: 33.77, lng: 72.36, location: 'Attock' },
+  'proj-chakwal-rd': { lat: 32.93, lng: 72.85, location: 'Chakwal' },
+  'proj-d-i-khan': { lat: 31.83, lng: 70.90, location: 'D.I. Khan' },
+  'proj-hazara-exp': { lat: 34.20, lng: 73.24, location: 'Hazara' },
+  'proj-thar-coal-rd': { lat: 24.78, lng: 70.25, location: 'Tharparkar' },
+  'proj-khi-northern': { lat: 25.05, lng: 67.10, location: 'Karachi' },
+  'proj-rcd-hwy': { lat: 27.50, lng: 65.50, location: 'RCD Highway, Balochistan' },
+  'proj-quetta-wss': { lat: 30.18, lng: 66.98, location: 'Quetta' },
 };
 const DATES: Record<string, { start: string; finish: string }> = {
   'proj-f14f15': { start: '2025-01-15', finish: '2026-08-31' },
@@ -71,6 +96,21 @@ const DATES: Record<string, { start: string; finish: string }> = {
   'proj-e12': { start: '2025-06-01', finish: '2027-05-31' },
   'proj-rwp-ring': { start: '2024-03-01', finish: '2027-02-28' },
   'proj-m2-rehab': { start: '2024-07-01', finish: '2026-09-30' },
+  'proj-swat-expr': { start: '2025-03-01', finish: '2028-02-29' },
+  'proj-khi-water': { start: '2024-11-01', finish: '2027-10-31' },
+  'proj-gwadar': { start: '2025-09-01', finish: '2027-08-31' },
+  'proj-dha-ph8': { start: '2025-02-01', finish: '2027-01-31' },
+  'proj-i11-infra': { start: '2024-12-01', finish: '2026-11-30' },
+  'proj-margalla-rd': { start: '2024-10-01', finish: '2027-03-31' },
+  'proj-c12-infra': { start: '2025-05-01', finish: '2027-04-30' },
+  'proj-attock-byp': { start: '2024-08-01', finish: '2026-07-31' },
+  'proj-chakwal-rd': { start: '2025-07-01', finish: '2027-06-30' },
+  'proj-d-i-khan': { start: '2024-10-15', finish: '2027-04-30' },
+  'proj-hazara-exp': { start: '2025-04-01', finish: '2028-03-31' },
+  'proj-thar-coal-rd': { start: '2024-06-01', finish: '2026-09-30' },
+  'proj-khi-northern': { start: '2024-09-15', finish: '2027-06-30' },
+  'proj-rcd-hwy': { start: '2025-01-01', finish: '2028-06-30' },
+  'proj-quetta-wss': { start: '2025-06-15', finish: '2027-12-31' },
 };
 const PROJECTS: Project[] = SEED.map((s) => ({
   id: s.id, pdHqId: s.pdHqId, clientName: s.client,
@@ -79,6 +119,20 @@ const PROJECTS: Project[] = SEED.map((s) => ({
   commencementDate: DATES[s.id]?.start, completionDate: DATES[s.id]?.finish,
   lat: COORDS[s.id]?.lat, lng: COORDS[s.id]?.lng, location: COORDS[s.id]?.location,
 }));
+
+// Deterministic commercial seed for every project EXCEPT the flagship (proj-f14f15),
+// which keeps its hand-authored seed so its specific reference data stays stable.
+const SEED_PROFILES: Record<string, SeedProfile> = Object.fromEntries(
+  SEED.filter((s) => s.id !== 'proj-f14f15').map((s) => [s.id, {
+    id: s.id, cv: Number(s.cv), billed: Number(s.billed),
+    plannedPct: s.planned, actualPct: s.actual, start: DATES[s.id]?.start ?? '2025-01-01',
+  }]),
+);
+/** Generated commercial seed for a non-flagship project, or null if unknown. */
+function gen(projectId: string): GeneratedSeed | null {
+  const p = SEED_PROFILES[projectId];
+  return p ? seedFor(p) : null;
+}
 
 export class LocalDataProvider implements DataProvider {
   readonly mode = 'local' as const;
@@ -346,10 +400,10 @@ export class LocalDataProvider implements DataProvider {
 
   // ---- Subcontractors ----
   async listSubcontractors(projectId: string): Promise<Subcontractor[]> {
-    return readJson(subKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SUBS : []));
+    return readJson(subKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SUBS : (gen(projectId)?.subs ?? [])));
   }
   async addSubcontractor(projectId: string, input: { name: string; trade: string }): Promise<Subcontractor> {
-    const all = readJson<Subcontractor[]>(subKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SUBS : []));
+    const all = readJson<Subcontractor[]>(subKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SUBS : (gen(projectId)?.subs ?? [])));
     const s: Subcontractor = {
       id: `sub-${projectId}-${all.length + 1}`,
       projectId,
@@ -361,7 +415,7 @@ export class LocalDataProvider implements DataProvider {
     return s;
   }
   async updateSubcontractor(projectId: string, id: string, patch: Partial<Omit<Subcontractor, 'id' | 'projectId'>>): Promise<Subcontractor> {
-    const all = readJson<Subcontractor[]>(subKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SUBS : []));
+    const all = readJson<Subcontractor[]>(subKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SUBS : (gen(projectId)?.subs ?? [])));
     const s = all.find((x) => x.id === id);
     if (!s) throw new Error(`Subcontractor ${id} not found`);
     Object.assign(s, patch);
@@ -374,13 +428,13 @@ export class LocalDataProvider implements DataProvider {
 
   // ---- RAR ----
   async listRars(projectId: string): Promise<Rar[]> {
-    return readJson(rarKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_RARS : []));
+    return readJson(rarKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_RARS : (gen(projectId)?.rars ?? [])));
   }
   async createRar(
     projectId: string,
     input: { period: string; subcontractorId: string; gross: number; date?: string; lines?: RarLine[] },
   ): Promise<Rar> {
-    const all = readJson<Rar[]>(rarKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_RARS : []));
+    const all = readJson<Rar[]>(rarKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_RARS : (gen(projectId)?.rars ?? [])));
     const seq = all.reduce((m, r) => Math.max(m, r.seq), 0) + 1;
     const rar: Rar = {
       id: `rar-${projectId}-${seq}`,
@@ -506,10 +560,10 @@ export class LocalDataProvider implements DataProvider {
     writeJson(escIdxKey(projectId), components);
   }
   async listVariations(projectId: string): Promise<Variation[]> {
-    return readJson(voKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_VARIATIONS : []));
+    return readJson(voKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_VARIATIONS : (gen(projectId)?.variations ?? [])));
   }
   async createVariation(projectId: string, input: { title: string; type: Variation['type']; amount: number; boqItemId?: string; date?: string }): Promise<Variation> {
-    const all = readJson<Variation[]>(voKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_VARIATIONS : []));
+    const all = readJson<Variation[]>(voKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_VARIATIONS : (gen(projectId)?.variations ?? [])));
     const seq = all.reduce((m, v) => Math.max(m, v.seq), 0) + 1;
     const vo: Variation = {
       id: `vo-${projectId}-${seq}`, projectId, voNo: `VO-${String(seq).padStart(2, '0')}`, seq,
@@ -522,7 +576,7 @@ export class LocalDataProvider implements DataProvider {
     return vo;
   }
   async transitionVariation(projectId: string, voNo: string, action: string): Promise<Variation> {
-    const all = readJson<Variation[]>(voKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_VARIATIONS : []));
+    const all = readJson<Variation[]>(voKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_VARIATIONS : (gen(projectId)?.variations ?? [])));
     const vo = all.find((v) => v.voNo === voNo);
     if (!vo) throw new Error(`Variation ${voNo} not found`);
     const next = applyVoAction(vo.status, action);
@@ -553,10 +607,10 @@ export class LocalDataProvider implements DataProvider {
     return adv;
   }
   async listBankGuarantees(projectId: string): Promise<BankGuarantee[]> {
-    return readJson(bgKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_BGS : []));
+    return readJson(bgKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_BGS : (gen(projectId)?.bgs ?? [])));
   }
   async addBankGuarantee(projectId: string, input: Omit<BankGuarantee, 'id' | 'projectId'>): Promise<BankGuarantee> {
-    const all = readJson<BankGuarantee[]>(bgKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_BGS : []));
+    const all = readJson<BankGuarantee[]>(bgKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_BGS : (gen(projectId)?.bgs ?? [])));
     const bg: BankGuarantee = { id: `bg-${Date.now()}`, projectId, ...input, bgNo: sanitize(input.bgNo), bank: sanitize(input.bank) };
     all.push(bg);
     writeJson(bgKey(projectId), all);
@@ -564,7 +618,7 @@ export class LocalDataProvider implements DataProvider {
     return bg;
   }
   async setBankGuaranteeStatus(projectId: string, id: string, status: BankGuarantee['status']): Promise<BankGuarantee[]> {
-    const all = readJson<BankGuarantee[]>(bgKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_BGS : []));
+    const all = readJson<BankGuarantee[]>(bgKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_BGS : (gen(projectId)?.bgs ?? [])));
     const bg = all.find((x) => x.id === id);
     if (bg) { bg.status = status; writeJson(bgKey(projectId), all); audit(projectId, 'update', 'BankGuarantee', bg.bgNo, status); }
     return all;
@@ -572,7 +626,7 @@ export class LocalDataProvider implements DataProvider {
 
   // ---- Distributions ----
   async listDistributions(projectId: string): Promise<Distribution[]> {
-    return readJson(distKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_DISTRIBUTIONS : []));
+    return readJson(distKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_DISTRIBUTIONS : (gen(projectId)?.distributions ?? [])));
   }
   async setDistribution(projectId: string, dist: Distribution): Promise<Distribution> {
     const all = readJson<Distribution[]>(distKey(projectId), () => []);
@@ -585,7 +639,7 @@ export class LocalDataProvider implements DataProvider {
 
   // ---- Execution & baselines ----
   async listSchedule(projectId: string): Promise<ScheduleActivity[]> {
-    return readJson(schedKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SCHEDULE : []));
+    return readJson(schedKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SCHEDULE : (gen(projectId)?.schedule ?? [])));
   }
   async replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>): Promise<ScheduleActivity[]> {
     const acts: ScheduleActivity[] = rows.map((r, i) => ({
@@ -1005,7 +1059,7 @@ export class LocalDataProvider implements DataProvider {
   }
 
   async listProgress(projectId: string): Promise<ProgressUpdate[]> {
-    return readJson(progressKey(projectId), () => []);
+    return readJson(progressKey(projectId), () => gen(projectId)?.progress ?? []);
   }
   async upsertProgress(projectId: string, input: { boqItemId: string; period: string; executedQty: number; role: string; id?: string }): Promise<ProgressUpdate[]> {
     const all = readJson<ProgressUpdate[]>(progressKey(projectId), () => []);
@@ -1749,6 +1803,8 @@ function readBoq(projectId: string): BoqItem[] {
     writeJson(boqKey(projectId), seeded);
     return seeded;
   }
+  const g = gen(projectId);
+  if (g) { writeJson(boqKey(projectId), g.boq); return g.boq; }
   return [];
 }
 
@@ -1763,6 +1819,8 @@ function readIpcs(projectId: string): Ipc[] {
     writeJson(ipcKey(projectId), SEED_IPCS);
     return JSON.parse(JSON.stringify(SEED_IPCS)) as Ipc[];
   }
+  const g = gen(projectId);
+  if (g) { writeJson(ipcKey(projectId), g.ipcs); return JSON.parse(JSON.stringify(g.ipcs)) as Ipc[]; }
   return [];
 }
 

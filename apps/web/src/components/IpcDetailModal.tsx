@@ -4,20 +4,22 @@ import { formatMoney } from '../domain/money';
 import { computeDeductions, DEFAULT_DEDUCTION_SETTINGS } from '../domain/deductions';
 import { IPC_STATUS_LABEL } from '../domain/ipc';
 import { AuditTrail } from './AuditTrail';
-import type { Ipc, Rar, RarIpcLink } from '../data/types';
+import type { Ipc, Rar, RarIpcLink, BoqItem } from '../data/types';
 
 export function IpcDetailModal({ projectId, ipc, onClose }: { projectId: string; ipc: Ipc; onClose: () => void }) {
   const { provider } = useData();
   const [links, setLinks] = useState<RarIpcLink[]>([]);
   const [rars, setRars] = useState<Rar[]>([]);
+  const [boq, setBoq] = useState<BoqItem[]>([]);
   useEffect(() => {
     let a = true;
-    Promise.all([provider.listRarIpcLinks(projectId), provider.listRars(projectId)]).then(([l, r]) => {
-      if (a) { setLinks(l.filter((x) => x.ipcId === ipc.id)); setRars(r); }
+    Promise.all([provider.listRarIpcLinks(projectId), provider.listRars(projectId), provider.listBoq(projectId)]).then(([l, r, b]) => {
+      if (a) { setLinks(l.filter((x) => x.ipcId === ipc.id)); setRars(r); setBoq(b); }
     });
     return () => { a = false; };
   }, [provider, projectId, ipc.id]);
 
+  const boqById = new Map(boq.map((b) => [b.id, b]));
   const d = computeDeductions(ipc.gross, 0, DEFAULT_DEDUCTION_SETTINGS);
   const rarNo = (id: string) => rars.find((r) => r.id === id)?.rarNo ?? id;
   const recovered = links.reduce((a, l) => a + l.amount, 0);
@@ -35,7 +37,32 @@ export function IpcDetailModal({ projectId, ipc, onClose }: { projectId: string;
           <div className="kpi"><div className="kpi-label">Cumulative</div><div className="kpi-value">{formatMoney(ipc.cumGross)}</div></div>
         </div>
 
-        <h3>Deduction waterfall</h3>
+        <h3>Itemwise breakdown</h3>
+        {ipc.lines && ipc.lines.length > 0 ? (
+          <table className="data-table" aria-label="IPC itemwise lines">
+            <thead><tr><th>Code</th><th>Description</th><th>Unit</th><th className="num">Qty</th><th className="num">Rate</th><th className="num">Amount</th></tr></thead>
+            <tbody>
+              {ipc.lines.map((l, i) => {
+                const b = boqById.get(l.boqItemId);
+                return (
+                  <tr key={`${l.boqItemId}-${i}`}>
+                    <td className="mono small">{b?.code ?? '—'}</td>
+                    <td>{b?.description ?? l.boqItemId}{b?.billName ? <div className="muted small">Bill {b.billNo} · {b.billName}</div> : null}</td>
+                    <td className="small">{b?.unit ?? '—'}</td>
+                    <td className="num">{l.qty.toLocaleString('en-PK')}</td>
+                    <td className="num">{l.rate.toLocaleString('en-PK')}</td>
+                    <td className="num">{formatMoney(l.amount)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot><tr><td colSpan={5}>Gross certified</td><td className="num">{formatMoney(ipc.gross)}</td></tr></tfoot>
+          </table>
+        ) : (
+          <p className="muted small">No itemwise lines recorded for this certificate (gross was entered as a lump sum).</p>
+        )}
+
+        <h3 style={{ marginTop: 14 }}>Deduction waterfall</h3>
         <table className="data-table" aria-label="IPC detail deductions">
           <tbody>
             <tr><td>Gross certified</td><td className="num">{formatMoney(d.gross)}</td></tr>

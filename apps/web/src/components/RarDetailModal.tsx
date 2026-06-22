@@ -6,7 +6,7 @@ import { ROLE_LABEL } from '../domain/chains';
 import { rarChain, pendingRarStage, isRarPaid } from '../domain/rarchain';
 import { computeRarPayment, retentionRelease } from '../domain/billing';
 import { AuditTrail } from './AuditTrail';
-import type { Rar, Ipc, RarIpcLink, Subcontractor, Advance } from '../data/types';
+import type { Rar, Ipc, RarIpcLink, Subcontractor, Advance, BoqItem } from '../data/types';
 
 export function RarDetailModal({ projectId, rar, onClose }: { projectId: string; rar: Rar; onClose: () => void }) {
   const { provider } = useData();
@@ -14,24 +14,27 @@ export function RarDetailModal({ projectId, rar, onClose }: { projectId: string;
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
   const [subs, setSubs] = useState<Subcontractor[]>([]);
   const [advances, setAdvances] = useState<Advance[]>([]);
+  const [boq, setBoq] = useState<BoqItem[]>([]);
   const [cur, setCur] = useState<Rar>(rar);
   const [role, setRole] = useState('pm');
   const [error, setError] = useState('');
 
   async function reload() {
-    const [l, i, s, rs, adv] = await Promise.all([
+    const [l, i, s, rs, adv, b] = await Promise.all([
       provider.listRarIpcLinks(projectId), provider.listIpcs(projectId),
-      provider.listSubcontractors(projectId), provider.listRars(projectId), provider.listAdvances(projectId),
+      provider.listSubcontractors(projectId), provider.listRars(projectId), provider.listAdvances(projectId), provider.listBoq(projectId),
     ]);
     setLinks(l.filter((x) => x.rarId === rar.id));
     setIpcs(i);
     setSubs(s);
     setCur(rs.find((x) => x.rarNo === rar.rarNo) ?? rar);
     setAdvances(adv);
+    setBoq(b);
   }
   useEffect(() => { void reload(); /* eslint-disable-next-line */ }, [provider, projectId, rar.id]);
 
   const ipcNo = (id: string) => ipcs.find((i) => i.id === id)?.ipcNo ?? id;
+  const boqById = new Map(boq.map((b) => [b.id, b]));
   const recovered = links.reduce((a, l) => a + l.amount, 0);
   const outstanding = Math.max(0, cur.netPayable - recovered);
 
@@ -82,6 +85,31 @@ export function RarDetailModal({ projectId, rar, onClose }: { projectId: string;
           <div className="kpi"><div className="kpi-label">Recovered</div><div className="kpi-value">{formatMoney(recovered)}</div></div>
           <div className="kpi"><div className="kpi-label">Outstanding</div><div className="kpi-value">{formatMoney(outstanding)}</div></div>
         </div>
+
+        <h3>Itemwise breakdown</h3>
+        {cur.lines && cur.lines.length > 0 ? (
+          <table className="data-table" aria-label="RAR itemwise lines">
+            <thead><tr><th>Code</th><th>Description</th><th>Unit</th><th className="num">Qty</th><th className="num">Rate</th><th className="num">Amount</th></tr></thead>
+            <tbody>
+              {cur.lines.map((l, i) => {
+                const b = boqById.get(l.boqItemId);
+                return (
+                  <tr key={`${l.boqItemId}-${i}`}>
+                    <td className="mono small">{b?.code ?? '—'}</td>
+                    <td>{b?.description ?? l.boqItemId}{b?.billName ? <div className="muted small">Bill {b.billNo} · {b.billName}</div> : null}</td>
+                    <td className="small">{b?.unit ?? '—'}</td>
+                    <td className="num">{l.qty.toLocaleString('en-PK')}</td>
+                    <td className="num">{l.rate.toLocaleString('en-PK')}</td>
+                    <td className="num">{formatMoney(l.amount)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot><tr><td colSpan={5}>Gross</td><td className="num">{formatMoney(cur.gross)}</td></tr></tfoot>
+          </table>
+        ) : (
+          <p className="muted small">No itemwise lines recorded for this RAR (gross was entered as a lump sum).</p>
+        )}
 
         <h3>Payment computation <span className="muted small">· {kind} · IPC {linkedIpcApproved ? 'approved' : 'not approved'}</span></h3>
         <table className="data-table" aria-label="RAR payment computation">

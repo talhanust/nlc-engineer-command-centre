@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { useToast } from '../../components/Toast';
 import { formatMoney } from '../../domain/money';
-import type { BoqItem, Distribution, Rar, Subcontractor } from '../../data/types';
+import type { BoqItem, Distribution, Rar, Subcontractor, Contract } from '../../data/types';
 
 const num = (n: number) => n.toLocaleString('en-PK');
 const money = (n: number) => (n > 0 ? formatMoney(n) : '—');
@@ -14,6 +14,8 @@ export function GenerateRar({ projectId, onGenerated }: { projectId: string; onG
   const [dists, setDists] = useState<Distribution[]>([]);
   const [subs, setSubs] = useState<Subcontractor[]>([]);
   const [rars, setRars] = useState<Rar[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
+  const [contractId, setContractId] = useState('');
   const [subId, setSubId] = useState('');
   const [period, setPeriod] = useState('');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -21,10 +23,10 @@ export function GenerateRar({ projectId, onGenerated }: { projectId: string; onG
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const [b, d, s, r] = await Promise.all([
-      provider.listBoq(projectId), provider.listDistributions(projectId), provider.listSubcontractors(projectId), provider.listRars(projectId),
+    const [b, d, s, r, c] = await Promise.all([
+      provider.listBoq(projectId), provider.listDistributions(projectId), provider.listSubcontractors(projectId), provider.listRars(projectId), provider.listContracts(projectId),
     ]);
-    setBoq(b); setDists(d); setSubs(s); setRars(r);
+    setBoq(b); setDists(d); setSubs(s); setRars(r); setContracts(c);
   }
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [provider, projectId]);
 
@@ -65,7 +67,7 @@ export function GenerateRar({ projectId, onGenerated }: { projectId: string; onG
     const lines = Object.entries(sel).filter(([, q]) => q > 0).map(([id, qty]) => ({ boqItemId: id, qty, rate: rateOf.get(id) ?? 0, amount: +(qty * (rateOf.get(id) ?? 0)).toFixed(2) }));
     if (lines.length === 0 || !subId) return;
     setBusy(true);
-    const created = await provider.createRar(projectId, { period: period.trim() || date, date, subcontractorId: subId, gross, lines });
+    const created = await provider.createRar(projectId, { period: period.trim() || date, date, subcontractorId: subId, contractId: contractId || undefined, gross, lines });
     setBusy(false);
     setSel({});
     await load();
@@ -84,9 +86,12 @@ export function GenerateRar({ projectId, onGenerated }: { projectId: string; onG
 
       <div className="filter-bar card" role="group" aria-label="RAR setup">
         <span className="muted small" style={{ fontWeight: 600 }}>RAR setup</span>
-        <select aria-label="Select contractor" value={subId} onChange={(e) => { setSubId(e.target.value); setSel({}); }}>
-          <option value="">— Select contractor —</option>
-          {subs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        <select aria-label="Select contract" value={contractId} onChange={(e) => {
+          const c = contracts.find((x) => x.id === e.target.value);
+          setContractId(e.target.value); setSubId(c?.subcontractorId ?? ''); setSel({});
+        }}>
+          <option value="">— Select contract —</option>
+          {contracts.map((c) => <option key={c.id} value={c.id}>{c.contractNo} · {subs.find((s) => s.id === c.subcontractorId)?.name ?? ''}</option>)}
         </select>
         <label className="small">Period <input className="input" aria-label="RAR period" placeholder="e.g. Oct 2026" value={period} onChange={(e) => setPeriod(e.target.value)} /></label>
         <input type="date" aria-label="RAR date" value={date} onChange={(e) => setDate(e.target.value)} />

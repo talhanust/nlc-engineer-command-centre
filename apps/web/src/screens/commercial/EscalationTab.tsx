@@ -30,6 +30,18 @@ export function EscalationTab({ projectId }: { projectId: string }) {
   function editComp(i: number, field: 'currentIndex' | 'baseIndex' | 'weight', value: string) {
     setComps((prev) => prev.map((c, idx) => (idx === i ? { ...c, [field]: Number(value) || 0 } : c)));
   }
+  function editLabel(i: number, value: string) {
+    setComps((prev) => prev.map((c, idx) => (idx === i ? { ...c, label: value } : c)));
+  }
+  async function addComp() {
+    const next = [...comps, { label: 'New component', weight: 0, baseIndex: 100, currentIndex: 100 }];
+    setComps(next); await provider.setEscalationComponents(projectId, next);
+  }
+  async function removeComp(i: number) {
+    if (i === 0) return;
+    const next = comps.filter((_, idx) => idx !== i);
+    setComps(next); await provider.setEscalationComponents(projectId, next);
+  }
   async function persist() { await provider.setEscalationComponents(projectId, comps); }
 
   const totalEsc = epcs.reduce((a, e) => a + e.amount, 0);
@@ -87,16 +99,17 @@ export function EscalationTab({ projectId }: { projectId: string }) {
         <span className="muted small">Weights must sum to 1.000. Edit current indices to drive Pₙ.</span>
       </div>
       <table className="data-table pbs-table" aria-label="PBS index master">
-        <thead><tr><th>Component</th><th className="num">Base idx</th><th className="num">Current</th><th className="num">Ratio</th><th className="num">Weight</th><th className="num">Contribution</th></tr></thead>
+        <thead><tr><th>Component</th><th className="num">Base idx</th><th className="num">Current</th><th className="num">Ratio</th><th className="num">Weight</th><th className="num">Contribution</th><th></th></tr></thead>
         <tbody>
           {pn.lines.map((l, i) => (
-            <tr key={l.label}>
-              <td>{l.label}{i === 0 && <span className="muted small"> (ratio fixed at 1.000)</span>}</td>
+            <tr key={i}>
+              <td>{i === 0 ? <>{l.label}<span className="muted small"> (ratio fixed at 1.000)</span></> : <input className="qty-input" style={{ width: 160, textAlign: 'left' }} aria-label={`Label ${i}`} value={l.label} onChange={(e) => editLabel(i, e.target.value)} onBlur={persist} />}</td>
               <td className="num"><input className="qty-input" aria-label={`Base ${i}`} value={l.baseIndex} disabled={i === 0} onChange={(e) => editComp(i, 'baseIndex', e.target.value)} onBlur={persist} /></td>
               <td className="num"><input className="qty-input" aria-label={`Current ${i}`} value={l.currentIndex} disabled={i === 0} onChange={(e) => editComp(i, 'currentIndex', e.target.value)} onBlur={persist} /></td>
               <td className="num">{l.ratio.toFixed(4)}</td>
               <td className="num"><input className="qty-input" aria-label={`Weight ${i}`} value={l.weight} onChange={(e) => editComp(i, 'weight', e.target.value)} onBlur={persist} /></td>
               <td className="num">{l.contribution.toFixed(4)}</td>
+              <td>{i === 0 ? null : <button className="btn-ghost btn-mini" aria-label={`Remove ${l.label}`} onClick={() => removeComp(i)}>✕</button>}</td>
             </tr>
           ))}
         </tbody>
@@ -105,9 +118,14 @@ export function EscalationTab({ projectId }: { projectId: string }) {
             <td><strong>Σ weights / Pₙ</strong></td><td /><td /><td />
             <td className={`num ${Math.abs(pn.sumWeights - 1) > 1e-6 ? 'neg' : ''}`}><strong>{pn.sumWeights.toFixed(3)}</strong></td>
             <td className="num"><strong>{pn.pn.toFixed(4)}</strong></td>
+            <td />
           </tr>
         </tfoot>
       </table>
+      <div style={{ marginTop: 8 }}>
+        <button className="btn-ghost btn-mini" onClick={addComp}>+ Add component</button>
+        {Math.abs(pn.sumWeights - 1) > 1e-6 && <span className="muted small" style={{ marginLeft: 10, color: 'var(--rag-amber)' }}>⚠ Weights sum to {pn.sumWeights.toFixed(3)}, should be 1.000</span>}
+      </div>
 
       <div className="section-head" style={{ marginTop: 18 }}>
         <h4 style={{ margin: 0 }}>EPC pipeline</h4>

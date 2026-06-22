@@ -16,6 +16,7 @@ import { CashFlowTab } from './CashFlowTab';
 import { CommercialDashboard } from './CommercialDashboard';
 import { VariationsTab } from './VariationsTab';
 import { EvmTab } from './EvmTab';
+import { ContractsRegister } from './ContractsRegister';
 import { CommercialAlerts } from './CommercialAlerts';
 import { CalendarTab } from './CalendarTab';
 import { ContractorProfiles } from './ContractorProfiles';
@@ -34,6 +35,7 @@ const SUBS = [
   ['calendar', 'Calendar'],
   ['epc', 'Escalation'],
   ['subs', 'Contractors'],
+  ['contracts', 'Contracts'],
   ['planner', 'Distribution planner'],
   ['exectrack', 'Execution tracker'],
   ['variations', 'Variations'],
@@ -75,6 +77,7 @@ export function CommercialTab({ projectId }: { projectId: string }) {
       {sub === 'calendar' && <CalendarTab projectId={projectId} onNavigate={(s) => setSub(s as Sub)} />}
       {sub === 'epc' && <EscalationTab projectId={projectId} />}
       {sub === 'subs' && <ContractorProfiles projectId={projectId} />}
+      {sub === 'contracts' && <ContractsRegister projectId={projectId} />}
       {sub === 'planner' && <DistributionPlanner projectId={projectId} />}
       {sub === 'exectrack' && <ExecutionTracker projectId={projectId} onManageDistribution={() => setSub('dist')} />}
       {sub === 'dist' && <DistributionsTab projectId={projectId} />}

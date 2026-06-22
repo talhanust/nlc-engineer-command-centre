@@ -265,6 +265,16 @@ describe('Phase 3 — Commercial tab', () => {
     expect(within(row).getByRole('button', { name: 'Advance VO-02' })).toBeDisabled();
   });
 
+  it('shows the contracts register with unique contract numbers', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'Contracts' }));
+    expect(await screen.findByRole('heading', { name: 'Contracts Register' })).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: 'Contracts register' });
+    expect(within(table).getByText('NLC/F14F15/SC-01')).toBeInTheDocument();
+  });
+
   it('shows itemwise lines when an IPC is opened', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
@@ -439,7 +449,7 @@ describe('Phase 3 #11/#12 — RAR, subs, recovery, EPC, advances, distributions,
     const user = await gotoSub('Generate RAR');
     expect(await screen.findByRole('heading', { name: 'Generate Running Account Receipt (RAR)' })).toBeInTheDocument();
     expect(screen.getByText('Select a contractor to begin')).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('Select contractor'), 'sub-proj-f14f15-1');
+    await user.selectOptions(screen.getByLabelText('Select contract'), 'ctr-proj-f14f15-1');
     const table = await screen.findByRole('table', { name: 'Generate RAR' });
     await user.click(within(table).getByLabelText('Select I-102'));
     await user.click(screen.getByRole('button', { name: 'Generate RAR' }));
@@ -528,7 +538,7 @@ describe('Phase 3 #11/#12 — RAR, subs, recovery, EPC, advances, distributions,
   it('shows the PBS index master driving Pₙ', async () => {
     await gotoSub('Escalation');
     const table = await screen.findByRole('table', { name: 'PBS index master' });
-    expect(within(table).getByText(/Steel/)).toBeInTheDocument();
+    expect(within(table).getByDisplayValue(/Steel/)).toBeInTheDocument();
     expect(within(table).getByLabelText('Current 2')).toBeInTheDocument();
     // Σ weights = 1.000 and Pₙ = 1.1252 with the seeded indices.
     expect(within(table).getByText('1.000')).toBeInTheDocument();

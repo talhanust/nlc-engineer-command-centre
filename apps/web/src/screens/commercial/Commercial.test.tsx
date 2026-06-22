@@ -265,6 +265,17 @@ describe('Phase 3 — Commercial tab', () => {
     expect(within(row).getByRole('button', { name: 'Advance VO-02' })).toBeDisabled();
   });
 
+  it('shows itemwise lines when an IPC is opened', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'IPC register' }));
+    const table = await screen.findByRole('table', { name: 'IPC register' });
+    await user.click(within(table).getAllByRole('button', { name: /Details for IPC-/ })[0]);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('table', { name: 'IPC itemwise lines' })).toBeInTheDocument();
+  });
+
   it('offers a PDF certificate action on IPC rows', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');

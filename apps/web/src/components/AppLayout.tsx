@@ -8,6 +8,8 @@ import { DockProvider, DockRail } from './Dock';
 import { RouteFade } from './RouteFade';
 import { useData } from '../data/DataContext';
 import { useUiState } from '../state/UiState';
+import { useRole, SWITCHABLE_ROLES } from '../state/Role';
+import { ROLE_LABEL } from '../domain/chains';
 
 function isTypingTarget(e: KeyboardEvent): boolean {
   const t = e.target as HTMLElement | null;
@@ -22,6 +24,7 @@ export function AppLayout() {
     theme, setTheme, sidebarOpen, toggleSidebar, sidebarWidth, setSidebarWidth,
     zoom, setZoom, density, setDensity, presentation, setPresentation, setLastNode,
   } = useUiState();
+  const { role, setRole } = useRole();
   const navigate = useNavigate();
   const location = useLocation();
   const [isFull, setIsFull] = useState(false);
@@ -135,6 +138,12 @@ export function AppLayout() {
             aria-label="Toggle row density" aria-pressed={density === 'compact'} title={density === 'compact' ? 'Comfortable rows' : 'Compact rows'}>
             {density === 'compact' ? '≡' : '☰'}
           </button>
+          <label className="role-switch" title="Acting role (dev)">
+            <span className="role-badge" aria-hidden>{ROLE_LABEL[role] ?? (role === 'admin' ? 'Admin' : role)}</span>
+            <select aria-label="Switch acting role" value={role} onChange={(e) => setRole(e.target.value)}>
+              {SWITCHABLE_ROLES.map((r) => <option key={r} value={r}>{r === 'admin' ? 'Admin (all)' : ROLE_LABEL[r] ?? r}</option>)}
+            </select>
+          </label>
           <button className="icon-btn" onClick={() => setPresentation(true)} aria-label="Enter presentation mode" title="Presentation mode">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" />

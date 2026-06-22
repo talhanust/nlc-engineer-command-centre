@@ -65,10 +65,18 @@ const COORDS: Record<string, { lat: number; lng: number; location: string }> = {
   'proj-khi-water': { lat: 24.86, lng: 67.00, location: 'Karachi' },
   'proj-gwadar': { lat: 25.13, lng: 62.32, location: 'Gwadar' },
 };
+const DATES: Record<string, { start: string; finish: string }> = {
+  'proj-f14f15': { start: '2025-01-15', finish: '2026-08-31' },
+  'proj-bahria': { start: '2024-09-01', finish: '2026-10-31' },
+  'proj-e12': { start: '2025-06-01', finish: '2027-05-31' },
+  'proj-rwp-ring': { start: '2024-03-01', finish: '2027-02-28' },
+  'proj-m2-rehab': { start: '2024-07-01', finish: '2026-09-30' },
+};
 const PROJECTS: Project[] = SEED.map((s) => ({
   id: s.id, pdHqId: s.pdHqId, clientName: s.client,
   contractValue: s.cv, billedToDate: s.billed, receivedToDate: s.received,
   plannedPct: s.planned, actualPct: s.actual,
+  commencementDate: DATES[s.id]?.start, completionDate: DATES[s.id]?.finish,
   lat: COORDS[s.id]?.lat, lng: COORDS[s.id]?.lng, location: COORDS[s.id]?.location,
 }));
 

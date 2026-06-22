@@ -17,6 +17,15 @@ import { RemoteKvStore } from './RemoteKvStore';
 // Talks to the on-prem backend per FGEHA_NLC_API_Contract.md. Stubbed here;
 // the full build maps each method to a contract endpoint, sends the AD/SSO
 // token, and surfaces the standard error envelope + 409 optimistic-lock.
+/**
+ * LEGACY / not wired at runtime. `makeDataProvider()` returns `LocalDataProvider`
+ * for BOTH local and api modes; api mode persists by swapping the provider's KvStore
+ * to `RemoteKvStore`, which round-trips every document through `/api/state` (JSONB in
+ * fnpc.app_doc). So new entities persist server-side for free — there is no per-entity
+ * REST route to "wire". The bespoke endpoints below are vestigial and never called;
+ * they exist only so this class still satisfies the DataProvider interface. The real
+ * api-mode persistence is proven in data/apiMode.test.ts and server/test/docstore.test.ts.
+ */
 export class ApiDataProvider implements DataProvider {
   readonly mode = 'api' as const;
   constructor(private baseUrl: string, private authUser = 'demo') {}

@@ -66,4 +66,33 @@ describe('api mode — provider logic over the remote KV store', () => {
     await flush();
     expect([...server.keys()].some((k) => k.includes('boqwf'))).toBe(true);
   });
+
+  it('persists new commercial entities (variations) and survives a fresh hydrate', async () => {
+    const p = new LocalDataProvider();
+    await p.createVariation('proj-f14f15', { title: 'New culvert at km 7', type: 'addition', amount: 1_000_000 });
+    await flush();
+    expect([...server.keys()].some((k) => k.includes('variations'))).toBe(true);
+    // New session: a fresh remote store hydrated from the same backend documents.
+    const remote2 = new RemoteKvStore('', 'demo');
+    await remote2.hydrate();
+    setKvStore(remote2);
+    const p2 = new LocalDataProvider();
+    const vos = await p2.listVariations('proj-f14f15');
+    expect(vos.some((v) => v.title === 'New culvert at km 7')).toBe(true);
+  });
+
+  it('persists bank guarantees and escalation indices through /api/state', async () => {
+    const p = new LocalDataProvider();
+    await p.addBankGuarantee('proj-f14f15', { kind: 'mob', party: 'client', bgNo: 'BG-TEST-9', bank: 'NBP', amount: 500, status: 'active' });
+    await p.setEscalationComponents('proj-f14f15', [{ label: 'Steel', weight: 0.3, baseIndex: 100, currentIndex: 120 }]);
+    await flush();
+    expect([...server.keys()].some((k) => k.includes('bankguarantees'))).toBe(true);
+    expect([...server.keys()].some((k) => k.includes('escindices'))).toBe(true);
+    const remote2 = new RemoteKvStore('', 'demo');
+    await remote2.hydrate();
+    setKvStore(remote2);
+    const p2 = new LocalDataProvider();
+    expect((await p2.listBankGuarantees('proj-f14f15')).some((b) => b.bgNo === 'BG-TEST-9')).toBe(true);
+    expect((await p2.listEscalationComponents('proj-f14f15')).some((c) => c.label === 'Steel')).toBe(true);
+  });
 });

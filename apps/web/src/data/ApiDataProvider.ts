@@ -1,6 +1,6 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
-  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation,
+  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation, Contract, ContractStatus,
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
@@ -185,7 +185,7 @@ export class ApiDataProvider implements DataProvider {
   }
   async createRar(
     projectId: string,
-    input: { period: string; subcontractorId: string; gross: number; date?: string; lines?: RarLine[] },
+    input: { period: string; subcontractorId: string; contractId?: string; gross: number; date?: string; lines?: RarLine[] },
   ): Promise<Rar> {
     return this.send<Rar>(`/api/projects/${projectId}/rars`, 'POST', input);
   }
@@ -233,6 +233,15 @@ export class ApiDataProvider implements DataProvider {
   }
   async transitionVariation(projectId: string, voNo: string, action: string): Promise<Variation> {
     return this.send<Variation>(`/api/projects/${projectId}/variations/${voNo}/transitions`, 'POST', { action });
+  }
+  async listContracts(projectId: string): Promise<Contract[]> {
+    return (await this.get<{ items: Contract[] }>(`/api/projects/${projectId}/contracts`)).items;
+  }
+  async createContract(projectId: string, input: { title: string; subcontractorId: string; scopeBills: string[]; value: number; awardDate?: string }): Promise<Contract> {
+    return this.send<Contract>(`/api/projects/${projectId}/contracts`, 'POST', input);
+  }
+  async setContractStatus(projectId: string, contractId: string, status: ContractStatus): Promise<void> {
+    await this.send(`/api/projects/${projectId}/contracts/${contractId}/status`, 'POST', { status });
   }
   async transitionEpc(projectId: string, epcNo: string, action: string): Promise<Epc> {
     return this.send<Epc>(`/api/projects/${projectId}/epcs/${epcNo}/transitions`, 'POST', { action });

@@ -33,6 +33,16 @@ describe('commercial seed generator', () => {
     expect(g.bgs.length).toBe(2);
   });
 
+  it('seeds contracts with unique numbers and bills RARs against them', () => {
+    expect(g.contracts.length).toBeGreaterThan(0);
+    const nums = g.contracts.map((c) => c.contractNo);
+    expect(new Set(nums).size).toBe(nums.length); // unique
+    expect(g.contracts.every((c) => /SC-\d{2}$/.test(c.contractNo))).toBe(true);
+    // every RAR is linked to one of this project's contracts
+    const ids = new Set(g.contracts.map((c) => c.id));
+    expect(g.rars.every((r) => r.contractId && ids.has(r.contractId))).toBe(true);
+  });
+
   it('is deterministic for the same profile', () => {
     const again = seedFor(profile);
     expect(again.boq.length).toBe(g.boq.length);

@@ -161,6 +161,21 @@ export interface Variation {
   note?: string;
 }
 
+export type ContractStatus = 'draft' | 'awarded' | 'in_progress' | 'completed' | 'closed';
+/** A subcontract package with a unique number; RARs bill against a contract. */
+export interface Contract {
+  id: string;
+  projectId: string;
+  contractNo: string;
+  title: string;
+  subcontractorId: string;
+  scopeBills: string[];
+  value: number;
+  awardDate?: string;
+  completionDate?: string;
+  status: ContractStatus;
+}
+
 export interface RarLine { boqItemId: string; qty: number; rate: number; amount: number }
 
 export interface Rar {
@@ -172,6 +187,7 @@ export interface Rar {
   date?: string;
   status: RarStatus;
   subcontractorId: string;
+  contractId?: string;
   gross: number;
   netPayable: number;
   lines?: RarLine[];
@@ -673,7 +689,7 @@ export interface DataProvider {
   listRars(projectId: string): Promise<Rar[]>;
   createRar(
     projectId: string,
-    input: { period: string; subcontractorId: string; gross: number; date?: string; lines?: RarLine[] },
+    input: { period: string; subcontractorId: string; contractId?: string; gross: number; date?: string; lines?: RarLine[] },
   ): Promise<Rar>;
   transitionRar(projectId: string, rarNo: string, action: string): Promise<Rar>;
   setRarFinal(projectId: string, rarNo: string, isFinal: boolean): Promise<Rar>;
@@ -689,6 +705,9 @@ export interface DataProvider {
   listVariations(projectId: string): Promise<Variation[]>;
   createVariation(projectId: string, input: { title: string; type: VariationType; amount: number; boqItemId?: string; date?: string }): Promise<Variation>;
   transitionVariation(projectId: string, voNo: string, action: string): Promise<Variation>;
+  listContracts(projectId: string): Promise<Contract[]>;
+  createContract(projectId: string, input: { title: string; subcontractorId: string; scopeBills: string[]; value: number; awardDate?: string }): Promise<Contract>;
+  setContractStatus(projectId: string, contractId: string, status: ContractStatus): Promise<void>;
   transitionEpc(projectId: string, epcNo: string, action: string): Promise<Epc>;
   listAdvances(projectId: string): Promise<Advance[]>;
   addAdvance(projectId: string, input: Omit<Advance, 'id' | 'projectId'>): Promise<Advance>;

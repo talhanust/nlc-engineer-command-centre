@@ -6,7 +6,7 @@ import { ROLE_LABEL } from '../domain/chains';
 import { rarChain, pendingRarStage, isRarPaid } from '../domain/rarchain';
 import { computeRarPayment, retentionRelease } from '../domain/billing';
 import { AuditTrail } from './AuditTrail';
-import type { Rar, Ipc, RarIpcLink, Subcontractor, Advance, BoqItem } from '../data/types';
+import type { Rar, Ipc, RarIpcLink, Subcontractor, Advance, BoqItem, Contract } from '../data/types';
 
 export function RarDetailModal({ projectId, rar, onClose }: { projectId: string; rar: Rar; onClose: () => void }) {
   const { provider } = useData();
@@ -15,14 +15,15 @@ export function RarDetailModal({ projectId, rar, onClose }: { projectId: string;
   const [subs, setSubs] = useState<Subcontractor[]>([]);
   const [advances, setAdvances] = useState<Advance[]>([]);
   const [boq, setBoq] = useState<BoqItem[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
   const [cur, setCur] = useState<Rar>(rar);
   const [role, setRole] = useState('pm');
   const [error, setError] = useState('');
 
   async function reload() {
-    const [l, i, s, rs, adv, b] = await Promise.all([
+    const [l, i, s, rs, adv, b, ct] = await Promise.all([
       provider.listRarIpcLinks(projectId), provider.listIpcs(projectId),
-      provider.listSubcontractors(projectId), provider.listRars(projectId), provider.listAdvances(projectId), provider.listBoq(projectId),
+      provider.listSubcontractors(projectId), provider.listRars(projectId), provider.listAdvances(projectId), provider.listBoq(projectId), provider.listContracts(projectId),
     ]);
     setLinks(l.filter((x) => x.rarId === rar.id));
     setIpcs(i);
@@ -30,11 +31,13 @@ export function RarDetailModal({ projectId, rar, onClose }: { projectId: string;
     setCur(rs.find((x) => x.rarNo === rar.rarNo) ?? rar);
     setAdvances(adv);
     setBoq(b);
+    setContracts(ct);
   }
   useEffect(() => { void reload(); /* eslint-disable-next-line */ }, [provider, projectId, rar.id]);
 
   const ipcNo = (id: string) => ipcs.find((i) => i.id === id)?.ipcNo ?? id;
   const boqById = new Map(boq.map((b) => [b.id, b]));
+  const contractNo = contracts.find((c) => c.id === cur.contractId)?.contractNo;
   const recovered = links.reduce((a, l) => a + l.amount, 0);
   const outstanding = Math.max(0, cur.netPayable - recovered);
 
@@ -86,6 +89,7 @@ export function RarDetailModal({ projectId, rar, onClose }: { projectId: string;
           <div className="kpi"><div className="kpi-label">Outstanding</div><div className="kpi-value">{formatMoney(outstanding)}</div></div>
         </div>
 
+        {contractNo && <p className="muted small" style={{ margin: '0 0 8px' }}>Billed under contract <strong className="mono">{contractNo}</strong></p>}
         <h3>Itemwise breakdown</h3>
         {cur.lines && cur.lines.length > 0 ? (
           <table className="data-table" aria-label="RAR itemwise lines">

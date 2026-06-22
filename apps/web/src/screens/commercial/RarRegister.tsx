@@ -5,15 +5,21 @@ import { downloadWorkbook } from '../../components/xlsxExport';
 import { formatMoney } from '../../domain/money';
 import { nextRarTransition, RAR_STATUS_LABEL, RAR_PIPELINE } from '../../domain/rar';
 import { useSort } from '../../components/useSort';
+import { rarCertificate } from '../../domain/certificate';
+import { ROLE_LABEL } from '../../domain/chains';
+import { useRole } from '../../state/Role';
+import { downloadCertificatePdf } from '../../components/certificatePdf';
 import { SortTh } from '../../components/SortTh';
 import { useBulkSelection } from '../../components/useBulkSelection';
-import type { Rar, Subcontractor, Ipc, RarIpcLink } from '../../data/types';
+import type { Rar, Subcontractor, Ipc, RarIpcLink, BoqItem } from '../../data/types';
 import { useToast } from '../../components/Toast';
 
 export function RarRegister({ projectId }: { projectId: string }) {
-  const { provider } = useData();
+  const { provider, projects, nodes } = useData();
   const { toast } = useToast();
+  const { can } = useRole();
   const [rars, setRars] = useState<Rar[]>([]);
+  const [boq, setBoq] = useState<BoqItem[]>([]);
   const [detailRar, setDetailRar] = useState<Rar | null>(null);
   const [subs, setSubs] = useState<Subcontractor[]>([]);
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
@@ -29,12 +35,14 @@ export function RarRegister({ projectId }: { projectId: string }) {
       provider.listSubcontractors(projectId),
       provider.listIpcs(projectId),
       provider.listRarIpcLinks(projectId),
-    ]).then(([r, s, i, l]) => {
+      provider.listBoq(projectId),
+    ]).then(([r, s, i, l, b]) => {
       if (!alive) return;
       setRars(r);
       setSubs(s);
       setIpcs(i);
       setLinks(l);
+      setBoq(b);
     });
     return () => {
       alive = false;
@@ -76,6 +84,10 @@ export function RarRegister({ projectId }: { projectId: string }) {
   const advanceableSelected = rars.filter((r) => sel.selected.has(r.rarNo) && nextRarTransition(r.status)).length;
 
   const shown = useMemo(() => rars.filter((r) => (fSub === 'all' || r.subcontractorId === fSub) && (fStage === 'all' || r.status === fStage)), [rars, fSub, fStage]);
+  const boqById = useMemo(() => new Map(boq.map((b) => [b.id, b])), [boq]);
+  const projectName = nodes.find((n) => n.id === projectId)?.name ?? projectId;
+  const client = projects.find((p) => p.id === projectId)?.clientName ?? 'Client';
+  async function pdf(rar: Rar) { await downloadCertificatePdf(rarCertificate(rar, { projectName, client, subName: subName(rar.subcontractorId), boqById })); }
   const { sorted, sort, toggle } = useSort(shown, {
     period: (r) => r.period,
     sub: (r) => subName(r.subcontractorId),
@@ -170,6 +182,8 @@ export function RarRegister({ projectId }: { projectId: string }) {
                   <td>{rar.rarNo}
                     <button className="btn-ghost" style={{ marginLeft: 8, padding: '1px 7px' }} aria-label={`Details for ${rar.rarNo}`}
                       onClick={() => setDetailRar(rar)}>Details</button>
+                    <button className="btn-ghost" style={{ marginLeft: 6, padding: '1px 7px' }} aria-label={`Certificate for ${rar.rarNo}`}
+                      onClick={() => pdf(rar)}>PDF</button>
                   </td>
                   <td>{rar.period}</td>
                   <td>{subName(rar.subcontractorId)}</td>
@@ -178,7 +192,7 @@ export function RarRegister({ projectId }: { projectId: string }) {
                   <td className="num">{formatMoney(rar.netPayable)}</td>
                   <td>
                     {t ? (
-                      <button className="btn-ghost" onClick={() => advance(rar)}>{t.label}</button>
+                      <button className="btn-ghost" disabled={!can(t.role)} title={can(t.role) ? `Responsible: ${ROLE_LABEL[t.role] ?? t.role}` : `Requires ${ROLE_LABEL[t.role] ?? t.role}`} onClick={() => advance(rar)}>{t.label}</button>
                     ) : (
                       <span className="muted small">—</span>
                     )}

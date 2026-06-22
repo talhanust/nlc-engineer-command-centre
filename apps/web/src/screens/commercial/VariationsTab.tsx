@@ -3,6 +3,8 @@ import { useData } from '../../data/DataContext';
 import { useToast } from '../../components/Toast';
 import { formatMoney, toNum } from '../../domain/money';
 import { variationSummary, nextVoTransition, VO_STATUS_LABEL, VO_TYPE_LABEL } from '../../domain/variations';
+import { ROLE_LABEL } from '../../domain/chains';
+import { useRole } from '../../state/Role';
 import { SkeletonRows } from '../../components/Skeleton';
 import type { Variation, VariationType } from '../../data/types';
 
@@ -12,6 +14,7 @@ const signed = (n: number) => `${n >= 0 ? '+' : '−'} ${formatMoney(Math.abs(n)
 export function VariationsTab({ projectId }: { projectId: string }) {
   const { provider, projects } = useData();
   const { toast } = useToast();
+  const { can } = useRole();
   const [vos, setVos] = useState<Variation[]>([]);
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState('');
@@ -96,7 +99,7 @@ export function VariationsTab({ projectId }: { projectId: string }) {
                   <td className={`num ${vo.amount < 0 ? 'neg' : ''}`}>{signed(vo.amount)}</td>
                   <td><span className={`status-pill st-${vo.status === 'approved' ? 'paid' : vo.status === 'rejected' ? 'draft' : 'vetted'}`}>{VO_STATUS_LABEL[vo.status]}</span></td>
                   <td>
-                    {t ? <button className="btn-ghost btn-mini" aria-label={`Advance ${vo.voNo}`} onClick={() => advance(vo)}>{t.label}</button> : <span className="muted small">—</span>}
+                    {t ? <button className="btn-ghost btn-mini" disabled={!can(t.role)} aria-label={`Advance ${vo.voNo}`} title={can(t.role) ? t.label : `Requires ${ROLE_LABEL[t.role] ?? t.role}`} onClick={() => advance(vo)}>{t.label}</button> : <span className="muted small">—</span>}
                     {t && <button className="btn-ghost btn-mini" aria-label={`Reject ${vo.voNo}`} style={{ marginLeft: 6 }} onClick={() => reject(vo)}>Reject</button>}
                   </td>
                 </tr>

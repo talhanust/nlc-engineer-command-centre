@@ -229,6 +229,62 @@ describe('Phase 3 — Commercial tab', () => {
     expect(await screen.findByText(/Auto-linked|No RARs with BoQ overlap/)).toBeInTheDocument();
   });
 
+  it('gates the IPC pipeline by acting role', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.selectOptions(screen.getAllByLabelText("Switch acting role")[0], 'fm');
+    await user.click(screen.getByRole('tab', { name: 'IPC register' }));
+    const table = await screen.findByRole('table', { name: 'IPC register' });
+    // IPC-03 is vetted → next step "Submit to client" requires PM → disabled for Finance.
+    const row = within(table).getByText('IPC-03').closest('tr')! as HTMLElement;
+    expect(within(row).getByRole('button', { name: 'Submit to client' })).toBeDisabled();
+  });
+
+  it('gates RAR steps by role — PM-only verify blocked, finance step allowed', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.selectOptions(screen.getAllByLabelText('Switch acting role')[0], 'fm');
+    await user.click(screen.getByRole('tab', { name: 'RAR Register' }));
+    const table = await screen.findByRole('table', { name: 'RAR register' });
+    const r3 = within(table).getByText('RAR-03').closest('tr')! as HTMLElement; // submitted → Verify (PM)
+    expect(within(r3).getByRole('button', { name: 'Verify' })).toBeDisabled();
+    const r2 = within(table).getByText('RAR-02').closest('tr')! as HTMLElement; // approved → Mark for payment (FM)
+    expect(within(r2).getByRole('button', { name: 'Mark for payment' })).toBeEnabled();
+  });
+
+  it('gates variation approval to the Project Director', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.selectOptions(screen.getAllByLabelText('Switch acting role')[0], 'fm');
+    await user.click(screen.getByRole('tab', { name: 'Variations' }));
+    const table = await screen.findByRole('table', { name: 'Variations register' });
+    const row = within(table).getByText('VO-02').closest('tr')! as HTMLElement; // recommended → Approve (PD)
+    expect(within(row).getByRole('button', { name: 'Advance VO-02' })).toBeDisabled();
+  });
+
+  it('offers a PDF certificate action on IPC rows', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'IPC register' }));
+    const table = await screen.findByRole('table', { name: 'IPC register' });
+    expect(within(table).getAllByRole('button', { name: /Certificate for IPC-/ }).length).toBeGreaterThan(0);
+  });
+
+  it('shows the commercial calendar of expiries and releases', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/commercial');
+    await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('tab', { name: 'Calendar' }));
+    expect(await screen.findByRole('heading', { name: 'Commercial Calendar' })).toBeInTheDocument();
+    expect(screen.getByText('Due in 30 days')).toBeInTheDocument();
+    // seeded secure-advance BG expiry should be listed
+    expect(await screen.findByText(/BG\/SEC\/2026\/041 expires/)).toBeInTheDocument();
+  });
+
   it('surfaces commercial health alerts and drills into the source', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');

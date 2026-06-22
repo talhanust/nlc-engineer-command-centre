@@ -3,6 +3,8 @@ import { useData } from '../../data/DataContext';
 import { useToast } from '../../components/Toast';
 import { formatMoney } from '../../domain/money';
 import { nextTransition, IPC_STATUS_LABEL } from '../../domain/ipc';
+import { ROLE_LABEL } from '../../domain/chains';
+import { useRole } from '../../state/Role';
 import { pnCoefficient, DEFAULT_PBS_COMPONENTS, type EscalationComponent } from '../../domain/escalation';
 import type { Epc, Ipc, IpcStatus } from '../../data/types';
 
@@ -11,6 +13,7 @@ const money = (n: number) => (n > 0 ? formatMoney(n) : '0');
 
 export function EscalationTab({ projectId }: { projectId: string }) {
   const { provider } = useData();
+  const { can } = useRole();
   const { toast } = useToast();
   const [comps, setComps] = useState<EscalationComponent[]>(DEFAULT_PBS_COMPONENTS);
   const [epcs, setEpcs] = useState<Epc[]>([]);
@@ -125,7 +128,7 @@ export function EscalationTab({ projectId }: { projectId: string }) {
                   <td>{epc.period}</td>
                   <td><span className="status-pill st-vetted">{IPC_STATUS_LABEL[epc.status]}</span></td>
                   <td className="num">{formatMoney(epc.amount)}</td>
-                  <td>{t ? <button className="btn-ghost btn-mini" aria-label={`Advance ${epc.epcNo}`} onClick={() => advance(epc)}>{t.label}</button> : <span className="muted small">—</span>}</td>
+                  <td>{t ? <button className="btn-ghost btn-mini" disabled={!can(t.role)} aria-label={`Advance ${epc.epcNo}`} title={can(t.role) ? t.label : `Requires ${ROLE_LABEL[t.role] ?? t.role}`} onClick={() => advance(epc)}>{t.label}</button> : <span className="muted small">—</span>}</td>
                 </tr>
               );
             })}

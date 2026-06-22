@@ -17,6 +17,7 @@ import { CommercialDashboard } from './CommercialDashboard';
 import { VariationsTab } from './VariationsTab';
 import { EvmTab } from './EvmTab';
 import { CommercialAlerts } from './CommercialAlerts';
+import { CalendarTab } from './CalendarTab';
 import { ContractorProfiles } from './ContractorProfiles';
 import { AdvancesTab } from './AdvancesTab';
 
@@ -30,6 +31,7 @@ const SUBS = [
   ['recon', 'Reconciliation'],
   ['cashflow', 'Cash flow'],
   ['retention', 'Retention'],
+  ['calendar', 'Calendar'],
   ['epc', 'Escalation'],
   ['subs', 'Contractors'],
   ['planner', 'Distribution planner'],
@@ -70,6 +72,7 @@ export function CommercialTab({ projectId }: { projectId: string }) {
       {sub === 'genrar' && <GenerateRar projectId={projectId} onGenerated={() => setSub('rar')} />}
       {sub === 'recon' && <ReconciliationTab projectId={projectId} />}
       {sub === 'retention' && <RetentionTab projectId={projectId} />}
+      {sub === 'calendar' && <CalendarTab projectId={projectId} onNavigate={(s) => setSub(s as Sub)} />}
       {sub === 'epc' && <EscalationTab projectId={projectId} />}
       {sub === 'subs' && <ContractorProfiles projectId={projectId} />}
       {sub === 'planner' && <DistributionPlanner projectId={projectId} />}

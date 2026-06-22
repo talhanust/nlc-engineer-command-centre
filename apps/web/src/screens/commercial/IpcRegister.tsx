@@ -1,4 +1,4 @@
-import { useEffect, useState, Fragment } from 'react';
+import { useEffect, useMemo, useState, Fragment } from 'react';
 import { useData } from '../../data/DataContext';
 import { downloadWorkbook } from '../../components/xlsxExport';
 import { formatMoney } from '../../domain/money';
@@ -10,12 +10,17 @@ import { SortTh } from '../../components/SortTh';
 import { ROLE_LABEL } from '../../domain/chains';
 import { IpcDetailModal } from '../../components/IpcDetailModal';
 import { useToast } from '../../components/Toast';
-import type { Ipc } from '../../data/types';
+import { useRole } from '../../state/Role';
+import { ipcCertificate } from '../../domain/certificate';
+import { downloadCertificatePdf } from '../../components/certificatePdf';
+import type { Ipc, BoqItem } from '../../data/types';
 
 export function IpcRegister({ projectId }: { projectId: string }) {
-  const { provider } = useData();
+  const { provider, projects, nodes } = useData();
+  const { can } = useRole();
   const { toast } = useToast();
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
+  const [boq, setBoq] = useState<BoqItem[]>([]);
   const [detailIpc, setDetailIpc] = useState<Ipc | null>(null);
   const [period, setPeriod] = useState('');
   const [gross, setGross] = useState('');
@@ -23,6 +28,10 @@ export function IpcRegister({ projectId }: { projectId: string }) {
   const [openIpc, setOpenIpc] = useState<string | null>(null);
   const [filer, setFiler] = useState(true);
   const sel = useBulkSelection();
+  const boqById = useMemo(() => new Map(boq.map((b) => [b.id, b])), [boq]);
+  const projectName = nodes.find((n) => n.id === projectId)?.name ?? projectId;
+  const client = projects.find((p) => p.id === projectId)?.clientName ?? 'Client';
+  async function pdf(ipc: Ipc) { await downloadCertificatePdf(ipcCertificate(ipc, { projectName, client, boqById })); }
   const { sorted, sort, toggle } = useSort(ipcs, {
     period: (i) => i.period,
     status: (i) => i.status,
@@ -34,6 +43,7 @@ export function IpcRegister({ projectId }: { projectId: string }) {
   useEffect(() => {
     let alive = true;
     provider.listIpcs(projectId).then((x) => alive && setIpcs(x));
+    provider.listBoq(projectId).then((b) => alive && setBoq(b));
     return () => { alive = false; };
   }, [provider, projectId]);
 
@@ -171,6 +181,8 @@ export function IpcRegister({ projectId }: { projectId: string }) {
                     <span>{ipc.ipcNo}</span>
                     <button className="btn-ghost" style={{ marginLeft: 8, padding: '1px 7px' }} aria-label={`Details for ${ipc.ipcNo}`}
                       onClick={() => setDetailIpc(ipc)}>Details</button>
+                    <button className="btn-ghost" style={{ marginLeft: 6, padding: '1px 7px' }} aria-label={`Certificate for ${ipc.ipcNo}`}
+                      onClick={() => pdf(ipc)}>PDF</button>
                   </td>
                   <td>{ipc.period}</td>
                   <td><span className={`status-pill st-${ipc.status}`}>{IPC_STATUS_LABEL[ipc.status]}</span></td>
@@ -178,7 +190,7 @@ export function IpcRegister({ projectId }: { projectId: string }) {
                   <td className="num">{formatMoney(ipc.netPayable)}</td>
                   <td className="num">{formatMoney(ipc.cumGross)}</td>
                   <td>
-                    {t ? <button className="btn-ghost" title={`Responsible: ${ROLE_LABEL[t.role] ?? t.role}`} onClick={() => advance(ipc)}>{t.label}</button> : <span className="muted small">—</span>}
+                    {t ? <button className="btn-ghost" disabled={!can(t.role)} title={can(t.role) ? `Responsible: ${ROLE_LABEL[t.role] ?? t.role}` : `Requires ${ROLE_LABEL[t.role] ?? t.role}`} onClick={() => advance(ipc)}>{t.label}</button> : <span className="muted small">—</span>}
                     {ipc.status !== 'draft' && (
                       <button className="btn-ghost" style={{ marginLeft: 6 }} aria-label={`Reverse ${ipc.ipcNo}`} title="Reverse last transition (audited)" onClick={() => reverse(ipc)}>↶</button>
                     )}

@@ -65,7 +65,7 @@ describe('Project lifecycle (UI)', () => {
     expect(await screen.findByRole('heading', { name: 'Progress photo gallery' })).toBeInTheDocument();
     await user.type(screen.getByLabelText('Photo URL'), 'https://example.com/p.jpg');
     await user.type(screen.getByLabelText('Photo caption'), 'New pour');
-    await user.click(screen.getByRole('button', { name: 'Add photo' }));
+    await user.click(screen.getByRole('button', { name: 'Add by URL' }));
     expect(await screen.findByText('New pour')).toBeInTheDocument();
     // Delete shows an undo toast; undo restores the photo.
     await user.click(screen.getByRole('button', { name: 'Delete New pour' }));

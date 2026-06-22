@@ -20,7 +20,7 @@ describe('computeNodeRollup', () => {
     const nodes = await provider.listNodes();
     const projects = await provider.listProjects();
     const r = computeNodeRollup(nodes, projects, 'hq-nlc')!;
-    expect(r.totals.projectCount).toBe(8);
+    expect(r.totals.projectCount).toBe(20);
     // Total contract value equals the sum of all seeded projects.
     const sum = projects.reduce((a, p) => a + Number(p.contractValue), 0);
     expect(Math.round(r.totals.contractValue)).toBe(Math.round(sum));
@@ -30,10 +30,10 @@ describe('computeNodeRollup', () => {
     const nodes = await provider.listNodes();
     const projects = await provider.listProjects();
     const r = computeNodeRollup(nodes, projects, 'pd-north')!;
-    // pd-north has 2 projects; weighted actual must lie between their actuals.
-    expect(r.totals.actualPct).toBeGreaterThan(53);
-    expect(r.totals.actualPct).toBeLessThan(59);
-    expect(r.children).toHaveLength(2);
+    // pd-north's weighted actual lies within its projects' actual range.
+    expect(r.totals.actualPct).toBeGreaterThan(40);
+    expect(r.totals.actualPct).toBeLessThan(60);
+    expect(r.children).toHaveLength(5);
   });
 
   it('scopes totals to accessible projects only', async () => {
@@ -60,7 +60,7 @@ describe('org helpers', () => {
   it('collects descendant projects of a branch', async () => {
     const nodes = await provider.listNodes();
     expect(descendantProjectIds(nodes, 'pd-kpk').sort()).toEqual(
-      ['proj-m2-rehab', 'proj-swat-expr'].sort(),
+      ['proj-d-i-khan', 'proj-hazara-exp', 'proj-m2-rehab', 'proj-swat-expr'].sort(),
     );
   });
 });

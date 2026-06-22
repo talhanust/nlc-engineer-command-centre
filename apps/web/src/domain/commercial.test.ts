@@ -265,3 +265,49 @@ describe('commercial alerts', () => {
     expect(alerts[0].severity).toBe('critical'); // critical sorted first
   });
 });
+
+import { commercialCalendar, groupByHorizon } from './calendar';
+import type { BankGuarantee as BgC } from '../data/types';
+describe('commercial calendar', () => {
+  it('schedules BG expiries and retention releases by horizon', () => {
+    const today = new Date('2026-06-19T00:00:00');
+    const bgs: BgC[] = [
+      { id: 'b1', projectId: 'p', kind: 'mob', party: 'client', bgNo: 'BG-1', bank: 'NBP', amount: 100, expires: '2026-07-10', status: 'active' }, // soon
+      { id: 'b2', projectId: 'p', kind: 'secure', party: 'sub', bgNo: 'BG-2', bank: 'HBL', amount: 50, expires: '2027-01-01', status: 'active' }, // later
+      { id: 'b3', projectId: 'p', kind: 'mob', party: 'client', bgNo: 'BG-3', bank: 'NBP', amount: 9, expires: '2026-01-01', status: 'released' }, // skipped (released)
+    ];
+    const events = commercialCalendar({ bgs, completionDate: '2026-08-31', retentionHeld: 1000, dlpDays: 365, today });
+    // 2 active BGs + 2 retention releases (completion + DLP)
+    expect(events).toHaveLength(4);
+    const h = groupByHorizon(events);
+    expect(h.soon.some((e) => e.id === 'bg-b1')).toBe(true);
+    const comp = events.find((e) => e.kind === 'retention_completion')!;
+    expect(comp.amount).toBe(500);
+    const dlp = events.find((e) => e.kind === 'retention_dlp')!;
+    expect(dlp.date).toBe('2027-08-31'); // completion + 365d
+  });
+});
+
+import { ipcCertificate, rarCertificate, epcCertificate } from './certificate';
+describe('certificates', () => {
+  const boqById = new Map([['a', { id: 'a', projectId: 'p', billNo: '1', code: 'I-1', description: 'Earthworks excavation', unit: 'm3', qty: 100, rate: 100, amount: 10000 }]]);
+  it('builds an IPC certificate with line items and deductions', () => {
+    const ipc = { id: 'i', projectId: 'p', ipcNo: 'IPC-01', seq: 1, period: 'Jan-2026', status: 'vetted' as const, gross: 1000, netPayable: 830, cumGross: 1000, lines: [{ boqItemId: 'a', qty: 5, rate: 100, amount: 500 }] };
+    const c = ipcCertificate(ipc, { projectName: 'F-14/F-15', client: 'FGEHA', boqById });
+    expect(c.docType).toContain('Interim');
+    expect(c.toParty).toBe('FGEHA');
+    expect(c.lines[0].description).toBe('Earthworks excavation');
+    expect(c.deductions).toHaveLength(2);
+    expect(c.net).toBe(830); // 1000 − 100 − 70
+  });
+  it('builds RAR and EPC certificates', () => {
+    const rar = { id: 'r', projectId: 'p', rarNo: 'RAR-01', seq: 1, period: 'Jan-2026', status: 'approved' as const, subcontractorId: 's1', gross: 800, netPayable: 664, lines: [{ boqItemId: 'a', qty: 4, rate: 100, amount: 400 }] };
+    const rc = rarCertificate(rar, { projectName: 'F-14', client: 'FGEHA', subName: 'FWO', boqById });
+    expect(rc.toParty).toBe('FWO');
+    expect(rc.net).toBe(664);
+    const epc = { id: 'e', projectId: 'p', epcNo: 'EPC-01', seq: 1, period: 'Jan-2026', status: 'draft' as const, amount: 125, ipcNo: 'IPC-01' };
+    const ec = epcCertificate(epc, { projectName: 'F-14', client: 'FGEHA' });
+    expect(ec.docType).toContain('Escalation');
+    expect(ec.lines[0].amount).toBe(125);
+  });
+});

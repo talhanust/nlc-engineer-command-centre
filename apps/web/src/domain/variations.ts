@@ -17,12 +17,12 @@ export const VO_TYPE_LABEL: Record<VariationType, string> = {
   rate_change: 'Rate change',
 };
 
-interface VoTransition { action: string; label: string; to: VariationStatus }
+interface VoTransition { action: string; label: string; to: VariationStatus; role: string }
 
 const TRANSITIONS: Partial<Record<VariationStatus, VoTransition>> = {
-  draft: { action: 'submit', label: 'Submit', to: 'submitted' },
-  submitted: { action: 'recommend', label: 'Recommend', to: 'recommended' },
-  recommended: { action: 'approve', label: 'Approve', to: 'approved' },
+  draft: { action: 'submit', label: 'Submit', to: 'submitted', role: 'qs' },
+  submitted: { action: 'recommend', label: 'Recommend', to: 'recommended', role: 'pm' },
+  recommended: { action: 'approve', label: 'Approve', to: 'approved', role: 'pd' },
 };
 
 export function nextVoTransition(status: VariationStatus): VoTransition | null {

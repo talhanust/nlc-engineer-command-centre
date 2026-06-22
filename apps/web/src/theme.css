@@ -978,3 +978,23 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .alert-pip.sev-critical { background: var(--rag-red); }
 .alert-pip.sev-warning { background: var(--rag-amber); }
 .alert-go { margin-left: auto; color: var(--muted); }
+
+/* commercial calendar */
+.cal-horizon { margin-top: 16px; }
+.cal-horizon-title { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.cal-horizon-title.overdue { color: var(--rag-red); }
+.cal-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cal-row button { width: 100%; display: flex; align-items: center; gap: 12px; padding: 9px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.cal-row button:hover { border-color: var(--primary); }
+.cal-row.sev-overdue button { border-left: 3px solid var(--rag-red); }
+.cal-row.sev-soon button { border-left: 3px solid var(--rag-amber); }
+.cal-icon { font-size: 15px; }
+.cal-date { color: var(--muted); min-width: 84px; }
+.cal-main { display: flex; flex-direction: column; line-height: 1.25; }
+.cal-when { margin-left: auto; font-size: 12px; font-weight: 600; }
+.cal-amount { color: var(--muted); min-width: 90px; text-align: right; }
+
+/* role switcher */
+.role-switch { display: inline-flex; align-items: center; gap: 6px; }
+.role-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); padding: 2px 7px; border-radius: 999px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role-switch select { font-size: 12px; }

@@ -22,14 +22,15 @@ interface Transition {
   action: string;
   label: string;
   to: RarStatus;
+  role: string;
 }
 
 const TRANSITIONS: Partial<Record<RarStatus, Transition>> = {
-  draft: { action: 'submit', label: 'Submit', to: 'submitted' },
-  submitted: { action: 'verify', label: 'Verify', to: 'verified' },
-  verified: { action: 'approve', label: 'Approve', to: 'approved' },
-  approved: { action: 'mark_payment', label: 'Mark for payment', to: 'marked_payment' },
-  marked_payment: { action: 'pay', label: 'Confirm paid', to: 'paid' },
+  draft: { action: 'submit', label: 'Submit', to: 'submitted', role: 'qs' },
+  submitted: { action: 'verify', label: 'Verify', to: 'verified', role: 'pm' },
+  verified: { action: 'approve', label: 'Approve', to: 'approved', role: 'pm' },
+  approved: { action: 'mark_payment', label: 'Mark for payment', to: 'marked_payment', role: 'fm' },
+  marked_payment: { action: 'pay', label: 'Confirm paid', to: 'paid', role: 'fm' },
 };
 
 export function nextRarTransition(status: RarStatus): Transition | null {

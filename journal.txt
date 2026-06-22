@@ -1,6 +1,54 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-22 — Contracts register + RAR↔contract linkage, gallery uploads, editable EPC ratios
+- New Contract model + Contracts Register sub-tab: each subcontract package carries a unique
+  number (NLC/<proj>/SC-0N), contractor, scope bills, value and status (draft→awarded→
+  in_progress→completed→closed). Provider list/create/setStatus across interface + Local + Api.
+  The generator now seeds one contract per sublet subcontractor for all 20 projects (flagship
+  keeps its hand seed), and every RAR — seeded and newly generated — is billed against a
+  contract (rar.contractId). Generate RAR now selects a CONTRACT (which sets the contractor),
+  and the RAR detail modal shows the governing contract number.
+- Gallery: replaced URL-only add with real image upload — files are client-side downscaled
+  (max 1280px JPEG) to a data URL, stored with a date + description, and the grid is now
+  grouped and sortable date-wise (newest/oldest) or by recently-added. URL add retained.
+- Escalation: the Pₙ index basket is now fully editable per project — component labels are
+  editable, components can be added/removed, and a live weight-sum check warns when Σ ≠ 1.000
+  (base/current indices and weights were already editable).
+- Fixed a stray code fragment that had corrupted a flagship overhead label. New tests for the
+  contracts seed/linkage and the contracts register UI; updated the RAR-generate, PBS and photo
+  tests for the new controls. Web 300 (45 files); server 9; typecheck clean; both builds green.
+
+2026-06-22 — Generator now seeds every register for all 20 projects
+- Extended the deterministic seed generator to cover the remaining secondary registers,
+  all derived coherently from the project profile: financial receipts (from paid/approved
+  IPCs + mobilization advance), monthly payments by category (materials/labour/plant/
+  subcontract/overhead), liabilities (retention held, outstanding RAR, trade payables),
+  suppliers, procurement demands (with BoQ-linked items and an approval history), project
+  salients, production runs (planned vs actual), material issues (with contractor recovery
+  linkage), plant/equipment/vehicle inventory (status + utilisation), POL/fuel records, and
+  fixed assets. Wired all eleven provider fallbacks to the generator (flagship proj-f14f15
+  keeps its hand seed). New test asserts every secondary register populates for a seeded
+  project. Web 298 (45 files); server 9; typecheck clean; both builds green.
+
+2026-06-22 — Fix: 20-project seed now visible; resources/overheads seeded; bills at full depth
+- ROOT CAUSE of "20 projects not showing": listProjects/listNodes read from the persisted
+  nlc-ecc.projects / nlc-ecc.nodes documents, which existing users already had cached with the
+  old 8-project roster — so the bundled 20 never appeared. Added a seed-version reconcile
+  (SEED_VERSION + reconcileSeed): on load it MERGES any newly-seeded projects/nodes into the
+  cached store without touching user-created data, and backfills commencement/completion/coord
+  fields on seeded projects. Fresh stores get all 20 directly. New seedReconcile.test.ts proves
+  a stale 2-project cache (incl. a user project) upgrades to 21 with the flagship dates backfilled.
+- Seeded the previously-empty registers for all non-flagship projects: added Resources
+  (store/plant/equipment, scaled by contract value) and Overheads (6 categories × last 4 months)
+  to the generator and wired their provider fallbacks. Distributions + mapping already flow from
+  the generator/coords and now surface once the projects appear.
+- Expanded the BOQ catalogue to full item depth: 89 authentic line items across all 12 bills
+  (Road Work, SWD, Water Supply and Sewerage deepened to 10–17 items each) with real MRS
+  descriptions, units and rates harvested from the uploaded BOQ, so each generated project's
+  Bill of Quantities reads like the real document while still totalling share × contract value.
+- Web 297 (45 files); server 9; typecheck clean; both builds green.
+
 2026-06-22 — 20-project detailed seed (from real F-14/F-15 BOQ + baseline) + itemwise IPC/RAR fix
 - Distilled the uploaded F-14/F-15 BOQ (MRS 2nd Bi-Annual, Rs. 19.58 bn) into data/seed/
   catalog.ts: the real 12-bill structure with each bill's share of contract value, plus an

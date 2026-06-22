@@ -1,6 +1,74 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-22 — Backend cutover verification + commercial docs pass
+- Established that there is no per-entity backend to "wire": the app runs one
+  LocalDataProvider over a pluggable KvStore; api mode swaps in RemoteKvStore, which
+  round-trips every document through /api/state (JSONB in fnpc.app_doc). New commercial
+  entities therefore already persist server-side with no new routes or migrations.
+- Locked that in with tests: data/apiMode.test.ts now creates variations, bank guarantees
+  and escalation indices through the remote store and re-hydrates a fresh provider to prove
+  they survive a session; server/test/docstore.test.ts round-trips the commercial keys as
+  JSONB docs. Documented the legacy/vestigial status of ApiDataProvider's bespoke endpoints
+  in a header comment so nobody tries to "wire" dead code.
+- Docs: new docs/COMMERCIAL_MODULE.md — a consolidated feature guide (sub-tab map, the
+  BoQ→distribution→execution→billing→reconciliation spine, every domain engine, variations
+  & revised contract value, EVM + portfolio, alerts, calendar, certificates, RBAC, and the
+  persistence model) plus a strategic-enhancements summary appended to docs/ENHANCEMENTS.md.
+- Web 289 (43 files); server 9; typecheck clean; both builds green.
+
+2026-06-22 — Strategic #7b: RBAC gating across RAR / EPC / Variation
+- Gave the RAR and Variation pipelines a responsible role per transition (RAR: submit=QS,
+  verify/approve=PM, mark-for-payment/pay=FM; Variation: submit=QS, recommend=PM,
+  approve=PD). EPC already rides the IPC pipeline's roles.
+- Every pipeline advance button across IPC, RAR, EPC and Variations is now gated by the
+  acting role via can(): blocked steps are disabled with a "Requires <role>" tooltip while
+  the steps that role owns stay live (e.g. acting as Finance, a RAR can't be verified but
+  can be marked-for-payment). Two new UI tests cover RAR + Variation gating.
+- Completes the client-side RBAC story (foundation in #7a). Remaining for full #7: real
+  server/Neon cutover of the stubbed Api routes + replacing the dev role switcher with
+  real sign-in. Web 287 (43 files); server 8; typecheck clean; both builds green.
+
+2026-06-18 — Strategic #7a: RBAC foundation (role-gated actions)
+- New Role context (state/Role.tsx): an acting-role (ROLE_LABEL key or 'admin')
+  persisted to localStorage, with a can(required) helper (admin is unrestricted).
+  Wired RoleProvider into the app shell above the routes; default 'admin' so existing
+  flows/tests are unaffected until a role is chosen.
+- Header role switcher + badge (dev stand-in for real X-User auth): pick Admin / Project
+  Manager / Finance Manager / Project Director / Manager Contracts and the badge shows
+  who you're acting as.
+- First enforcement: the IPC pipeline advance button is now gated by the transition's
+  responsible role (transitionRole) — e.g. acting as Finance, the PM-only "Submit to
+  client" step is disabled with a "Requires Project Manager" tooltip. UI test covers it.
+  Next: extend gating to RAR/EPC/Variation transitions and the real server/Neon cutover.
+  Web 285 (43 files); server 8; typecheck clean; both builds green.
+
+2026-06-18 — Strategic #6: PDF certificate generation
+- New pure certificate.ts domain (ipcCertificate / rarCertificate / epcCertificate):
+  builds a structured certificate model — parties (NLC → client / subcontractor),
+  ref/date/period, BoQ line items, deduction waterfall and net — from a document +
+  project context. Unit-tested.
+- New certificatePdf.ts: renders that model to a formatted A4 PDF via jsPDF (added as a
+  dependency, dynamic-imported so it lands in its own lazy 356 kB chunk and never touches
+  the main bundle or tests). NLC letterhead, metadata grid, line-item table, gross →
+  deductions → net totals, and dual signature blocks (QS / Resident Engineer).
+- "PDF" action added to every IPC and RAR register row (one-click download). Browser-only
+  guard keeps it inert under jsdom. Domain + UI tests. Web 284 (43 files); server 8;
+  typecheck clean; both builds green. NOTE: run npm install after pulling (new jspdf dep).
+
+2026-06-18 — Strategic #5: Retention & BG-expiry calendar
+- New calendar.ts domain (commercialCalendar/groupByHorizon): a forward timeline of
+  bank-guarantee expiries (active BGs with a date) and scheduled retention releases
+  (50% at substantial completion = project completion date, 50% after a 365-day DLP),
+  each with days-until and a severity horizon (Overdue / Next 30 / Next 90 / Later).
+  today injectable for tests.
+- New Calendar Commercial sub-tab: KPIs (Due in 30 days incl. overdue count, Next 90,
+  value in next 30 days, total scheduled) and a horizon-grouped event list — each row
+  shows the icon, date, title/detail, days-until and amount, and drills into Advances
+  or Retention. Seeded commencement/completion dates on the flagship projects so
+  retention-release dates populate.
+- Domain + UI tests. Web 281 (43 files); server 8; typecheck clean; both builds green.
+
 2026-06-18 — Strategic #4: Coverage health & alerts
 - New alerts.ts domain (commercialAlerts/alertCounts) that aggregates health signals
   from existing engines: over-claimed contractors (perContractorRows), critically/

@@ -57,4 +57,17 @@ describe('docstore', () => {
     const all = [...table.keys()].sort();
     expect(all).toEqual(['alloc:p1', 'overheads:p1']);
   });
+
+  it('round-trips commercial entities (variations / guarantees / escalation) as JSONB docs', async () => {
+    const { q } = fakeDb();
+    const store = makeDocStore(q);
+    const vos = [{ id: 'vo-1', voNo: 'VO-01', type: 'addition', amount: 185_000_000, status: 'approved' }];
+    await store.set('nlc-ecc.variations.proj-f14f15', vos);
+    await store.set('nlc-ecc.bankguarantees.proj-f14f15', [{ bgNo: 'BG-1', amount: 500, status: 'active' }]);
+    await store.set('nlc-ecc.escindices.proj-f14f15', [{ label: 'Steel', weight: 0.3, baseIndex: 100, currentIndex: 120 }]);
+    expect(await store.get('nlc-ecc.variations.proj-f14f15', [])).toEqual(vos);
+    const all = await store.list();
+    expect(Object.keys(all)).toContain('nlc-ecc.bankguarantees.proj-f14f15');
+    expect(Object.keys(all)).toContain('nlc-ecc.escindices.proj-f14f15');
+  });
 });

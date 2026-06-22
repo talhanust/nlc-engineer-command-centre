@@ -22,3 +22,15 @@
 10. ~~Project salients editor + access matrix~~ — DONE (executive tab + Settings).
 
 - 2026-06-15: Project-creation form simplified (code + contract dates + CA amount, no % plan/achieved); interactive Leaflet/OSM maps with a location picker and per-level HQ/PD HQ/project maps.
+
+## Strategic enhancements (commercial) — 2026-06
+
+All shipped, gated and journaled. Full reference: `docs/COMMERCIAL_MODULE.md`.
+
+1. ~~Variation / change-order register~~ — DONE. Revised contract value flows into the dashboard tile, retention cap and EVM budget.
+2. ~~Earned-value (EVM) layer~~ — DONE. SPI/CPI/EAC/VAC bridging physical progress and financial actuals.
+3. ~~Portfolio earned-value roll-up~~ — DONE. Portfolio SPI + per-project schedule table with drill-through on the node dashboard.
+4. ~~Coverage health & alerts~~ — DONE. Over-claimed contractors, breached aging and BG expiry surfaced as a drill-through banner.
+5. ~~Retention & BG-expiry calendar~~ — DONE. Forward horizon view of guarantee expiries and retention releases.
+6. ~~PDF certificates~~ — DONE. One-click IPC/RAR certificates via lazy-loaded jsPDF.
+7. RBAC — foundation + full pipeline gating DONE (role context, header switcher, IPC/RAR/EPC/Variation gating). Open: replace the dev role switcher with real SSO. Backend persistence parity for the new entities is verified (`apiMode.test.ts`, `docstore.test.ts`) — no new routes or migrations needed; everything rides the `/api/state` JSONB store.

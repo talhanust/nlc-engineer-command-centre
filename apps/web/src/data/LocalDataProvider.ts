@@ -468,7 +468,7 @@ export class LocalDataProvider implements DataProvider {
     const contract = input.contractId ? contracts.find((c) => c.id === input.contractId) : undefined;
     const retentionPct = Math.min(5, contract?.retentionPct ?? DEFAULT_CONTRACT_RETENTION_PCT);
     const cfg = readJson<CommercialConfig>(commCfgKey(projectId), () => ({ ...DEFAULT_COMMERCIAL_CONFIG }));
-    const netPayable = computeNet(input.gross, { retentionPct, incomeTaxPct: cfg.incomeTaxPct, gstPct: cfg.gstPct });
+    const netPayable = computeNet(input.gross, { retentionPct, incomeTaxPct: cfg.rarIncomeTaxPct, gstPct: cfg.rarGstPct });
     const rar: Rar = {
       id: `rar-${projectId}-${seq}`,
       projectId,
@@ -669,6 +669,8 @@ export class LocalDataProvider implements DataProvider {
       ipcRetentionPct: clampPct(config.ipcRetentionPct),
       incomeTaxPct: clampPct(config.incomeTaxPct),
       gstPct: clampPct(config.gstPct),
+      rarIncomeTaxPct: clampPct(config.rarIncomeTaxPct),
+      rarGstPct: clampPct(config.rarGstPct),
     };
     writeJson(commCfgKey(projectId), clean);
     audit(projectId, 'config', 'Commercial', 'deductions', `ret ${clean.ipcRetentionPct}% · tax ${clean.incomeTaxPct}% · gst ${clean.gstPct}%`);

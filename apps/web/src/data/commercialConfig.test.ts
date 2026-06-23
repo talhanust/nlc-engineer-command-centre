@@ -14,7 +14,7 @@ describe('commercial config & retention/tax', () => {
 
   it('defaults the project commercial config and persists edits (clamped)', async () => {
     expect(await p.getCommercialConfig(F)).toEqual(DEFAULT_COMMERCIAL_CONFIG);
-    const saved = await p.setCommercialConfig(F, { ipcRetentionPct: 8, incomeTaxPct: 6.5, gstPct: 250 });
+    const saved = await p.setCommercialConfig(F, { ipcRetentionPct: 8, incomeTaxPct: 6.5, gstPct: 250, rarIncomeTaxPct: 4, rarGstPct: 0 });
     expect(saved.ipcRetentionPct).toBe(8);
     expect(saved.incomeTaxPct).toBe(6.5);
     expect(saved.gstPct).toBe(100); // clamped to 100
@@ -30,7 +30,7 @@ describe('commercial config & retention/tax', () => {
   });
 
   it('applies contract retention + project taxes to a generated RAR net', async () => {
-    await p.setCommercialConfig(F, { ipcRetentionPct: 10, incomeTaxPct: 7, gstPct: 1 });
+    await p.setCommercialConfig(F, { ipcRetentionPct: 10, incomeTaxPct: 7, gstPct: 0, rarIncomeTaxPct: 7, rarGstPct: 1 });
     const contracts = await p.listContracts(F);
     const c = contracts[0];
     await p.setContractRetention(F, c.id, 4);

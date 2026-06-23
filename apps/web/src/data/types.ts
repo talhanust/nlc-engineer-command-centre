@@ -211,16 +211,22 @@ export interface Contract {
 }
 
 /**
- * Per-project commercial deductions applied when certifying client billing.
- * IPC net = gross − retention − income tax − GST/stamp. All editable per project.
+ * Per-project commercial deductions. IPCs/EPCs are revenue inflow (client billing);
+ * RARs are expenditure (subcontractor payment), so they carry their own tax rates.
+ * IPC net = gross − ipc retention − income tax − GST/stamp.
+ * RAR net = gross − contract retention − rar income tax − rar GST/stamp.
  */
 export interface CommercialConfig {
   /** Retention withheld by the client from each IPC (% of IPC gross). */
   ipcRetentionPct: number;
-  /** Income tax withheld at source on each IPC/RAR (% of gross). */
+  /** Income tax withheld at source on each IPC (% of gross). */
   incomeTaxPct: number;
-  /** GST / stamp duty line (% of gross). */
+  /** GST / stamp duty on IPCs (% of gross). */
   gstPct: number;
+  /** Income tax withheld from subcontractor RARs (% of gross). */
+  rarIncomeTaxPct: number;
+  /** GST / stamp on subcontractor RARs (% of gross). */
+  rarGstPct: number;
 }
 
 export interface RarLine { boqItemId: string; qty: number; rate: number; amount: number }

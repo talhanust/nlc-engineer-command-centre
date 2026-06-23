@@ -53,28 +53,40 @@ export function applyAction(status: IpcStatus, action: string): IpcStatus | null
 }
 
 // Deductions. Demo defaults; production reads these from commercial_settings.
-export const DEFAULT_DEDUCTIONS = { retentionPct: 10, incomeTaxPct: 7 };
+export interface Deductions { retentionPct: number; incomeTaxPct: number; gstPct: number }
+export const DEFAULT_DEDUCTIONS: Deductions = { retentionPct: 10, incomeTaxPct: 7, gstPct: 0 };
 
-export function computeNet(gross: number, d = DEFAULT_DEDUCTIONS): number {
-  return gross * (1 - (d.retentionPct + d.incomeTaxPct) / 100);
+/** Per-project commercial config defaults (client-side IPC deductions). */
+export const DEFAULT_COMMERCIAL_CONFIG = { ipcRetentionPct: 10, incomeTaxPct: 7, gstPct: 0 };
+/** Default subcontractor retention (% of each RAR gross), capped at 5% of contract value. */
+export const DEFAULT_CONTRACT_RETENTION_PCT = 5;
+
+/** Map a project's CommercialConfig to the IPC deduction rates. */
+export function deductionsFromConfig(cfg: { ipcRetentionPct: number; incomeTaxPct: number; gstPct: number }): Deductions {
+  return { retentionPct: cfg.ipcRetentionPct, incomeTaxPct: cfg.incomeTaxPct, gstPct: cfg.gstPct };
+}
+
+export function computeNet(gross: number, d: Deductions = DEFAULT_DEDUCTIONS): number {
+  return gross * (1 - (d.retentionPct + d.incomeTaxPct + (d.gstPct ?? 0)) / 100);
 }
 
 export interface IpcDeductions {
-  gross: number; retention: number; incomeTax: number; advanceRecovery: number; net: number;
-  retentionPct: number; incomeTaxPct: number;
+  gross: number; retention: number; incomeTax: number; gst: number; advanceRecovery: number; net: number;
+  retentionPct: number; incomeTaxPct: number; gstPct: number;
 }
 
-/** Deduction waterfall for an IPC's gross: retention + income tax (+ optional advance recovery). */
+/** Deduction waterfall for an IPC's gross: retention + income tax + GST (+ optional advance recovery). */
 export function ipcDeductionBreakdown(
   gross: number,
-  opts?: { advanceRecovery?: number; d?: typeof DEFAULT_DEDUCTIONS },
+  opts?: { advanceRecovery?: number; d?: Deductions },
 ): IpcDeductions {
   const d = opts?.d ?? DEFAULT_DEDUCTIONS;
   const retention = +(gross * d.retentionPct / 100).toFixed(2);
   const incomeTax = +(gross * d.incomeTaxPct / 100).toFixed(2);
+  const gst = +(gross * (d.gstPct ?? 0) / 100).toFixed(2);
   const advanceRecovery = opts?.advanceRecovery ?? 0;
-  const net = +(gross - retention - incomeTax - advanceRecovery).toFixed(2);
-  return { gross, retention, incomeTax, advanceRecovery, net, retentionPct: d.retentionPct, incomeTaxPct: d.incomeTaxPct };
+  const net = +(gross - retention - incomeTax - gst - advanceRecovery).toFixed(2);
+  return { gross, retention, incomeTax, gst, advanceRecovery, net, retentionPct: d.retentionPct, incomeTaxPct: d.incomeTaxPct, gstPct: d.gstPct ?? 0 };
 }
 
 /** Statuses at which an IPC line counts as client-vetted (value receivable). */

@@ -1,6 +1,66 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-23 — Fix: flagship BOQ now totals the contract value; feat: saved register views
+- BUG (reported): F-14/F-15's Bill of Quantities summed only ~2.2 bn against a ~19.28 bn
+  contract because the flagship carried just 8 hand-authored sample rows. flagshipBoq() now
+  keeps those 8 curated, reference-stable rows (codes I-1xx/2xx/3xx that the hand IPCs/RARs and
+  the test-suite depend on) and tops them up with catalogue-generated items scaled to the
+  balance, so the BOQ totals the full contract (verified 19.282 bn vs 19.284 bn). Item ids stay
+  boq-proj-f14f15-N so the hand-linked lines (-0..-5) still resolve. Seed version bumped to
+  v3-flagship-boq; reconcile drops any stale cached flagship BOQ so existing users regenerate.
+  Updated the BOQ count assertions to be quantity-agnostic.
+- Saved views: new state/savedViews.ts (named filter snapshots persisted as a UI pref, scoped
+  per register+project) + components/SavedViews.tsx (chips to apply/delete a view + inline
+  "★ Save view"). Wired into the RAR register filter bar (contractor + stage). Pin e.g.
+  "Overdue" or "FWO only" and re-apply in one click. Tests cover the store roundtrip + the
+  save→apply UI flow. Web 316 (49 files); server 9; typecheck clean; both builds green.
+
+2026-06-22 — Branded one-click export (Excel + PDF) across registers
+- New reusable export stack: components/tablePdf.ts renders any register to a branded,
+  paginated A4 landscape PDF via jsPDF (lazy-loaded) — NLC / Engineer Command Centre header,
+  title + subtitle + meta line, zebra rules, column alignment/width control, and a footer with
+  generated-timestamp and page numbers. components/ExportMenu.tsx is a drop-in dropdown offering
+  Excel (.xlsx, via the existing downloadWorkbook) and PDF, disabled when there are no rows and
+  closing on outside-click.
+- Wired ExportMenu into the BOQ, IPC, RAR and Contracts registers (replacing the old
+  Excel-only buttons; the RAR export now also carries the governing contract number, and BOQ/IPC
+  carry totals + counts in the PDF meta line). One consistent ⭳ Export affordance per register.
+- New ExportMenu test (disabled-empty + opens to Excel/PDF options); updated the RAR export
+  assertion. Web 313 (48 files); server 9; typecheck clean; both builds green.
+
+2026-06-22 — Excel/CSV BOQ importer with sheet picker, header detection and column mapping
+- Upgraded the BOQ Import dialog from paste-only into a real spreadsheet importer. New
+  domain/xlsxImport.ts (SheetJS lazy-loaded as its own 429 kB chunk, kept out of the main
+  bundle) reads .xlsx/.xls/.csv into per-sheet grids; detectHeaderRow() skips title/preamble
+  rows, autoMapColumns() matches Bill/Code/Description/Unit/Qty/Rate by header aliases, and
+  gridToRows() builds BOQ rows — carrying a bill value down across grouped rows and skipping
+  sub-total / non-numeric lines.
+- BoqImport.tsx now has a segmented Upload-file / Paste toggle. File mode: choose file → pick
+  sheet (if multiple) → adjust the detected header row → review/override the six column
+  mappings via dropdowns → live preview (count + total) → Replace BOQ. Paste mode retained.
+  Turns a seeded project into a real-data one straight from the client's workbook.
+- New domain test covers header detection, auto-mapping, bill carry-down and total-row skipping
+  on a messy realistic grid; updated the existing paste test for the new tab. Web 311 (47 files);
+  server 9; typecheck clean; both builds green.
+
+2026-06-22 — Currency unit now updates the whole app; VO supersedes BOQ visibly; live activity timeline
+- Currency: the root <App/> now subscribes to the selected unit (useMoneyFormat), so switching
+  Rs Mn / Rs Bn / Rs in Settings re-renders the entire tree at once — every table, KPI and chart
+  reflects the new unit immediately (previously only the six subscribed charts updated, so most
+  values looked frozen). Confirmed no "Cr" remains anywhere in display code (only money.ts units
+  mn/bn/rs; the few stray "Cr" mentions are code comments, not UI).
+- Variation Orders → BOQ: confirmed the line-builder (quantity change, rate change, item addition,
+  item omission) and the approve-supersedes-BOQ flow are wired end-to-end, and made the
+  supersession visible: applyVariationToBoq now tags each edited item with revisedByVo, the BOQ
+  register shows a "VO-xx" pill on revised items and an "added" pill on items a VO introduced.
+  New domain test covers all four line kinds, the signed deltas, the no-op case and type inference.
+- Professional improvement: upgraded the per-document Audit trail (already embedded in the IPC,
+  RAR, Payment, PO and Demand modals) into a live vertical Activity timeline with action icons and
+  relative timestamps that refreshes on nlc:audit events — a modern activity-log feel across every
+  document, at zero new plumbing.
+- Web 307 (46 files); server 9; typecheck clean; both builds green.
+
 2026-06-22 — Contracts register + RAR↔contract linkage, gallery uploads, editable EPC ratios
 - New Contract model + Contracts Register sub-tab: each subcontract package carries a unique
   number (NLC/<proj>/SC-0N), contractor, scope bills, value and status (draft→awarded→

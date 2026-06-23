@@ -3,6 +3,7 @@ import { useData } from '../../data/DataContext';
 import { useToast } from '../../components/Toast';
 import { formatMoney } from '../../domain/money';
 import { SkeletonRows } from '../../components/Skeleton';
+import { ExportMenu } from '../../components/ExportMenu';
 import type { Contract, ContractStatus, Subcontractor } from '../../data/types';
 
 const STATUS_LABEL: Record<ContractStatus, string> = {
@@ -59,6 +60,17 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
           <h3>Contracts Register</h3>
           <p className="muted small" style={{ margin: '2px 0 0' }}>Subcontract packages with unique numbers. RARs are billed against a contract.</p>
         </div>
+        <ExportMenu
+          filename={`${projectId.replace('proj-', '')}-contracts`}
+          title="Contracts Register"
+          subtitle="NLC subcontract packages"
+          meta={[['Contracts', String(contracts.length)], ['Total contracted', formatMoney(totals.value)]]}
+          columns={[
+            { label: 'Contract No' }, { label: 'Title' }, { label: 'Contractor' }, { label: 'Bills' },
+            { label: 'Value', align: 'right' }, { label: 'Status' }, { label: 'Award date' },
+          ]}
+          rows={contracts.map((c) => [c.contractNo, c.title, subName(c.subcontractorId), c.scopeBills.join(' '), Math.round(c.value), STATUS_LABEL[c.status], c.awardDate ?? ''])}
+        />
       </div>
 
       <div className="kpi-row" aria-label="Contracts summary">

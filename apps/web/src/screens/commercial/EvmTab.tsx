@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useMoneyFormat } from '../../state/useMoneyFormat';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
 import { useData } from '../../data/DataContext';
-import { formatMoney, toNum } from '../../domain/money';
+import { formatMoney, toNum, formatAxis } from '../../domain/money';
 import { evm, indexStatus, SCHEDULE_LABEL, COST_LABEL, SELF_COST_FACTOR } from '../../domain/evm';
 import { revisedContractValue } from '../../domain/variations';
 import { ChartCard, chartPalette } from '../../components/chartUtils';
 import { SkeletonRows } from '../../components/Skeleton';
 import type { BoqItem, Distribution, Rar, Variation } from '../../data/types';
 
-const cr = (n: number) => `${(n / 1e7).toFixed(1)} Cr`;
+const cr = (n: number) => formatAxis(n);
 const money = (n: number) => formatMoney(n);
 const signed = (n: number) => `${n >= 0 ? '+' : '−'} ${formatMoney(Math.abs(n))}`;
 
 export function EvmTab({ projectId }: { projectId: string }) {
+  useMoneyFormat();
   const { provider, projects } = useData();
   const [boq, setBoq] = useState<BoqItem[]>([]);
   const [dists, setDists] = useState<Distribution[]>([]);

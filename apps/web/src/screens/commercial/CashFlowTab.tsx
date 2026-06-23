@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useMoneyFormat } from '../../state/useMoneyFormat';
 import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { useData } from '../../data/DataContext';
-import { formatMoney } from '../../domain/money';
+import { formatMoney, formatAxis } from '../../domain/money';
 import { commercialCashflow, cashflowTotals } from '../../domain/commercialcashflow';
 import { ChartCard, chartPalette } from '../../components/chartUtils';
 import type { Ipc, Rar } from '../../data/types';
 
-const cr = (n: number) => `${(n / 1e7).toFixed(1)} Cr`;
+const cr = (n: number) => formatAxis(n);
 const money = (n: number) => (n !== 0 ? formatMoney(n) : '0');
 
 export function CashFlowTab({ projectId }: { projectId: string }) {
+  useMoneyFormat();
   const { provider } = useData();
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
   const [rars, setRars] = useState<Rar[]>([]);

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { RarDetailModal } from '../../components/RarDetailModal';
-import { downloadWorkbook } from '../../components/xlsxExport';
+import { ExportMenu } from '../../components/ExportMenu';
+import { SavedViews } from '../../components/SavedViews';
 import { formatMoney } from '../../domain/money';
 import { nextRarTransition, RAR_STATUS_LABEL, RAR_PIPELINE } from '../../domain/rar';
 import { useSort } from '../../components/useSort';
@@ -11,7 +12,7 @@ import { useRole } from '../../state/Role';
 import { downloadCertificatePdf } from '../../components/certificatePdf';
 import { SortTh } from '../../components/SortTh';
 import { useBulkSelection } from '../../components/useBulkSelection';
-import type { Rar, Subcontractor, Ipc, RarIpcLink, BoqItem } from '../../data/types';
+import type { Rar, Subcontractor, Ipc, RarIpcLink, BoqItem, Contract } from '../../data/types';
 import { useToast } from '../../components/Toast';
 
 export function RarRegister({ projectId }: { projectId: string }) {
@@ -24,6 +25,7 @@ export function RarRegister({ projectId }: { projectId: string }) {
   const [subs, setSubs] = useState<Subcontractor[]>([]);
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
   const [links, setLinks] = useState<RarIpcLink[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
   const [fSub, setFSub] = useState('all');
   const [fStage, setFStage] = useState('all');
   const sel = useBulkSelection();
@@ -36,13 +38,15 @@ export function RarRegister({ projectId }: { projectId: string }) {
       provider.listIpcs(projectId),
       provider.listRarIpcLinks(projectId),
       provider.listBoq(projectId),
-    ]).then(([r, s, i, l, b]) => {
+      provider.listContracts(projectId),
+    ]).then(([r, s, i, l, b, c]) => {
       if (!alive) return;
       setRars(r);
       setSubs(s);
       setIpcs(i);
       setLinks(l);
       setBoq(b);
+      setContracts(c);
     });
     return () => {
       alive = false;
@@ -107,11 +111,20 @@ export function RarRegister({ projectId }: { projectId: string }) {
           <p className="muted small" style={{ margin: '2px 0 0' }}>All Running Account Receipts issued · 6-stage pipeline (draft → validated → verified → approved → marked → paid).</p>
         </div>
         <div className="head-tools">
-          <button className="btn-ghost" disabled={rars.length === 0}
-            onClick={() => void downloadWorkbook([{ name: 'RAR register', aoa: [
-              ['RAR', 'Period', 'Subcontractor', 'Status', 'Gross', 'Net payable'],
-              ...rars.map((r) => [r.rarNo, r.period, subName(r.subcontractorId), r.status, Math.round(r.gross), Math.round(r.netPayable)]),
-            ] }], `${projectId}-rar-register.xlsx`)}>Export Excel</button>
+          <ExportMenu
+            filename={`${projectId.replace('proj-', '')}-rar-register`}
+            title="RAR Register"
+            subtitle="Subcontractor & labour billing"
+            meta={[['RARs', String(rars.length)], ['Gross', formatMoney(totalGross)], ['Paid', formatMoney(totalPaid)]]}
+            columns={[
+              { label: 'RAR' }, { label: 'Period' }, { label: 'Contract' }, { label: 'Subcontractor' },
+              { label: 'Status' }, { label: 'Gross', align: 'right' }, { label: 'Net payable', align: 'right' },
+            ]}
+            rows={rars.map((r) => [
+              r.rarNo, r.period, contracts.find((c) => c.id === r.contractId)?.contractNo ?? '—',
+              subName(r.subcontractorId), RAR_STATUS_LABEL[r.status], Math.round(r.gross), Math.round(r.netPayable),
+            ])}
+          />
         </div>
       </div>
 
@@ -126,6 +139,11 @@ export function RarRegister({ projectId }: { projectId: string }) {
           {RAR_PIPELINE.map((st) => <option key={st} value={st}>{RAR_STATUS_LABEL[st]}</option>)}
         </select>
         <span className="muted small filter-count">{shown.length} RARs · GROSS {formatMoney(totalGross)} · PAID {formatMoney(totalPaid)}</span>
+        <SavedViews
+          scope={`rar:${projectId}`}
+          current={{ sub: fSub, stage: fStage }}
+          onApply={(f) => { setFSub(f.sub ?? 'all'); setFStage(f.stage ?? 'all'); }}
+        />
       </div>
 
       {sel.count > 0 && (

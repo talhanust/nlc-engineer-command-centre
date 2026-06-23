@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, Fragment } from 'react';
 import { useData } from '../../data/DataContext';
-import { downloadWorkbook } from '../../components/xlsxExport';
+import { ExportMenu } from '../../components/ExportMenu';
 import { formatMoney } from '../../domain/money';
 import { nextTransition, IPC_STATUS_LABEL, computeNet } from '../../domain/ipc';
 import { computeDeductions, DEFAULT_DEDUCTION_SETTINGS } from '../../domain/deductions';
@@ -107,10 +107,17 @@ export function IpcRegister({ projectId }: { projectId: string }) {
         <h3>IPC register</h3>
         <div className="head-tools">
           <span className="muted">{ipcs.length} certificates</span>
-          <button className="btn-ghost" onClick={() => void downloadWorkbook([{ name: 'IPC register', aoa: [
-            ['IPC', 'Period', 'Status', 'Gross', 'Net payable', 'Cumulative'],
-            ...ipcs.map((i) => [i.ipcNo, i.period, i.status, Math.round(i.gross), Math.round(i.netPayable), Math.round(i.cumGross)]),
-          ] }], `${projectId}-ipc-register.xlsx`)}>Export Excel</button>
+          <ExportMenu
+            filename={`${projectId.replace('proj-', '')}-ipc-register`}
+            title="IPC Register"
+            subtitle="Interim Payment Certificates (FGEHA → NLC)"
+            meta={[['Certificates', String(ipcs.length)]]}
+            columns={[
+              { label: 'IPC' }, { label: 'Period' }, { label: 'Status' },
+              { label: 'Gross', align: 'right' }, { label: 'Net payable', align: 'right' }, { label: 'Cumulative', align: 'right' },
+            ]}
+            rows={ipcs.map((i) => [i.ipcNo, i.period, IPC_STATUS_LABEL[i.status], Math.round(i.gross), Math.round(i.netPayable), Math.round(i.cumGross)])}
+          />
         </div>
       </div>
 

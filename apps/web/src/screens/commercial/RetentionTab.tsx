@@ -1,18 +1,20 @@
 import { useEffect, useState } from 'react';
+import { useMoneyFormat } from '../../state/useMoneyFormat';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
 import { useData } from '../../data/DataContext';
-import { formatMoney, toNum } from '../../domain/money';
+import { formatMoney, toNum, formatAxis } from '../../domain/money';
 import { retentionTimeline, retentionSummary, type RetentionPoint } from '../../domain/retention';
 import { revisedContractValue } from '../../domain/variations';
 import { ChartCard, chartPalette } from '../../components/chartUtils';
 import type { Ipc, Variation } from '../../data/types';
 
-const cr = (n: number) => `${(n / 1e7).toFixed(1)} Cr`;
+const cr = (n: number) => formatAxis(n);
 const money = (n: number) => (n > 0 ? formatMoney(n) : '0');
 
 export function RetentionTab({ projectId }: { projectId: string }) {
+  useMoneyFormat();
   const { provider, projects } = useData();
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
   const [vos, setVos] = useState<Variation[]>([]);

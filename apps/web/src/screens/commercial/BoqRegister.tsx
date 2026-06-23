@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
-import { downloadWorkbook } from '../../components/xlsxExport';
+import { ExportMenu } from '../../components/ExportMenu';
 import { formatMoney } from '../../domain/money';
 import {
   buildBoqRows, groupBoq, filterBoqRows, boqTotals,
@@ -56,11 +56,19 @@ export function BoqRegister({ projectId }: { projectId: string }) {
         </div>
         <div className="muted">
           <button className="btn-ghost" disabled={locked} title={locked ? 'BOQ is locked — raise a variation order to edit' : ''} onClick={() => setImporting(true)}>Import</button>
-          <button className="btn-ghost" style={{ marginLeft: 6 }} disabled={items.length === 0}
-            onClick={() => void downloadWorkbook([{ name: 'BOQ', aoa: [
-              ['Bill', 'Section', 'Code', 'Description', 'Unit', 'Contract Qty', 'Rate', 'Amount', 'Mode', 'Executed Qty', 'Executed Value', '% Complete'],
-              ...allRows.map((r) => [r.item.billNo, r.item.section ?? '', r.item.code, r.item.description, r.item.unit, r.item.qty, r.item.rate, Math.round(r.item.amount), MODE_LABEL[r.mode], r.executedQty, Math.round(r.executedValue), `${Math.round(r.pct * 100)}%`]),
-            ] }], `${projectId}-boq.xlsx`)}>Export BOQ (XLSX)</button>
+          <span style={{ marginLeft: 6, display: 'inline-block' }}>
+            <ExportMenu
+              filename={`${projectId.replace('proj-', '')}-boq`}
+              title="Bill of Quantities"
+              meta={[['Items', String(allRows.length)], ['Total', formatMoney(grand.amount)]]}
+              columns={[
+                { label: 'Bill' }, { label: 'Section' }, { label: 'Code' }, { label: 'Description' }, { label: 'Unit' },
+                { label: 'Contract Qty', align: 'right' }, { label: 'Rate', align: 'right' }, { label: 'Amount', align: 'right' },
+                { label: 'Mode' }, { label: 'Executed Qty', align: 'right' }, { label: 'Executed Value', align: 'right' }, { label: '% Complete', align: 'right' },
+              ]}
+              rows={allRows.map((r) => [r.item.billNo, r.item.section ?? '', r.item.code, r.item.description, r.item.unit, r.item.qty, r.item.rate, Math.round(r.item.amount), MODE_LABEL[r.mode], r.executedQty, Math.round(r.executedValue), `${Math.round(r.pct * 100)}%`])}
+            />
+          </span>
         </div>
       </div>
 
@@ -145,7 +153,7 @@ function BoqSection({ section, rows }: { section: string; rows: BoqRow[] }) {
       {rows.map((r) => (
         <tr key={r.item.id}>
           <td className="mono small">{r.item.code}</td>
-          <td>{r.item.description}</td>
+          <td>{r.item.description}{r.item.revisedByVo && <span className="status-pill st-vetted" style={{ marginLeft: 6, fontSize: 10 }} title={`Revised by approved ${r.item.revisedByVo}`}>{r.item.revisedByVo}</span>}{r.item.section?.startsWith('VO ') && !r.item.revisedByVo && <span className="status-pill st-paid" style={{ marginLeft: 6, fontSize: 10 }} title="Added by variation">added</span>}</td>
           <td className="small">{r.item.unit}</td>
           <td className="num">{num(r.item.qty)}</td>
           <td className="num">{num(r.item.rate)}</td>

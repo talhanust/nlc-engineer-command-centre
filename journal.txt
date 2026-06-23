@@ -1,6 +1,29 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-23 — Complete IPC/RAR measurement sheets, contractor BOQ, and RAR-specific taxes
+- IPC detail now shows the COMPLETE certificate: a Previous · This IPC · Cumulative measurement
+  sheet across every BOQ item (new domain/measurement.ts), with BOQ qty, balance and % columns,
+  totals (previous/this/cumulative gross, % of BOQ), a "billed this IPC only" toggle, and KPI
+  header (this/previous/cumulative/net/%). Deductions now read the project's CommercialConfig
+  (retention/income tax/GST) instead of the old hard-coded settings. Wide modal + horizontal scroll.
+- RAR detail mirrors this against the CONTRACTOR's scope BOQ (items in the contract's scope bills),
+  with previous = peer RARs under the same contract; payment-chain/recoveries panels retained.
+- Separated IPC vs RAR taxes: CommercialConfig gains rarIncomeTaxPct / rarGstPct. RAR net =
+  gross − contract retention − RAR income tax − RAR GST (no IPC deductions; IPCs/EPCs are revenue
+  inflow, RARs are expenditure and are never netted against client billing — stated in the IPC
+  modal and revenue panel). Config tab now has separate "Client billing (IPC/EPC)" and
+  "Subcontractor RAR taxes" sections.
+- Contracts register: each row gains a View action opening a ContractDetailModal — the full
+  contractor Bill of Quantities (scope bills) with BOQ amount, Executed, RAR-billed, Balance and %
+  per item, header KPIs (contract value, scope value, executed, RAR-billed, retention held), a
+  "scope bills only" toggle and the RARs billed under the contract.
+- Revenue composition: billed/vetted drill-downs are client-IPC-only (RARs removed); note clarifies
+  RARs are tracked separately as expenditure.
+- Tests: measurement.test (2), ContractRarDetail.test (2), updated IPC-detail assertion to the
+  measurement sheet, config literals carry the new RAR fields. Web 329 (54 files); server 9;
+  typecheck clean; both builds green.
+
 2026-06-23 — Revenue composition + IPC/RAR → BOQ-line drill-downs
 - New 'Revenue composition' sub-tab (RevenueComposition.tsx + domain/revenue.ts) renders the gross
   revenue chain: Executed work (IPC) + Price escalation (EPC, certified separately) = Gross

@@ -1015,3 +1015,11 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .view-chip-del:hover { color: var(--rag-red); }
 .view-save-row { display: inline-flex; align-items: center; gap: 4px; }
 .view-save-row input { width: 130px; }
+
+/* Attachments list */
+.attach-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.attach-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); }
+.attach-open { flex: 1; display: flex; align-items: center; gap: 8px; border: none; background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; text-align: left; min-width: 0; }
+.attach-ic { flex: 0 0 auto; }
+.attach-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach-open:hover .attach-name { text-decoration: underline; }

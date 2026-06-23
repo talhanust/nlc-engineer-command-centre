@@ -54,7 +54,7 @@ describe('Phase 7 — governance', () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15');
     const table = await screen.findByRole('table', { name: 'Salients' });
-    expect(within(table).getByText('Client')).toBeInTheDocument();
+    expect(within(table).getByText('Scope')).toBeInTheDocument();
     await user.type(screen.getByLabelText('New salient label'), 'EOT status');
     await user.type(screen.getByLabelText('New salient value'), '45 days approved');
     await user.click(screen.getByRole('button', { name: 'Add salient' }));

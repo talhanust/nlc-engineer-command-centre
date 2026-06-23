@@ -1,6 +1,18 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-23 — Document attachments on IPCs and RARs
+- New Attachment model + provider methods (listAttachments/addAttachment/deleteAttachment across
+  interface + Local + Api stub), stored per project under nlc-ecc.attach.<pid> and scoped by
+  entity + reference. Shared domain/files.ts holds the image-downscale / read-as-dataURL / size
+  helpers (the gallery's pattern, now reusable).
+- New components/Attachments.tsx: attach measurement sheets, test certificates and approvals to a
+  document — images are downscaled, other files (PDFs etc.) accepted up to 4 MB; each row opens in
+  a new tab and can be removed with Undo. Embedded in the IPC and RAR detail modals above the
+  Activity timeline, and every add/remove is recorded in that document's audit trail.
+- Tests cover the provider roundtrip (entity/ref scoping + delete) and the size helpers.
+  Web 318 (50 files); server 9; typecheck clean; both builds green.
+
 2026-06-23 — Fix: flagship BOQ now totals the contract value; feat: saved register views
 - BUG (reported): F-14/F-15's Bill of Quantities summed only ~2.2 bn against a ~19.28 bn
   contract because the flagship carried just 8 hand-authored sample rows. flagshipBoq() now

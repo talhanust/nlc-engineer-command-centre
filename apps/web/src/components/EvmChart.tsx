@@ -1,10 +1,12 @@
+import { useMoneyFormat } from '../state/useMoneyFormat';
+import { formatAxis } from '../domain/money';
 import {
   ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import type { MonthlySeriesPoint } from '../data/types';
 import { ChartCard, chartPalette } from './chartUtils';
 
-const cr = (n: number) => `${(n / 1e7).toFixed(1)} Cr`;
+const cr = (n: number) => formatAxis(n);
 
 export interface EvmPoint { month: string; pv: number; ev: number; ac: number | null; }
 
@@ -24,6 +26,7 @@ export function buildEvm(series: MonthlySeriesPoint[], contractValue: number, co
 }
 
 export function EvmChart({ data }: { data: EvmPoint[] }) {
+  useMoneyFormat();
   const c = chartPalette();
   return (
     <ChartCard focusable title="Earned value (EVM)" subtitle="PV · EV · AC" ariaLabel="Earned value">

@@ -1,13 +1,16 @@
+import { useMoneyFormat } from '../state/useMoneyFormat';
+import { formatAxis } from '../domain/money';
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, Brush,
 } from 'recharts';
 import type { CashFlowMonth } from '../domain/finance';
 import { ChartCard, chartPalette } from './chartUtils';
 
-const cr = (n: number) => `${(n / 1e7).toFixed(1)} Cr`;
+const cr = (n: number) => formatAxis(n);
 
 /** Inflow/outflow bars + cumulative-net line. Forecast tail rendered lighter. */
 export function CashFlowChart({ months }: { months: CashFlowMonth[] }) {
+  useMoneyFormat();
   const c = chartPalette();
   return (
     <ChartCard focusable title="Cash flow & forecast" subtitle="inflow / outflow · cumulative net" ariaLabel="Cash flow">

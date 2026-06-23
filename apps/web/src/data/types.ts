@@ -71,6 +71,7 @@ export interface BoqItem {
   qty: number;
   rate: number;
   amount: number; // derived = qty * rate
+  revisedByVo?: string; // voNo of the approved variation that last revised this item
 }
 
 export type IpcStatus =
@@ -146,6 +147,21 @@ export type RarStatus = 'draft' | 'submitted' | 'verified' | 'approved' | 'marke
 export type VariationStatus = 'draft' | 'submitted' | 'recommended' | 'approved' | 'rejected';
 export type VariationType = 'addition' | 'omission' | 'substitution' | 'rate_change';
 
+/** A single BOQ change carried by a variation. */
+export type VariationLineKind = 'qty' | 'rate' | 'add' | 'omit';
+export interface VariationLine {
+  kind: VariationLineKind;
+  boqItemId?: string;        // qty / rate / omit → existing BOQ item
+  // 'add' → new BOQ item particulars
+  billNo?: string;
+  code?: string;
+  description?: string;
+  unit?: string;
+  newQty?: number;           // qty / add
+  newRate?: number;          // rate / add
+  amount: number;            // signed delta this line contributes to the contract
+}
+
 /** Variation / change-order against the contract. Signed `amount` (omissions negative). */
 export interface Variation {
   id: string;
@@ -159,6 +175,8 @@ export interface Variation {
   boqItemId?: string;
   date?: string;
   note?: string;
+  lines?: VariationLine[];
+  appliedToBoq?: boolean;    // set when an approved VO has revised the BOQ
 }
 
 export type ContractStatus = 'draft' | 'awarded' | 'in_progress' | 'completed' | 'closed';
@@ -703,7 +721,7 @@ export interface DataProvider {
   listEscalationComponents(projectId: string): Promise<EscalationComponent[]>;
   setEscalationComponents(projectId: string, components: EscalationComponent[]): Promise<void>;
   listVariations(projectId: string): Promise<Variation[]>;
-  createVariation(projectId: string, input: { title: string; type: VariationType; amount: number; boqItemId?: string; date?: string }): Promise<Variation>;
+  createVariation(projectId: string, input: { title: string; type?: VariationType; amount?: number; boqItemId?: string; date?: string; lines?: VariationLine[] }): Promise<Variation>;
   transitionVariation(projectId: string, voNo: string, action: string): Promise<Variation>;
   listContracts(projectId: string): Promise<Contract[]>;
   createContract(projectId: string, input: { title: string; subcontractorId: string; scopeBills: string[]; value: number; awardDate?: string }): Promise<Contract>;

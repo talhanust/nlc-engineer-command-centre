@@ -1,6 +1,6 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
-  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation, Contract,
+  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation, VariationLine, Contract,
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
@@ -11,7 +11,7 @@ import {
 import { itemAmount } from '../domain/boq';
 import { applyAction, computeNet, IPC_PIPELINE } from '../domain/ipc';
 import { DEFAULT_PBS_COMPONENTS, type EscalationComponent } from '../domain/escalation';
-import { applyVoAction } from '../domain/variations';
+import { applyVoAction, applyVariationToBoq, variationLinesAmount, dominantVariationType } from '../domain/variations';
 import { seedFor, type SeedProfile, type GeneratedSeed } from './seed/commercialSeed';
 import { INITIAL_BOQ_WORKFLOW, pendingBoqStage, advanceBoq, raiseVo, type BoqWorkflowState } from '../domain/boqworkflow';
 import { pendingRarStage, advanceRar, isRarPaid } from '../domain/rarchain';
@@ -132,6 +132,38 @@ const SEED_PROFILES: Record<string, SeedProfile> = Object.fromEntries(
 function gen(projectId: string): GeneratedSeed | null {
   const p = SEED_PROFILES[projectId];
   return p ? seedFor(p) : null;
+}
+
+// The flagship keeps its hand-authored, reference-stable rows (codes I-1xx/2xx/3xx,
+// which its hand IPCs/RARs and the test-suite reference) AND is topped up with
+// generated catalogue items so the Bill of Quantities totals the full contract
+// value rather than a token sample. Curated ids stay boq-proj-f14f15-0..7.
+const SEED_BOQ: Array<Omit<BoqItem, 'id' | 'projectId' | 'amount'>> = [
+  { billNo: '1', billName: 'Road Work', section: 'Earthworks', code: 'I-101', description: 'Site clearance & grubbing', unit: 'Sqm', qty: 45000, rate: 85 },
+  { billNo: '1', billName: 'Road Work', section: 'Earthworks', code: 'I-102', description: 'Common excavation', unit: 'Cum', qty: 120000, rate: 420 },
+  { billNo: '1', billName: 'Road Work', section: 'Pavement', code: 'I-103', description: 'Granular sub-base', unit: 'Cum', qty: 32000, rate: 4800 },
+  { billNo: '2', billName: 'Carpeting', section: 'Bituminous', code: 'I-201', description: 'Sub-base course (aggregate)', unit: 'Cum', qty: 38000, rate: 5400 },
+  { billNo: '2', billName: 'Carpeting', section: 'Bituminous', code: 'I-202', description: 'Dense bituminous macadam', unit: 'Cum', qty: 21000, rate: 23500 },
+  { billNo: '2', billName: 'Carpeting', section: 'Surface', code: 'I-203', description: 'Asphaltic wearing course', unit: 'Cum', qty: 14500, rate: 27800 },
+  { billNo: '3', billName: 'Structures', section: 'Culverts', code: 'I-301', description: 'RCC for box culverts', unit: 'Cum', qty: 6400, rate: 41000 },
+  { billNo: '3', billName: 'Structures', section: 'Drainage', code: 'I-302', description: 'RCC pipe culvert (1200mm)', unit: 'Rm', qty: 1800, rate: 18500 },
+];
+
+let _flagshipBoq: BoqItem[] | null = null;
+function flagshipBoq(): BoqItem[] {
+  if (_flagshipBoq) return _flagshipBoq;
+  const f = SEED.find((s) => s.id === 'proj-f14f15');
+  const cv = f ? Number(f.cv) : 19_284_461_163;
+  const curated: BoqItem[] = SEED_BOQ.map((r, i) => ({ id: `boq-proj-f14f15-${i}`, projectId: 'proj-f14f15', ...r, amount: itemAmount(r.qty, r.rate) }));
+  const curatedTotal = curated.reduce((s, b) => s + b.amount, 0);
+  // Generated catalogue items make up the balance so the BOQ totals the contract.
+  const profile: SeedProfile = {
+    id: 'proj-f14f15', cv: Math.max(0, cv - curatedTotal), billed: f ? Number(f.billed) : 0,
+    plannedPct: f ? f.planned : 62, actualPct: f ? f.actual : 58, start: DATES['proj-f14f15']?.start ?? '2025-01-01',
+  };
+  const filler = seedFor(profile).boq.map((b, k) => ({ ...b, id: `boq-proj-f14f15-${curated.length + k}` }));
+  _flagshipBoq = [...curated, ...filler];
+  return _flagshipBoq;
 }
 
 export class LocalDataProvider implements DataProvider {
@@ -565,17 +597,20 @@ export class LocalDataProvider implements DataProvider {
   async listVariations(projectId: string): Promise<Variation[]> {
     return readJson(voKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_VARIATIONS : (gen(projectId)?.variations ?? [])));
   }
-  async createVariation(projectId: string, input: { title: string; type: Variation['type']; amount: number; boqItemId?: string; date?: string }): Promise<Variation> {
+  async createVariation(projectId: string, input: { title: string; type?: Variation['type']; amount?: number; boqItemId?: string; date?: string; lines?: VariationLine[] }): Promise<Variation> {
     const all = readJson<Variation[]>(voKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_VARIATIONS : (gen(projectId)?.variations ?? [])));
     const seq = all.reduce((m, v) => Math.max(m, v.seq), 0) + 1;
+    const boq = readBoq(projectId);
+    const amount = input.lines && input.lines.length ? variationLinesAmount(input.lines, boq) : (input.amount ?? 0);
+    const type = input.lines && input.lines.length ? dominantVariationType(input.lines) : (input.type ?? 'addition');
     const vo: Variation = {
       id: `vo-${projectId}-${seq}`, projectId, voNo: `VO-${String(seq).padStart(2, '0')}`, seq,
-      title: sanitize(input.title), type: input.type, amount: input.amount, status: 'draft',
-      boqItemId: input.boqItemId, date: input.date,
+      title: sanitize(input.title), type, amount, status: 'draft',
+      boqItemId: input.boqItemId, date: input.date, lines: input.lines,
     };
     all.push(vo);
     writeJson(voKey(projectId), all);
-    audit(projectId, 'create', 'Variation', vo.voNo, `${input.amount >= 0 ? '+' : ''}PKR ${Math.round(input.amount).toLocaleString('en-PK')}`);
+    audit(projectId, 'create', 'Variation', vo.voNo, `${amount >= 0 ? '+' : ''}PKR ${Math.round(amount).toLocaleString('en-PK')}`);
     return vo;
   }
   async transitionVariation(projectId: string, voNo: string, action: string): Promise<Variation> {
@@ -583,7 +618,17 @@ export class LocalDataProvider implements DataProvider {
     const vo = all.find((v) => v.voNo === voNo);
     if (!vo) throw new Error(`Variation ${voNo} not found`);
     const next = applyVoAction(vo.status, action);
-    if (next) { vo.status = next; writeJson(voKey(projectId), all); audit(projectId, 'transition', 'Variation', vo.voNo, next); }
+    if (next) {
+      vo.status = next;
+      if (next === 'approved' && vo.lines && vo.lines.length && !vo.appliedToBoq) {
+        const revised = applyVariationToBoq(readBoq(projectId), vo);
+        writeJson(boqKey(projectId), revised);
+        vo.appliedToBoq = true;
+        audit(projectId, 'apply', 'Variation', vo.voNo, 'BOQ revised');
+      }
+      writeJson(voKey(projectId), all);
+      audit(projectId, 'transition', 'Variation', vo.voNo, next);
+    }
     return vo;
   }
   async listContracts(projectId: string): Promise<Contract[]> {
@@ -1624,7 +1669,7 @@ const projectsKey = 'nlc-ecc.projects';
 const seedVersionKey = 'nlc-ecc.seedVersion';
 // Bump when the bundled project roster / seed changes so existing cached stores
 // pick up newly-seeded projects and nodes without losing user-created data.
-const SEED_VERSION = '2026-06-22.v2-20projects';
+const SEED_VERSION = '2026-06-23.v3-flagship-boq';
 
 /** Merge any newly-seeded projects/nodes into an already-persisted store and
  *  backfill date/coordinate fields on seeded projects. Runs once per version. */
@@ -1661,6 +1706,10 @@ function reconcileSeed(): void {
       for (const n of NODES) if (!nids.has(n.id)) { exN.push(n); nchanged = true; }
       if (nchanged) writeJson(nodesKey, exN);
     }
+
+    // Flagship BOQ is now generated to the full contract value — drop any stale
+    // hand-seeded cache so it regenerates on next read.
+    try { store.removeItem(boqKey('proj-f14f15')); } catch { /* ignore */ }
 
     writeJson(seedVersionKey, SEED_VERSION);
   } catch { /* ignore */ }
@@ -1867,14 +1916,9 @@ function readBoq(projectId: string): BoqItem[] {
   } catch {
     /* ignore */
   }
-  // Seed a small BOQ for the flagship project so the register isn't empty.
+  // Generate the flagship BOQ from the catalogue scaled to its contract value.
   if (projectId === 'proj-f14f15') {
-    const seeded = SEED_BOQ.map((r, i) => ({
-      id: `boq-${projectId}-${i}`,
-      projectId,
-      ...r,
-      amount: itemAmount(r.qty, r.rate),
-    }));
+    const seeded = flagshipBoq();
     writeJson(boqKey(projectId), seeded);
     return seeded;
   }
@@ -1899,16 +1943,6 @@ function readIpcs(projectId: string): Ipc[] {
   return [];
 }
 
-const SEED_BOQ: Array<Omit<BoqItem, 'id' | 'projectId' | 'amount'>> = [
-  { billNo: '1', billName: 'Road Work', section: 'Earthworks', code: 'I-101', description: 'Site clearance & grubbing', unit: 'Sqm', qty: 45000, rate: 85 },
-  { billNo: '1', billName: 'Road Work', section: 'Earthworks', code: 'I-102', description: 'Common excavation', unit: 'Cum', qty: 120000, rate: 420 },
-  { billNo: '1', billName: 'Road Work', section: 'Pavement', code: 'I-103', description: 'Granular sub-base', unit: 'Cum', qty: 32000, rate: 4800 },
-  { billNo: '2', billName: 'Carpeting', section: 'Bituminous', code: 'I-201', description: 'Sub-base course (aggregate)', unit: 'Cum', qty: 38000, rate: 5400 },
-  { billNo: '2', billName: 'Carpeting', section: 'Bituminous', code: 'I-202', description: 'Dense bituminous macadam', unit: 'Cum', qty: 21000, rate: 23500 },
-  { billNo: '2', billName: 'Carpeting', section: 'Surface', code: 'I-203', description: 'Asphaltic wearing course', unit: 'Cum', qty: 14500, rate: 27800 },
-  { billNo: '3', billName: 'Structures', section: 'Culverts', code: 'I-301', description: 'RCC for box culverts', unit: 'Cum', qty: 6400, rate: 41000 },
-  { billNo: '3', billName: 'Structures', section: 'Drainage', code: 'I-302', description: 'RCC pipe culvert (1200mm)', unit: 'Rm', qty: 1800, rate: 18500 },
-];
 
 const SEED_IPCS: Ipc[] = [
   { id: 'ipc-proj-f14f15-1', projectId: 'proj-f14f15', ipcNo: 'IPC-01', seq: 1, period: 'Jan-2026', status: 'paid', gross: 4200000000, netPayable: computeNet(4200000000), cumGross: 4200000000, lines: [{ boqItemId: 'boq-proj-f14f15-0', qty: 27000, rate: 85, amount: 2295000 }, { boqItemId: 'boq-proj-f14f15-1', qty: 72000, rate: 420, amount: 30240000 }, { boqItemId: 'boq-proj-f14f15-2', qty: 12800, rate: 4800, amount: 61440000 }] },

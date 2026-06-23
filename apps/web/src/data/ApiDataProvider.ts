@@ -228,7 +228,7 @@ export class ApiDataProvider implements DataProvider {
   async listVariations(projectId: string): Promise<Variation[]> {
     return (await this.get<{ items: Variation[] }>(`/api/projects/${projectId}/variations`)).items;
   }
-  async createVariation(projectId: string, input: { title: string; type: Variation['type']; amount: number; boqItemId?: string; date?: string }): Promise<Variation> {
+  async createVariation(projectId: string, input: { title: string; type?: Variation['type']; amount?: number; boqItemId?: string; date?: string; lines?: import('./types').VariationLine[] }): Promise<Variation> {
     return this.send<Variation>(`/api/projects/${projectId}/variations`, 'POST', input);
   }
   async transitionVariation(projectId: string, voNo: string, action: string): Promise<Variation> {

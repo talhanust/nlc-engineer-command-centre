@@ -1,12 +1,15 @@
+import { useMoneyFormat } from '../state/useMoneyFormat';
+import { formatAxis } from '../domain/money';
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
 import { ChartCard, chartPalette } from './chartUtils';
 
-const cr = (n: number) => `${(n / 1e7).toFixed(1)} Cr`;
+const cr = (n: number) => formatAxis(n);
 
 export function DistributionDonut({ data }: { data: { name: string; value: number }[] }) {
+  useMoneyFormat();
   const c = chartPalette();
   const colors = [c.primary, c.signal, c.muted, c.amber, c.success];
   const total = data.reduce((a, d) => a + d.value, 0);
@@ -28,6 +31,7 @@ export function DistributionDonut({ data }: { data: { name: string; value: numbe
 export function CategoryBar({
   title, data, money = false, ariaLabel,
 }: { title: string; data: { name: string; value: number }[]; money?: boolean; ariaLabel?: string }) {
+  useMoneyFormat();
   const c = chartPalette();
   const fmt = (v: number | string) => (money ? cr(Number(v)) : String(v));
   return (

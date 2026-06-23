@@ -56,6 +56,11 @@ function monthLabel(iso: string): string {
   const d = new Date(`${iso}T00:00:00`);
   return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]}-${d.getFullYear()}`;
 }
+// Demo "now" — the cash-flow / S-curve axis is a fixed 12-month window ending
+// Aug-2026 with Jun-2026 as "now". Anchor financial months here so IPC periods,
+// receipts and payments land inside that window (short 'Mmm-YY' form).
+const NOW_ISO = '2026-06-15';
+const monthsBefore = (k: number): string => monthLabel(addMonths(NOW_ISO, -k)).replace(/-20/, '-');
 
 function build(profile: SeedProfile): GeneratedSeed {
   const r = rng(profile.id);
@@ -127,7 +132,7 @@ function build(profile: SeedProfile): GeneratedSeed {
     cum += gross;
     ipcs.push({
       id: `ipc-${pid}-${j + 1}`, projectId: pid, ipcNo: `IPC-${String(j + 1).padStart(2, '0')}`, seq: j + 1,
-      period: monthLabel(addMonths(profile.start, 3 + j * 2)), date: addMonths(profile.start, 3 + j * 2),
+      period: monthLabel(addMonths(NOW_ISO, -(K - 1 - j) * 2)), date: addMonths(NOW_ISO, -(K - 1 - j) * 2),
       status: ipcStatuses[j] ?? 'draft', gross, netPayable: computeNet(gross), cumGross: cum, lines,
     });
   }
@@ -152,7 +157,7 @@ function build(profile: SeedProfile): GeneratedSeed {
   // --- RARs (subcontractor billing) with itemwise lines --------------------
   const rars: Rar[] = [];
   const subletItems = boq.filter((it) => distributions.find((d) => d.boqItemId === it.id)?.mode === 'sublet');
-  const rarStatuses: Rar['status'][] = ['paid', 'approved', 'verified', 'submitted'];
+  const rarStatuses: Rar['status'][] = ['paid', 'approved', 'submitted', 'verified'];
   let rarSeq = 0;
   subs.filter((s) => SUB_PROFILES[subs.indexOf(s)]?.kind === 'sublet').forEach((sub) => {
     const items = subletItems.filter((it) => distributions.find((d) => d.boqItemId === it.id)?.subcontractorId === sub.id);
@@ -209,7 +214,7 @@ function build(profile: SeedProfile): GeneratedSeed {
   // --- Overheads (monthly, last 4 months) ----------------------------------
   const overheads: OverheadLine[] = [];
   for (let m = 0; m < 4; m++) {
-    const month = monthLabel(addMonths(profile.start, 4 + m)).replace(/-20/, '-');
+    const month = monthsBefore((3 - m) * 1);
     OVERHEAD_CATEGORIES.forEach((oc, k) => {
       overheads.push({ id: `ovh-${pid}-${m}-${k}`, projectId: pid, category: oc.category, month, plannedCost: round(profile.cv * oc.monthly * (0.9 + 0.2 * r())) });
     });
@@ -217,7 +222,7 @@ function build(profile: SeedProfile): GeneratedSeed {
 
   // --- Financial: receipts (from IPCs) + a mobilization advance -----------
   const receipts: FinancialReceipt[] = [
-    { id: `rcpt-${pid}-mob`, projectId: pid, month: monthLabel(addMonths(profile.start, 1)).replace(/-20/, '-'), source: 'Mobilization advance', amount: round(profile.cv * 0.10) },
+    { id: `rcpt-${pid}-mob`, projectId: pid, month: monthsBefore(8), source: 'Mobilization advance', amount: round(profile.cv * 0.10) },
     ...ipcs.filter((i) => i.status === 'paid' || i.status === 'approved').map((i, k) => ({
       id: `rcpt-${pid}-${k}`, projectId: pid, month: i.period.replace(/-20/, '-'), source: i.ipcNo, amount: i.netPayable,
     })),
@@ -228,7 +233,7 @@ function build(profile: SeedProfile): GeneratedSeed {
   const monthlyCost = (profile.billed * 0.82) / 4;
   const catSplit: Array<[FinancialPayment['category'], number]> = [['materials', 0.42], ['labour', 0.16], ['plant', 0.14], ['subcontract', 0.20], ['overhead', 0.08]];
   for (let m = 0; m < 4; m++) {
-    const month = monthLabel(addMonths(profile.start, 4 + m)).replace(/-20/, '-');
+    const month = monthsBefore((3 - m) * 1);
     catSplit.forEach(([cat, w], k) => payments.push({ id: `pay-${pid}-${m}-${k}`, projectId: pid, month, category: cat, amount: round(monthlyCost * w * (0.85 + 0.3 * r())) }));
   }
 
@@ -295,7 +300,7 @@ function build(profile: SeedProfile): GeneratedSeed {
   // --- POL (fuel) ----------------------------------------------------------
   const pol: PolRecord[] = [];
   for (let m = 0; m < 3; m++) {
-    const month = monthLabel(addMonths(profile.start, 5 + m)).replace(/-20/, '-');
+    const month = monthsBefore((2 - m) * 1);
     const proc = round(40000 * scale * (0.8 + 0.4 * r()));
     pol.push({ id: `pol-${pid}-${m}`, projectId: pid, month, fuel: 'diesel', procured: proc, issued: round(proc * 0.92), idealConsumption: 3.2, actualConsumption: round((3.2 + r() * 0.8) * 100) / 100 });
   }

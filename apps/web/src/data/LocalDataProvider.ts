@@ -1,6 +1,6 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
-  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation, VariationLine, Contract,
+  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation, VariationLine, Contract, CommercialConfig,
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
@@ -9,7 +9,7 @@ import {
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
 import { itemAmount } from '../domain/boq';
-import { applyAction, computeNet, IPC_PIPELINE } from '../domain/ipc';
+import { applyAction, computeNet, IPC_PIPELINE, DEFAULT_COMMERCIAL_CONFIG, DEFAULT_CONTRACT_RETENTION_PCT } from '../domain/ipc';
 import { DEFAULT_PBS_COMPONENTS, type EscalationComponent } from '../domain/escalation';
 import { applyVoAction, applyVariationToBoq, variationLinesAmount, dominantVariationType } from '../domain/variations';
 import { seedFor, type SeedProfile, type GeneratedSeed } from './seed/commercialSeed';
@@ -120,10 +120,10 @@ const PROJECTS: Project[] = SEED.map((s) => ({
   lat: COORDS[s.id]?.lat, lng: COORDS[s.id]?.lng, location: COORDS[s.id]?.location,
 }));
 
-// Deterministic commercial seed for every project EXCEPT the flagship (proj-f14f15),
-// which keeps its hand-authored seed so its specific reference data stays stable.
+// Deterministic commercial seed for every project, including the flagship, so its
+// BOQ, executed progress, vetted IPCs, RAR billing and receipts reconcile.
 const SEED_PROFILES: Record<string, SeedProfile> = Object.fromEntries(
-  SEED.filter((s) => s.id !== 'proj-f14f15').map((s) => [s.id, {
+  SEED.map((s) => [s.id, {
     id: s.id, cv: Number(s.cv), billed: Number(s.billed),
     plannedPct: s.planned, actualPct: s.actual, start: DATES[s.id]?.start ?? '2025-01-01',
   }]),
@@ -134,37 +134,8 @@ function gen(projectId: string): GeneratedSeed | null {
   return p ? seedFor(p) : null;
 }
 
-// The flagship keeps its hand-authored, reference-stable rows (codes I-1xx/2xx/3xx,
-// which its hand IPCs/RARs and the test-suite reference) AND is topped up with
-// generated catalogue items so the Bill of Quantities totals the full contract
-// value rather than a token sample. Curated ids stay boq-proj-f14f15-0..7.
-const SEED_BOQ: Array<Omit<BoqItem, 'id' | 'projectId' | 'amount'>> = [
-  { billNo: '1', billName: 'Road Work', section: 'Earthworks', code: 'I-101', description: 'Site clearance & grubbing', unit: 'Sqm', qty: 45000, rate: 85 },
-  { billNo: '1', billName: 'Road Work', section: 'Earthworks', code: 'I-102', description: 'Common excavation', unit: 'Cum', qty: 120000, rate: 420 },
-  { billNo: '1', billName: 'Road Work', section: 'Pavement', code: 'I-103', description: 'Granular sub-base', unit: 'Cum', qty: 32000, rate: 4800 },
-  { billNo: '2', billName: 'Carpeting', section: 'Bituminous', code: 'I-201', description: 'Sub-base course (aggregate)', unit: 'Cum', qty: 38000, rate: 5400 },
-  { billNo: '2', billName: 'Carpeting', section: 'Bituminous', code: 'I-202', description: 'Dense bituminous macadam', unit: 'Cum', qty: 21000, rate: 23500 },
-  { billNo: '2', billName: 'Carpeting', section: 'Surface', code: 'I-203', description: 'Asphaltic wearing course', unit: 'Cum', qty: 14500, rate: 27800 },
-  { billNo: '3', billName: 'Structures', section: 'Culverts', code: 'I-301', description: 'RCC for box culverts', unit: 'Cum', qty: 6400, rate: 41000 },
-  { billNo: '3', billName: 'Structures', section: 'Drainage', code: 'I-302', description: 'RCC pipe culvert (1200mm)', unit: 'Rm', qty: 1800, rate: 18500 },
-];
 
-let _flagshipBoq: BoqItem[] | null = null;
-function flagshipBoq(): BoqItem[] {
-  if (_flagshipBoq) return _flagshipBoq;
-  const f = SEED.find((s) => s.id === 'proj-f14f15');
-  const cv = f ? Number(f.cv) : 19_284_461_163;
-  const curated: BoqItem[] = SEED_BOQ.map((r, i) => ({ id: `boq-proj-f14f15-${i}`, projectId: 'proj-f14f15', ...r, amount: itemAmount(r.qty, r.rate) }));
-  const curatedTotal = curated.reduce((s, b) => s + b.amount, 0);
-  // Generated catalogue items make up the balance so the BOQ totals the contract.
-  const profile: SeedProfile = {
-    id: 'proj-f14f15', cv: Math.max(0, cv - curatedTotal), billed: f ? Number(f.billed) : 0,
-    plannedPct: f ? f.planned : 62, actualPct: f ? f.actual : 58, start: DATES['proj-f14f15']?.start ?? '2025-01-01',
-  };
-  const filler = seedFor(profile).boq.map((b, k) => ({ ...b, id: `boq-proj-f14f15-${curated.length + k}` }));
-  _flagshipBoq = [...curated, ...filler];
-  return _flagshipBoq;
-}
+
 
 export class LocalDataProvider implements DataProvider {
   readonly mode = 'local' as const;
@@ -456,10 +427,10 @@ export class LocalDataProvider implements DataProvider {
 
   // ---- Subcontractors ----
   async listSubcontractors(projectId: string): Promise<Subcontractor[]> {
-    return readJson(subKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SUBS : (gen(projectId)?.subs ?? [])));
+    return readJson(subKey(projectId), () => ((gen(projectId)?.subs ?? SEED_SUBS)));
   }
   async addSubcontractor(projectId: string, input: { name: string; trade: string }): Promise<Subcontractor> {
-    const all = readJson<Subcontractor[]>(subKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SUBS : (gen(projectId)?.subs ?? [])));
+    const all = readJson<Subcontractor[]>(subKey(projectId), () => ((gen(projectId)?.subs ?? SEED_SUBS)));
     const s: Subcontractor = {
       id: `sub-${projectId}-${all.length + 1}`,
       projectId,
@@ -471,7 +442,7 @@ export class LocalDataProvider implements DataProvider {
     return s;
   }
   async updateSubcontractor(projectId: string, id: string, patch: Partial<Omit<Subcontractor, 'id' | 'projectId'>>): Promise<Subcontractor> {
-    const all = readJson<Subcontractor[]>(subKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SUBS : (gen(projectId)?.subs ?? [])));
+    const all = readJson<Subcontractor[]>(subKey(projectId), () => ((gen(projectId)?.subs ?? SEED_SUBS)));
     const s = all.find((x) => x.id === id);
     if (!s) throw new Error(`Subcontractor ${id} not found`);
     Object.assign(s, patch);
@@ -484,14 +455,20 @@ export class LocalDataProvider implements DataProvider {
 
   // ---- RAR ----
   async listRars(projectId: string): Promise<Rar[]> {
-    return readJson(rarKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_RARS : (gen(projectId)?.rars ?? [])));
+    return readJson(rarKey(projectId), () => ((gen(projectId)?.rars ?? SEED_RARS)));
   }
   async createRar(
     projectId: string,
     input: { period: string; subcontractorId: string; contractId?: string; gross: number; date?: string; lines?: RarLine[] },
   ): Promise<Rar> {
-    const all = readJson<Rar[]>(rarKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_RARS : (gen(projectId)?.rars ?? [])));
+    const all = readJson<Rar[]>(rarKey(projectId), () => ((gen(projectId)?.rars ?? SEED_RARS)));
     const seq = all.reduce((m, r) => Math.max(m, r.seq), 0) + 1;
+    // RAR net = gross − subcontractor retention (per contract, ≤5%) − project taxes.
+    const contracts = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? SEED_CONTRACTS)));
+    const contract = input.contractId ? contracts.find((c) => c.id === input.contractId) : undefined;
+    const retentionPct = Math.min(5, contract?.retentionPct ?? DEFAULT_CONTRACT_RETENTION_PCT);
+    const cfg = readJson<CommercialConfig>(commCfgKey(projectId), () => ({ ...DEFAULT_COMMERCIAL_CONFIG }));
+    const netPayable = computeNet(input.gross, { retentionPct, incomeTaxPct: cfg.incomeTaxPct, gstPct: cfg.gstPct });
     const rar: Rar = {
       id: `rar-${projectId}-${seq}`,
       projectId,
@@ -503,12 +480,12 @@ export class LocalDataProvider implements DataProvider {
       subcontractorId: input.subcontractorId,
       contractId: input.contractId,
       gross: input.gross,
-      netPayable: computeNet(input.gross),
+      netPayable,
       lines: input.lines,
     };
     all.push(rar);
     writeJson(rarKey(projectId), all);
-    audit(projectId, 'create', 'RAR', rar.rarNo, `PKR ${Math.round(rar.gross).toLocaleString('en-PK')}`);
+    audit(projectId, 'create', 'RAR', rar.rarNo, `PKR ${Math.round(rar.gross).toLocaleString('en-PK')} · retention ${retentionPct}%`);
     return rar;
   }
   async transitionRar(projectId: string, rarNo: string, action: string): Promise<Rar> {
@@ -617,10 +594,10 @@ export class LocalDataProvider implements DataProvider {
     writeJson(escIdxKey(projectId), components);
   }
   async listVariations(projectId: string): Promise<Variation[]> {
-    return readJson(voKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_VARIATIONS : (gen(projectId)?.variations ?? [])));
+    return readJson(voKey(projectId), () => ((gen(projectId)?.variations ?? SEED_VARIATIONS)));
   }
   async createVariation(projectId: string, input: { title: string; type?: Variation['type']; amount?: number; boqItemId?: string; date?: string; lines?: VariationLine[] }): Promise<Variation> {
-    const all = readJson<Variation[]>(voKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_VARIATIONS : (gen(projectId)?.variations ?? [])));
+    const all = readJson<Variation[]>(voKey(projectId), () => ((gen(projectId)?.variations ?? SEED_VARIATIONS)));
     const seq = all.reduce((m, v) => Math.max(m, v.seq), 0) + 1;
     const boq = readBoq(projectId);
     const amount = input.lines && input.lines.length ? variationLinesAmount(input.lines, boq) : (input.amount ?? 0);
@@ -636,7 +613,7 @@ export class LocalDataProvider implements DataProvider {
     return vo;
   }
   async transitionVariation(projectId: string, voNo: string, action: string): Promise<Variation> {
-    const all = readJson<Variation[]>(voKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_VARIATIONS : (gen(projectId)?.variations ?? [])));
+    const all = readJson<Variation[]>(voKey(projectId), () => ((gen(projectId)?.variations ?? SEED_VARIATIONS)));
     const vo = all.find((v) => v.voNo === voNo);
     if (!vo) throw new Error(`Variation ${voNo} not found`);
     const next = applyVoAction(vo.status, action);
@@ -654,25 +631,48 @@ export class LocalDataProvider implements DataProvider {
     return vo;
   }
   async listContracts(projectId: string): Promise<Contract[]> {
-    return readJson(contractsRegKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_CONTRACTS : (gen(projectId)?.contracts ?? [])));
+    return readJson(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? SEED_CONTRACTS)));
   }
-  async createContract(projectId: string, input: { title: string; subcontractorId: string; scopeBills: string[]; value: number; awardDate?: string }): Promise<Contract> {
-    const all = readJson<Contract[]>(contractsRegKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_CONTRACTS : (gen(projectId)?.contracts ?? [])));
+  async createContract(projectId: string, input: { title: string; subcontractorId: string; scopeBills: string[]; value: number; awardDate?: string; retentionPct?: number }): Promise<Contract> {
+    const all = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? SEED_CONTRACTS)));
     const seq = all.reduce((m, c) => Math.max(m, Number(c.contractNo.split('-').pop()) || 0), 0) + 1;
     const c: Contract = {
       id: `ctr-${projectId}-${seq}`, projectId, contractNo: `NLC/${projectId.replace('proj-', '').toUpperCase()}/SC-${String(seq).padStart(2, '0')}`,
       title: sanitize(input.title), subcontractorId: input.subcontractorId, scopeBills: input.scopeBills, value: input.value,
       awardDate: input.awardDate, status: 'awarded',
+      retentionPct: input.retentionPct ?? DEFAULT_CONTRACT_RETENTION_PCT,
     };
     all.push(c);
     writeJson(contractsRegKey(projectId), all);
-    audit(projectId, 'create', 'Contract', c.contractNo, `PKR ${Math.round(c.value).toLocaleString('en-PK')}`);
+    audit(projectId, 'create', 'Contract', c.contractNo, `PKR ${Math.round(c.value).toLocaleString('en-PK')} · retention ${c.retentionPct}%`);
     return c;
   }
   async setContractStatus(projectId: string, contractId: string, status: Contract['status']): Promise<void> {
-    const all = readJson<Contract[]>(contractsRegKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_CONTRACTS : (gen(projectId)?.contracts ?? [])));
+    const all = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? SEED_CONTRACTS)));
     const c = all.find((x) => x.id === contractId);
     if (c) { c.status = status; writeJson(contractsRegKey(projectId), all); audit(projectId, 'status', 'Contract', c.contractNo, status); }
+  }
+  async setContractRetention(projectId: string, contractId: string, retentionPct: number): Promise<void> {
+    const all = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? SEED_CONTRACTS)));
+    const c = all.find((x) => x.id === contractId);
+    if (c) {
+      c.retentionPct = Math.max(0, Math.min(5, retentionPct)); // capped at 5% of contract value
+      writeJson(contractsRegKey(projectId), all);
+      audit(projectId, 'retention', 'Contract', c.contractNo, `${c.retentionPct}%`);
+    }
+  }
+  async getCommercialConfig(projectId: string): Promise<CommercialConfig> {
+    return readJson(commCfgKey(projectId), () => ({ ...DEFAULT_COMMERCIAL_CONFIG }));
+  }
+  async setCommercialConfig(projectId: string, config: CommercialConfig): Promise<CommercialConfig> {
+    const clean: CommercialConfig = {
+      ipcRetentionPct: clampPct(config.ipcRetentionPct),
+      incomeTaxPct: clampPct(config.incomeTaxPct),
+      gstPct: clampPct(config.gstPct),
+    };
+    writeJson(commCfgKey(projectId), clean);
+    audit(projectId, 'config', 'Commercial', 'deductions', `ret ${clean.ipcRetentionPct}% · tax ${clean.incomeTaxPct}% · gst ${clean.gstPct}%`);
+    return clean;
   }
   async transitionEpc(projectId: string, epcNo: string, action: string): Promise<Epc> {
     const all = readJson<Epc[]>(epcKey(projectId), () => []);
@@ -698,10 +698,10 @@ export class LocalDataProvider implements DataProvider {
     return adv;
   }
   async listBankGuarantees(projectId: string): Promise<BankGuarantee[]> {
-    return readJson(bgKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_BGS : (gen(projectId)?.bgs ?? [])));
+    return readJson(bgKey(projectId), () => ((gen(projectId)?.bgs ?? SEED_BGS)));
   }
   async addBankGuarantee(projectId: string, input: Omit<BankGuarantee, 'id' | 'projectId'>): Promise<BankGuarantee> {
-    const all = readJson<BankGuarantee[]>(bgKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_BGS : (gen(projectId)?.bgs ?? [])));
+    const all = readJson<BankGuarantee[]>(bgKey(projectId), () => ((gen(projectId)?.bgs ?? SEED_BGS)));
     const bg: BankGuarantee = { id: `bg-${Date.now()}`, projectId, ...input, bgNo: sanitize(input.bgNo), bank: sanitize(input.bank) };
     all.push(bg);
     writeJson(bgKey(projectId), all);
@@ -709,7 +709,7 @@ export class LocalDataProvider implements DataProvider {
     return bg;
   }
   async setBankGuaranteeStatus(projectId: string, id: string, status: BankGuarantee['status']): Promise<BankGuarantee[]> {
-    const all = readJson<BankGuarantee[]>(bgKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_BGS : (gen(projectId)?.bgs ?? [])));
+    const all = readJson<BankGuarantee[]>(bgKey(projectId), () => ((gen(projectId)?.bgs ?? SEED_BGS)));
     const bg = all.find((x) => x.id === id);
     if (bg) { bg.status = status; writeJson(bgKey(projectId), all); audit(projectId, 'update', 'BankGuarantee', bg.bgNo, status); }
     return all;
@@ -717,7 +717,7 @@ export class LocalDataProvider implements DataProvider {
 
   // ---- Distributions ----
   async listDistributions(projectId: string): Promise<Distribution[]> {
-    return readJson(distKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_DISTRIBUTIONS : (gen(projectId)?.distributions ?? [])));
+    return readJson(distKey(projectId), () => ((gen(projectId)?.distributions ?? SEED_DISTRIBUTIONS)));
   }
   async setDistribution(projectId: string, dist: Distribution): Promise<Distribution> {
     const all = readJson<Distribution[]>(distKey(projectId), () => []);
@@ -730,7 +730,7 @@ export class LocalDataProvider implements DataProvider {
 
   // ---- Execution & baselines ----
   async listSchedule(projectId: string): Promise<ScheduleActivity[]> {
-    return readJson(schedKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SCHEDULE : (gen(projectId)?.schedule ?? [])));
+    return readJson(schedKey(projectId), () => ((gen(projectId)?.schedule ?? SEED_SCHEDULE)));
   }
   async replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>): Promise<ScheduleActivity[]> {
     const acts: ScheduleActivity[] = rows.map((r, i) => ({
@@ -770,10 +770,10 @@ export class LocalDataProvider implements DataProvider {
   }
 
   async listOverheads(projectId: string): Promise<OverheadLine[]> {
-    return readJson(overheadKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_OVERHEADS : (gen(projectId)?.overheads ?? [])));
+    return readJson(overheadKey(projectId), () => ((gen(projectId)?.overheads ?? SEED_OVERHEADS)));
   }
   async upsertOverhead(projectId: string, input: Omit<OverheadLine, 'id' | 'projectId'> & { id?: string }): Promise<OverheadLine[]> {
-    const all = readJson<OverheadLine[]>(overheadKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_OVERHEADS : (gen(projectId)?.overheads ?? [])));
+    const all = readJson<OverheadLine[]>(overheadKey(projectId), () => ((gen(projectId)?.overheads ?? SEED_OVERHEADS)));
     if (input.id) {
       const o = all.find((x) => x.id === input.id);
       if (o) Object.assign(o, { category: sanitize(input.category), month: input.month, plannedCost: input.plannedCost });
@@ -801,10 +801,10 @@ export class LocalDataProvider implements DataProvider {
     return next;
   }
   async listResources(projectId: string): Promise<Resource[]> {
-    return readJson(resKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_RESOURCES : (gen(projectId)?.resources ?? [])));
+    return readJson(resKey(projectId), () => ((gen(projectId)?.resources ?? SEED_RESOURCES)));
   }
   async addResource(projectId: string, input: Omit<Resource, 'id' | 'projectId'>): Promise<Resource> {
-    const all = readJson<Resource[]>(resKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_RESOURCES : (gen(projectId)?.resources ?? [])));
+    const all = readJson<Resource[]>(resKey(projectId), () => ((gen(projectId)?.resources ?? SEED_RESOURCES)));
     const r: Resource = { id: `res-${projectId}-${all.length + 1}`, projectId, ...input, name: sanitize(input.name) };
     all.push(r);
     writeJson(resKey(projectId), all);
@@ -837,30 +837,30 @@ export class LocalDataProvider implements DataProvider {
 
   // ---- Financial ----
   async listReceipts(projectId: string): Promise<FinancialReceipt[]> {
-    return readJson(rcptKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_RECEIPTS : (gen(projectId)?.receipts ?? [])));
+    return readJson(rcptKey(projectId), () => ((gen(projectId)?.receipts ?? SEED_RECEIPTS)));
   }
   async addReceipt(projectId: string, input: Omit<FinancialReceipt, 'id' | 'projectId'>): Promise<FinancialReceipt> {
-    const all = readJson<FinancialReceipt[]>(rcptKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_RECEIPTS : (gen(projectId)?.receipts ?? [])));
+    const all = readJson<FinancialReceipt[]>(rcptKey(projectId), () => ((gen(projectId)?.receipts ?? SEED_RECEIPTS)));
     const r: FinancialReceipt = { id: `rcpt-${projectId}-${all.length + 1}`, projectId, ...input, source: sanitize(input.source) };
     all.push(r);
     writeJson(rcptKey(projectId), all);
     return r;
   }
   async listPayments(projectId: string): Promise<FinancialPayment[]> {
-    return readJson(payKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_PAYMENTS : (gen(projectId)?.payments ?? [])));
+    return readJson(payKey(projectId), () => ((gen(projectId)?.payments ?? SEED_PAYMENTS)));
   }
   async addPayment(projectId: string, input: Omit<FinancialPayment, 'id' | 'projectId'>): Promise<FinancialPayment> {
-    const all = readJson<FinancialPayment[]>(payKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_PAYMENTS : (gen(projectId)?.payments ?? [])));
+    const all = readJson<FinancialPayment[]>(payKey(projectId), () => ((gen(projectId)?.payments ?? SEED_PAYMENTS)));
     const p: FinancialPayment = { id: `pay-${projectId}-${all.length + 1}`, projectId, ...input };
     all.push(p);
     writeJson(payKey(projectId), all);
     return p;
   }
   async listLiabilities(projectId: string): Promise<FinancialLiability[]> {
-    return readJson(liabKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_LIABILITIES : (gen(projectId)?.liabilities ?? [])));
+    return readJson(liabKey(projectId), () => ((gen(projectId)?.liabilities ?? SEED_LIABILITIES)));
   }
   async addLiability(projectId: string, input: Omit<FinancialLiability, 'id' | 'projectId'>): Promise<FinancialLiability> {
-    const all = readJson<FinancialLiability[]>(liabKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_LIABILITIES : (gen(projectId)?.liabilities ?? [])));
+    const all = readJson<FinancialLiability[]>(liabKey(projectId), () => ((gen(projectId)?.liabilities ?? SEED_LIABILITIES)));
     const l: FinancialLiability = { id: `liab-${projectId}-${all.length + 1}`, projectId, ...input, kind: sanitize(input.kind) };
     all.push(l);
     writeJson(liabKey(projectId), all);
@@ -869,10 +869,10 @@ export class LocalDataProvider implements DataProvider {
 
   // ---- Procurement ----
   async listSuppliers(projectId: string): Promise<Supplier[]> {
-    return readJson(supplierKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SUPPLIERS : (gen(projectId)?.suppliers ?? [])));
+    return readJson(supplierKey(projectId), () => ((gen(projectId)?.suppliers ?? SEED_SUPPLIERS)));
   }
   async addSupplier(projectId: string, input: Omit<Supplier, 'id' | 'projectId'>): Promise<Supplier> {
-    const all = readJson<Supplier[]>(supplierKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SUPPLIERS : (gen(projectId)?.suppliers ?? [])));
+    const all = readJson<Supplier[]>(supplierKey(projectId), () => ((gen(projectId)?.suppliers ?? SEED_SUPPLIERS)));
     const s: Supplier = { id: `sup-${projectId}-${all.length + 1}`, projectId, ...input, name: sanitize(input.name) };
     all.push(s);
     writeJson(supplierKey(projectId), all);
@@ -880,13 +880,13 @@ export class LocalDataProvider implements DataProvider {
   }
 
   async listDemands(projectId: string): Promise<Demand[]> {
-    return readJson(demandKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_DEMANDS : (gen(projectId)?.demands ?? [])));
+    return readJson(demandKey(projectId), () => ((gen(projectId)?.demands ?? SEED_DEMANDS)));
   }
   async createDemand(
     projectId: string,
     input: { type: DemandType; justification: string; items: DemandItem[] },
   ): Promise<Demand> {
-    const all = readJson<Demand[]>(demandKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_DEMANDS : (gen(projectId)?.demands ?? [])));
+    const all = readJson<Demand[]>(demandKey(projectId), () => ((gen(projectId)?.demands ?? SEED_DEMANDS)));
     const seq = all.reduce((m, d) => Math.max(m, d.seq), 0) + 1;
     const totalEstimated = input.items.reduce((a, i) => a + i.qty * i.estimatedRate, 0);
     const demand: Demand = {
@@ -1065,10 +1065,10 @@ export class LocalDataProvider implements DataProvider {
   }
 
   async listSalients(projectId: string): Promise<Salient[]> {
-    return readJson(salientKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SALIENTS : (gen(projectId)?.salients ?? [])));
+    return readJson(salientKey(projectId), () => ((gen(projectId)?.salients ?? SEED_SALIENTS)));
   }
   async upsertSalient(projectId: string, input: { id?: string; label: string; value: string }): Promise<Salient> {
-    const all = readJson<Salient[]>(salientKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_SALIENTS : (gen(projectId)?.salients ?? [])));
+    const all = readJson<Salient[]>(salientKey(projectId), () => ((gen(projectId)?.salients ?? SEED_SALIENTS)));
     const label = sanitize(input.label), value = sanitize(input.value);
     let s: Salient;
     if (input.id) {
@@ -1101,10 +1101,10 @@ export class LocalDataProvider implements DataProvider {
   }
 
   async listProductionRuns(projectId: string): Promise<ProductionRun[]> {
-    return readJson(prodKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_PRODUCTION : (gen(projectId)?.production ?? [])));
+    return readJson(prodKey(projectId), () => ((gen(projectId)?.production ?? SEED_PRODUCTION)));
   }
   async createProductionRun(projectId: string, input: Omit<ProductionRun, 'id' | 'projectId'>): Promise<ProductionRun> {
-    const all = readJson<ProductionRun[]>(prodKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_PRODUCTION : (gen(projectId)?.production ?? [])));
+    const all = readJson<ProductionRun[]>(prodKey(projectId), () => ((gen(projectId)?.production ?? SEED_PRODUCTION)));
     const run: ProductionRun = { id: `prod-${projectId}-${all.length + 1}`, projectId, ...input, product: sanitize(input.product) };
     all.push(run);
     all.sort((a, b) => a.dated.localeCompare(b.dated));
@@ -1112,10 +1112,10 @@ export class LocalDataProvider implements DataProvider {
     return run;
   }
   async listMaterialIssues(projectId: string): Promise<MaterialIssue[]> {
-    return readJson(issueKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_ISSUES : (gen(projectId)?.issues ?? [])));
+    return readJson(issueKey(projectId), () => ((gen(projectId)?.issues ?? SEED_ISSUES)));
   }
   async createMaterialIssue(projectId: string, input: Omit<MaterialIssue, 'id' | 'projectId'>): Promise<MaterialIssue> {
-    const all = readJson<MaterialIssue[]>(issueKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_ISSUES : (gen(projectId)?.issues ?? [])));
+    const all = readJson<MaterialIssue[]>(issueKey(projectId), () => ((gen(projectId)?.issues ?? SEED_ISSUES)));
     const iss: MaterialIssue = { id: `mi-${projectId}-${all.length + 1}`, projectId, ...input, materialCode: sanitize(input.materialCode), issuedTo: sanitize(input.issuedTo) };
     all.push(iss);
     all.sort((a, b) => a.dated.localeCompare(b.dated));
@@ -1123,7 +1123,7 @@ export class LocalDataProvider implements DataProvider {
     return iss;
   }
   async setMaterialRecovered(projectId: string, id: string, recovered: number): Promise<MaterialIssue[]> {
-    const all = readJson<MaterialIssue[]>(issueKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_ISSUES : (gen(projectId)?.issues ?? [])));
+    const all = readJson<MaterialIssue[]>(issueKey(projectId), () => ((gen(projectId)?.issues ?? SEED_ISSUES)));
     const iss = all.find((x) => x.id === id);
     if (iss) { iss.recovered = recovered; writeJson(issueKey(projectId), all); audit(projectId, 'recover', 'Material', iss.materialCode, `${recovered}`); }
     return all;
@@ -1423,10 +1423,10 @@ export class LocalDataProvider implements DataProvider {
     return all;
   }
   async listInventory(projectId: string): Promise<InventoryItem[]> {
-    return readJson(invKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_INVENTORY : (gen(projectId)?.inventory ?? [])));
+    return readJson(invKey(projectId), () => ((gen(projectId)?.inventory ?? SEED_INVENTORY)));
   }
   async upsertInventory(projectId: string, input: Omit<InventoryItem, 'id' | 'projectId'> & { id?: string }): Promise<InventoryItem[]> {
-    const all = readJson<InventoryItem[]>(invKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_INVENTORY : (gen(projectId)?.inventory ?? [])));
+    const all = readJson<InventoryItem[]>(invKey(projectId), () => ((gen(projectId)?.inventory ?? SEED_INVENTORY)));
     if (input.id) {
       const it = all.find((x) => x.id === input.id);
       if (it) Object.assign(it, { ...input, id: it.id, projectId, name: sanitize(input.name), regNo: sanitize(input.regNo) });
@@ -1437,19 +1437,19 @@ export class LocalDataProvider implements DataProvider {
     return all;
   }
   async listPol(projectId: string): Promise<PolRecord[]> {
-    return readJson(polKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_POL : (gen(projectId)?.pol ?? [])));
+    return readJson(polKey(projectId), () => ((gen(projectId)?.pol ?? SEED_POL)));
   }
   async addPol(projectId: string, input: Omit<PolRecord, 'id' | 'projectId'>): Promise<PolRecord[]> {
-    const all = readJson<PolRecord[]>(polKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_POL : (gen(projectId)?.pol ?? [])));
+    const all = readJson<PolRecord[]>(polKey(projectId), () => ((gen(projectId)?.pol ?? SEED_POL)));
     all.push({ id: `pol-${projectId}-${Date.now()}`, projectId, ...input });
     writeJson(polKey(projectId), all);
     return all;
   }
   async listFixedAssets(projectId: string): Promise<FixedAsset[]> {
-    return readJson(faKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_FA : (gen(projectId)?.fixedAssets ?? [])));
+    return readJson(faKey(projectId), () => ((gen(projectId)?.fixedAssets ?? SEED_FA)));
   }
   async addFixedAsset(projectId: string, input: Omit<FixedAsset, 'id' | 'projectId'>): Promise<FixedAsset[]> {
-    const all = readJson<FixedAsset[]>(faKey(projectId), () => (projectId === 'proj-f14f15' ? SEED_FA : (gen(projectId)?.fixedAssets ?? [])));
+    const all = readJson<FixedAsset[]>(faKey(projectId), () => ((gen(projectId)?.fixedAssets ?? SEED_FA)));
     all.push({ id: `fa-${projectId}-${Date.now()}`, projectId, ...input, category: sanitize(input.category), description: sanitize(input.description) });
     writeJson(faKey(projectId), all);
     return all;
@@ -1681,6 +1681,8 @@ const epcKey = (pid: string) => `nlc-ecc.epcs.${pid}`;
 const escIdxKey = (pid: string) => `nlc-ecc.escindices.${pid}`;
 const voKey = (pid: string) => `nlc-ecc.variations.${pid}`;
 const contractsRegKey = (pid: string) => `nlc-ecc.contractsreg.${pid}`;
+const commCfgKey = (pid: string) => `nlc-ecc.commcfg.${pid}`;
+const clampPct = (n: number) => Math.max(0, Math.min(100, Number.isFinite(n) ? n : 0));
 const advKey = (pid: string) => `nlc-ecc.advances.${pid}`;
 const bgKey = (pid: string) => `nlc-ecc.bankguarantees.${pid}`;
 const distKey = (pid: string) => `nlc-ecc.dists.${pid}`;
@@ -1691,7 +1693,7 @@ const projectsKey = 'nlc-ecc.projects';
 const seedVersionKey = 'nlc-ecc.seedVersion';
 // Bump when the bundled project roster / seed changes so existing cached stores
 // pick up newly-seeded projects and nodes without losing user-created data.
-const SEED_VERSION = '2026-06-23.v3-flagship-boq';
+const SEED_VERSION = '2026-06-23.v6-flagship-generated';
 
 /** Merge any newly-seeded projects/nodes into an already-persisted store and
  *  backfill date/coordinate fields on seeded projects. Runs once per version. */
@@ -1729,9 +1731,17 @@ function reconcileSeed(): void {
       if (nchanged) writeJson(nodesKey, exN);
     }
 
-    // Flagship BOQ is now generated to the full contract value — drop any stale
-    // hand-seeded cache so it regenerates on next read.
-    try { store.removeItem(boqKey('proj-f14f15')); } catch { /* ignore */ }
+    // Flagship is now generated like every other project — drop any stale hand-seeded
+    // caches so its whole commercial spine regenerates consistently.
+    try {
+      const F = 'proj-f14f15';
+      for (const k of [
+        'boq', 'progress', 'ipcs', 'subs', 'rars', 'rarlinks', 'variations', 'contractsreg',
+        'bankguarantees', 'dists', 'sched', 'escindices', 'epcs', 'resources', 'overheads',
+        'receipts', 'payments', 'liabilities', 'suppliers', 'demands', 'salients',
+        'production', 'materialIssues', 'inventory', 'pol', 'fixedassets', 'advances',
+      ]) store.removeItem(`nlc-ecc.${k}.${F}`);
+    } catch { /* ignore */ }
 
     writeJson(seedVersionKey, SEED_VERSION);
   } catch { /* ignore */ }
@@ -1939,12 +1949,7 @@ function readBoq(projectId: string): BoqItem[] {
   } catch {
     /* ignore */
   }
-  // Generate the flagship BOQ from the catalogue scaled to its contract value.
-  if (projectId === 'proj-f14f15') {
-    const seeded = flagshipBoq();
-    writeJson(boqKey(projectId), seeded);
-    return seeded;
-  }
+  // Flagship is generated like every other project so BOQ ↔ executed ↔ vetted ↔ billed reconcile.
   const g = gen(projectId);
   if (g) { writeJson(boqKey(projectId), g.boq); return g.boq; }
   return [];

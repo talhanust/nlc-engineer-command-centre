@@ -206,6 +206,21 @@ export interface Contract {
   awardDate?: string;
   completionDate?: string;
   status: ContractStatus;
+  /** Retention withheld from this subcontractor's RARs (% of each RAR gross). Default 5. */
+  retentionPct?: number;
+}
+
+/**
+ * Per-project commercial deductions applied when certifying client billing.
+ * IPC net = gross − retention − income tax − GST/stamp. All editable per project.
+ */
+export interface CommercialConfig {
+  /** Retention withheld by the client from each IPC (% of IPC gross). */
+  ipcRetentionPct: number;
+  /** Income tax withheld at source on each IPC/RAR (% of gross). */
+  incomeTaxPct: number;
+  /** GST / stamp duty line (% of gross). */
+  gstPct: number;
 }
 
 export interface RarLine { boqItemId: string; qty: number; rate: number; amount: number }
@@ -741,8 +756,11 @@ export interface DataProvider {
   createVariation(projectId: string, input: { title: string; type?: VariationType; amount?: number; boqItemId?: string; date?: string; lines?: VariationLine[] }): Promise<Variation>;
   transitionVariation(projectId: string, voNo: string, action: string): Promise<Variation>;
   listContracts(projectId: string): Promise<Contract[]>;
-  createContract(projectId: string, input: { title: string; subcontractorId: string; scopeBills: string[]; value: number; awardDate?: string }): Promise<Contract>;
+  createContract(projectId: string, input: { title: string; subcontractorId: string; scopeBills: string[]; value: number; awardDate?: string; retentionPct?: number }): Promise<Contract>;
   setContractStatus(projectId: string, contractId: string, status: ContractStatus): Promise<void>;
+  setContractRetention(projectId: string, contractId: string, retentionPct: number): Promise<void>;
+  getCommercialConfig(projectId: string): Promise<CommercialConfig>;
+  setCommercialConfig(projectId: string, config: CommercialConfig): Promise<CommercialConfig>;
   transitionEpc(projectId: string, epcNo: string, action: string): Promise<Epc>;
   listAdvances(projectId: string): Promise<Advance[]>;
   addAdvance(projectId: string, input: Omit<Advance, 'id' | 'projectId'>): Promise<Advance>;

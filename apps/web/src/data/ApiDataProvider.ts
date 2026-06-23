@@ -1,6 +1,6 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
-  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation, Contract, ContractStatus,
+  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation, Contract, ContractStatus, CommercialConfig,
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
@@ -246,11 +246,20 @@ export class ApiDataProvider implements DataProvider {
   async listContracts(projectId: string): Promise<Contract[]> {
     return (await this.get<{ items: Contract[] }>(`/api/projects/${projectId}/contracts`)).items;
   }
-  async createContract(projectId: string, input: { title: string; subcontractorId: string; scopeBills: string[]; value: number; awardDate?: string }): Promise<Contract> {
+  async createContract(projectId: string, input: { title: string; subcontractorId: string; scopeBills: string[]; value: number; awardDate?: string; retentionPct?: number }): Promise<Contract> {
     return this.send<Contract>(`/api/projects/${projectId}/contracts`, 'POST', input);
   }
   async setContractStatus(projectId: string, contractId: string, status: ContractStatus): Promise<void> {
     await this.send(`/api/projects/${projectId}/contracts/${contractId}/status`, 'POST', { status });
+  }
+  async setContractRetention(projectId: string, contractId: string, retentionPct: number): Promise<void> {
+    await this.send(`/api/projects/${projectId}/contracts/${contractId}/retention`, 'POST', { retentionPct });
+  }
+  async getCommercialConfig(projectId: string): Promise<CommercialConfig> {
+    return this.get<CommercialConfig>(`/api/projects/${projectId}/commercial-config`);
+  }
+  async setCommercialConfig(projectId: string, config: CommercialConfig): Promise<CommercialConfig> {
+    return this.send<CommercialConfig>(`/api/projects/${projectId}/commercial-config`, 'POST', config);
   }
   async transitionEpc(projectId: string, epcNo: string, action: string): Promise<Epc> {
     return this.send<Epc>(`/api/projects/${projectId}/epcs/${epcNo}/transitions`, 'POST', { action });

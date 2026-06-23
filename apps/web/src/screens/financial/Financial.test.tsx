@@ -33,11 +33,11 @@ describe('Phase 5 — Financial', () => {
   it('lists seeded receipts and records a new one', async () => {
     const user = await gotoSub('Receipts');
     const table = await screen.findByRole('table', { name: 'Receipts' });
-    expect(within(table).getByText('IPC-01')).toBeInTheDocument();
+    expect(within(table).getAllByText('IPC-01').length).toBeGreaterThan(0);
     await user.type(screen.getByLabelText('Receipt source'), 'IPC-03');
     await user.type(screen.getByLabelText('Receipt amount'), '1000000000');
     await user.click(screen.getByRole('button', { name: 'Record receipt' }));
-    await waitFor(() => expect(within(screen.getByRole('table', { name: 'Receipts' })).getByText('IPC-03')).toBeInTheDocument());
+    await waitFor(() => expect(within(screen.getByRole('table', { name: 'Receipts' })).getAllByText('IPC-03').length).toBeGreaterThan(0));
   });
 
   it('records a payment', async () => {

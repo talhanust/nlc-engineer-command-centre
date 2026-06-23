@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { useToast } from '../../components/Toast';
 import { formatMoney } from '../../domain/money';
-import { ipcDeductionBreakdown, ipcClaimedQtyByItem } from '../../domain/ipc';
-import type { BoqItem, Ipc, ProgressUpdate } from '../../data/types';
+import { ipcDeductionBreakdown, ipcClaimedQtyByItem, deductionsFromConfig, DEFAULT_COMMERCIAL_CONFIG } from '../../domain/ipc';
+import type { BoqItem, Ipc, ProgressUpdate, CommercialConfig } from '../../data/types';
 
 const num = (n: number) => n.toLocaleString('en-PK');
 const money = (n: number) => (n > 0 ? formatMoney(n) : '—');
@@ -19,11 +19,12 @@ export function GenerateIpc({ projectId, onGenerated }: { projectId: string; onG
   const [bill, setBill] = useState('all');
   const [search, setSearch] = useState('');
   const [sel, setSel] = useState<Record<string, number>>({});
+  const [cfg, setCfg] = useState<CommercialConfig>(DEFAULT_COMMERCIAL_CONFIG);
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const [b, p, i] = await Promise.all([provider.listBoq(projectId), provider.listProgress(projectId), provider.listIpcs(projectId)]);
-    setItems(b); setProgress(p); setIpcs(i);
+    const [b, p, i, c] = await Promise.all([provider.listBoq(projectId), provider.listProgress(projectId), provider.listIpcs(projectId), provider.getCommercialConfig(projectId)]);
+    setItems(b); setProgress(p); setIpcs(i); setCfg(c);
   }
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [provider, projectId]);
 
@@ -52,7 +53,7 @@ export function GenerateIpc({ projectId, onGenerated }: { projectId: string; onG
     const it = items.find((x) => x.id === id);
     return a + (it ? qty * it.rate : 0);
   }, 0), [sel, items]);
-  const ded = ipcDeductionBreakdown(gross);
+  const ded = ipcDeductionBreakdown(gross, { d: deductionsFromConfig(cfg) });
 
   function setQty(id: string, qty: number) {
     setSel((prev) => ({ ...prev, [id]: Math.max(0, qty) }));
@@ -157,6 +158,7 @@ export function GenerateIpc({ projectId, onGenerated }: { projectId: string; onG
                 <tr><th>Gross claimed</th><td className="num">{formatMoney(ded.gross)}</td></tr>
                 <tr><th>Less retention @ {ded.retentionPct}%</th><td className="num neg">− {money(ded.retention)}</td></tr>
                 <tr><th>Less income tax @ {ded.incomeTaxPct}%</th><td className="num neg">− {money(ded.incomeTax)}</td></tr>
+                {ded.gstPct > 0 && <tr><th>Less GST / stamp @ {ded.gstPct}%</th><td className="num neg">− {money(ded.gst)}</td></tr>}
                 <tr><th>Less advance recovery</th><td className="num neg">− {money(ded.advanceRecovery)}</td></tr>
                 <tr className="ipc-net-row"><th>Net payable</th><td className="num"><strong>{formatMoney(ded.net)}</strong></td></tr>
               </tbody>

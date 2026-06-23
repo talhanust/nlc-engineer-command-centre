@@ -17,6 +17,8 @@ import { CommercialDashboard } from './CommercialDashboard';
 import { VariationsTab } from './VariationsTab';
 import { EvmTab } from './EvmTab';
 import { ContractsRegister } from './ContractsRegister';
+import { CommercialConfigTab } from './CommercialConfigTab';
+import { RevenueComposition } from './RevenueComposition';
 import { CommercialAlerts } from './CommercialAlerts';
 import { CalendarTab } from './CalendarTab';
 import { ContractorProfiles } from './ContractorProfiles';
@@ -30,12 +32,14 @@ const SUBS = [
   ['genrar', 'Generate RAR'],
   ['rar', 'RAR Register'],
   ['recon', 'Reconciliation'],
+  ['revenue', 'Revenue composition'],
   ['cashflow', 'Cash flow'],
   ['retention', 'Retention'],
   ['calendar', 'Calendar'],
   ['epc', 'Escalation'],
   ['subs', 'Contractors'],
   ['contracts', 'Contracts'],
+  ['config', 'Deductions & retention'],
   ['planner', 'Distribution planner'],
   ['exectrack', 'Execution tracker'],
   ['variations', 'Variations'],
@@ -73,11 +77,13 @@ export function CommercialTab({ projectId }: { projectId: string }) {
       {sub === 'rar' && <RarRegister projectId={projectId} />}
       {sub === 'genrar' && <GenerateRar projectId={projectId} onGenerated={() => setSub('rar')} />}
       {sub === 'recon' && <ReconciliationTab projectId={projectId} />}
+      {sub === 'revenue' && <RevenueComposition projectId={projectId} />}
       {sub === 'retention' && <RetentionTab projectId={projectId} />}
       {sub === 'calendar' && <CalendarTab projectId={projectId} onNavigate={(s) => setSub(s as Sub)} />}
       {sub === 'epc' && <EscalationTab projectId={projectId} />}
       {sub === 'subs' && <ContractorProfiles projectId={projectId} />}
       {sub === 'contracts' && <ContractsRegister projectId={projectId} />}
+      {sub === 'config' && <CommercialConfigTab projectId={projectId} />}
       {sub === 'planner' && <DistributionPlanner projectId={projectId} />}
       {sub === 'exectrack' && <ExecutionTracker projectId={projectId} onManageDistribution={() => setSub('dist')} />}
       {sub === 'dist' && <DistributionsTab projectId={projectId} />}

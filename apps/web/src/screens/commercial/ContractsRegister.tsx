@@ -22,6 +22,7 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
   const [subId, setSubId] = useState('');
   const [bills, setBills] = useState('');
   const [value, setValue] = useState('');
+  const [retention, setRetention] = useState('5');
 
   async function load() {
     const [c, s] = await Promise.all([provider.listContracts(projectId), provider.listSubcontractors(projectId)]);
@@ -41,8 +42,9 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
     const v = Number(value.replace(/,/g, ''));
     if (!title.trim() || !subId || !Number.isFinite(v) || v <= 0) return;
     const scopeBills = bills.split(',').map((b) => b.trim()).filter(Boolean);
-    const c = await provider.createContract(projectId, { title: title.trim(), subcontractorId: subId, scopeBills, value: v, awardDate: new Date().toISOString().slice(0, 10) });
-    setTitle(''); setBills(''); setValue('');
+    const retPct = Math.max(0, Math.min(5, Number(retention) || 5));
+    const c = await provider.createContract(projectId, { title: title.trim(), subcontractorId: subId, scopeBills, value: v, awardDate: new Date().toISOString().slice(0, 10), retentionPct: retPct });
+    setTitle(''); setBills(''); setValue(''); setRetention('5');
     await load();
     toast({ message: `${c.contractNo} created`, kind: 'success' });
   }
@@ -86,6 +88,7 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
         </select>
         <input aria-label="Scope bills" placeholder="Bills e.g. 1,2,4" value={bills} onChange={(e) => setBills(e.target.value)} style={{ width: 120 }} />
         <input aria-label="Contract value" placeholder="Value (PKR)" value={value} onChange={(e) => setValue(e.target.value)} />
+        <input aria-label="Contract retention %" type="number" min={0} max={5} step={0.5} title="Retention % (max 5% of contract value)" placeholder="Ret %" value={retention} onChange={(e) => setRetention(e.target.value)} style={{ width: 90 }} />
         <button className="btn" onClick={create}>+ New Contract</button>
       </div>
 

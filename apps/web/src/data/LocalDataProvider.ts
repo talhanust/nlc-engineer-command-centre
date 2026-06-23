@@ -5,7 +5,7 @@ import {
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
-  ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval, OverheadLine,
+  ProductionRun, MaterialIssue, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
 import { itemAmount } from '../domain/boq';
@@ -285,6 +285,28 @@ export class LocalDataProvider implements DataProvider {
   async deletePhoto(projectId: string, id: string): Promise<void> {
     const all = readJson<ProjectPhoto[]>(photoKey(projectId), () => []);
     writeJson(photoKey(projectId), all.filter((p) => p.id !== id));
+  }
+
+  async listAttachments(projectId: string, entity: string, reference: string): Promise<Attachment[]> {
+    return readJson<Attachment[]>(attachKey(projectId), () => []).filter((a) => a.entity === entity && a.ref === reference);
+  }
+  async addAttachment(projectId: string, input: { entity: string; reference: string; name: string; dataUrl: string; mime: string; size: number; dated: string; note?: string }): Promise<Attachment> {
+    const all = readJson<Attachment[]>(attachKey(projectId), () => []);
+    const att: Attachment = {
+      id: `att-${projectId}-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, projectId,
+      entity: input.entity, ref: input.reference, name: sanitize(input.name), dataUrl: input.dataUrl,
+      mime: input.mime, size: input.size, dated: input.dated, note: input.note ? sanitize(input.note) : undefined,
+    };
+    all.push(att);
+    writeJson(attachKey(projectId), all);
+    audit(projectId, 'attach', input.entity, input.reference, att.name);
+    return att;
+  }
+  async deleteAttachment(projectId: string, id: string): Promise<void> {
+    const all = readJson<Attachment[]>(attachKey(projectId), () => []);
+    const att = all.find((a) => a.id === id);
+    writeJson(attachKey(projectId), all.filter((a) => a.id !== id));
+    if (att) audit(projectId, 'detach', att.entity, att.ref, att.name);
   }
 
   async listComments(nodeId: string): Promise<NodeComment[]> {
@@ -1730,6 +1752,7 @@ const prodKey = (pid: string) => `nlc-ecc.production.${pid}`;
 const issueKey = (pid: string) => `nlc-ecc.materialIssues.${pid}`;
 const salientKey = (pid: string) => `nlc-ecc.salients.${pid}`;
 const photoKey = (pid: string) => `nlc-ecc.photos.${pid}`;
+const attachKey = (pid: string) => `nlc-ecc.attach.${pid}`;
 const periodMapKey = (pid: string) => `nlc-ecc.periodMap.${pid}`;
 
 const SEED_PHOTOS: ProjectPhoto[] = [

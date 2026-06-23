@@ -50,6 +50,20 @@ export interface ProjectPhoto {
   dated: string;
 }
 
+/** A document attached to a register entity (IPC, RAR, …) — image or PDF, stored inline. */
+export interface Attachment {
+  id: string;
+  projectId: string;
+  entity: string;   // e.g. 'IPC' | 'RAR'
+  ref: string;      // e.g. ipcNo / rarNo
+  name: string;
+  dataUrl: string;
+  mime: string;
+  size: number;     // approx bytes
+  dated: string;
+  note?: string;
+}
+
 export interface NodeComment {
   id: string;
   nodeId: string;
@@ -679,6 +693,9 @@ export interface DataProvider {
   listPhotos(projectId: string): Promise<ProjectPhoto[]>;
   addPhoto(projectId: string, input: { url: string; caption: string; dated: string }): Promise<ProjectPhoto>;
   deletePhoto(projectId: string, id: string): Promise<void>;
+  listAttachments(projectId: string, entity: string, reference: string): Promise<Attachment[]>;
+  addAttachment(projectId: string, input: { entity: string; reference: string; name: string; dataUrl: string; mime: string; size: number; dated: string; note?: string }): Promise<Attachment>;
+  deleteAttachment(projectId: string, id: string): Promise<void>;
   listComments(nodeId: string): Promise<NodeComment[]>;
   addComment(nodeId: string, body: string): Promise<NodeComment>;
   // Commercial — BOQ + IPC

@@ -6,6 +6,7 @@ import { ROLE_LABEL } from '../domain/chains';
 import { rarChain, pendingRarStage, isRarPaid } from '../domain/rarchain';
 import { computeRarPayment, retentionRelease } from '../domain/billing';
 import { AuditTrail } from './AuditTrail';
+import { Attachments } from './Attachments';
 import type { Rar, Ipc, RarIpcLink, Subcontractor, Advance, BoqItem, Contract } from '../data/types';
 
 export function RarDetailModal({ projectId, rar, onClose }: { projectId: string; rar: Rar; onClose: () => void }) {
@@ -179,6 +180,7 @@ export function RarDetailModal({ projectId, rar, onClose }: { projectId: string;
           </table>
         )}
 
+        <div style={{ marginTop: 14 }}><Attachments projectId={projectId} entity="RAR" reference={cur.rarNo} /></div>
         <div style={{ marginTop: 14 }}><AuditTrail entity="RAR" reference={cur.rarNo} /></div>
         <div className="modal-actions"><button className="btn" onClick={onClose}>Close</button></div>
       </div>

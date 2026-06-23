@@ -5,7 +5,7 @@ import {
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
-  ProductionRun, MaterialIssue, Salient, ProjectPhoto, Allocation, ContractApproval, OverheadLine,
+  ProductionRun, MaterialIssue, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
 import type { BoqWorkflowState } from '../domain/boqworkflow';
@@ -80,6 +80,15 @@ export class ApiDataProvider implements DataProvider {
   }
   async deletePhoto(projectId: string, id: string): Promise<void> {
     await this.send(`/api/projects/${projectId}/photos/${id}`, 'DELETE', {});
+  }
+  async listAttachments(projectId: string, entity: string, reference: string): Promise<Attachment[]> {
+    return (await this.get<{ items: Attachment[] }>(`/api/projects/${projectId}/attachments?entity=${entity}&ref=${reference}`)).items;
+  }
+  async addAttachment(projectId: string, input: { entity: string; reference: string; name: string; dataUrl: string; mime: string; size: number; dated: string; note?: string }): Promise<Attachment> {
+    return this.send<Attachment>(`/api/projects/${projectId}/attachments`, 'POST', input);
+  }
+  async deleteAttachment(projectId: string, id: string): Promise<void> {
+    await this.send(`/api/projects/${projectId}/attachments/${id}`, 'DELETE', {});
   }
 
   async listComments(nodeId: string): Promise<NodeComment[]> {

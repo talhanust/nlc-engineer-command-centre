@@ -4,6 +4,7 @@ import { formatMoney } from '../domain/money';
 import { computeDeductions, DEFAULT_DEDUCTION_SETTINGS } from '../domain/deductions';
 import { IPC_STATUS_LABEL } from '../domain/ipc';
 import { AuditTrail } from './AuditTrail';
+import { Attachments } from './Attachments';
 import type { Ipc, Rar, RarIpcLink, BoqItem } from '../data/types';
 
 export function IpcDetailModal({ projectId, ipc, onClose }: { projectId: string; ipc: Ipc; onClose: () => void }) {
@@ -82,6 +83,7 @@ export function IpcDetailModal({ projectId, ipc, onClose }: { projectId: string;
           </table>
         )}
 
+        <div style={{ marginTop: 14 }}><Attachments projectId={projectId} entity="IPC" reference={ipc.ipcNo} /></div>
         <div style={{ marginTop: 14 }}><AuditTrail entity="IPC" reference={ipc.ipcNo} /></div>
 
         <div className="modal-actions"><button className="btn" onClick={onClose}>Close</button></div>

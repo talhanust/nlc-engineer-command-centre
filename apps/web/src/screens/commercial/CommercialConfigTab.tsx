@@ -55,18 +55,17 @@ export function CommercialConfigTab({ projectId }: { projectId: string }) {
     toast({ message: `${c.contractNo} retention → ${pct(n)}`, kind: 'success' });
   }
 
-  const totalTax = cfg.incomeTaxPct + cfg.gstPct;
 
   return (
     <div className="stack-lg">
       <section className="card">
-        <div className="section-head"><h3>Client billing deductions</h3>
-          <span className="muted small">applied to every IPC at generation</span>
+        <div className="section-head"><h3>Client billing deductions (IPC / EPC)</h3>
+          <span className="muted small">revenue inflow — applied to every IPC</span>
         </div>
         <p className="muted small" style={{ marginTop: 0 }}>
           Net certified = gross − retention − income tax − GST/stamp. Retention is released against the retention schedule; taxes are withheld at source.
         </p>
-        <div className="cfg-grid" role="group" aria-label="Commercial deduction config">
+        <div className="cfg-grid" role="group" aria-label="IPC deduction config">
           <label className="cfg-field">
             <span>IPC retention</span>
             <input type="number" aria-label="IPC retention %" min={0} max={100} step={0.5}
@@ -75,23 +74,48 @@ export function CommercialConfigTab({ projectId }: { projectId: string }) {
             <small className="muted">% of IPC gross withheld by client</small>
           </label>
           <label className="cfg-field">
-            <span>Income tax</span>
+            <span>IPC income tax</span>
             <input type="number" aria-label="Income tax %" min={0} max={100} step={0.5}
               value={cfg.incomeTaxPct} disabled={!editable}
               onChange={(e) => field('incomeTaxPct', e.target.value)} />
             <small className="muted">withholding at source</small>
           </label>
           <label className="cfg-field">
-            <span>GST / stamp</span>
+            <span>IPC GST / stamp</span>
             <input type="number" aria-label="GST stamp %" min={0} max={100} step={0.25}
               value={cfg.gstPct} disabled={!editable}
               onChange={(e) => field('gstPct', e.target.value)} />
             <small className="muted">second statutory line (0 if N/A)</small>
           </label>
         </div>
-        <div className="cfg-summary muted small" aria-label="Deduction summary">
-          On a PKR 100 IPC: retention {pct(cfg.ipcRetentionPct)} · taxes {pct(totalTax)} →
-          net <strong>{formatMoney(100 * (1 - (cfg.ipcRetentionPct + totalTax) / 100))}</strong>
+        <div className="cfg-summary muted small" aria-label="IPC deduction summary">
+          On a PKR 100 IPC: retention {pct(cfg.ipcRetentionPct)} · taxes {pct(cfg.incomeTaxPct + cfg.gstPct)} →
+          net <strong>{formatMoney(100 * (1 - (cfg.ipcRetentionPct + cfg.incomeTaxPct + cfg.gstPct) / 100))}</strong>
+        </div>
+      </section>
+
+      <section className="card">
+        <div className="section-head"><h3>Subcontractor RAR taxes</h3>
+          <span className="muted small">expenditure — applied to every RAR</span>
+        </div>
+        <p className="muted small" style={{ marginTop: 0 }}>
+          RARs are payments to subcontractors, not client revenue, so their taxes are set independently and are never netted against IPC/EPC income. RAR retention is per contract (below).
+        </p>
+        <div className="cfg-grid" role="group" aria-label="RAR deduction config">
+          <label className="cfg-field">
+            <span>RAR income tax</span>
+            <input type="number" aria-label="RAR income tax %" min={0} max={100} step={0.5}
+              value={cfg.rarIncomeTaxPct} disabled={!editable}
+              onChange={(e) => field('rarIncomeTaxPct', e.target.value)} />
+            <small className="muted">withheld from subcontractor</small>
+          </label>
+          <label className="cfg-field">
+            <span>RAR GST / stamp</span>
+            <input type="number" aria-label="RAR GST stamp %" min={0} max={100} step={0.25}
+              value={cfg.rarGstPct} disabled={!editable}
+              onChange={(e) => field('rarGstPct', e.target.value)} />
+            <small className="muted">second statutory line (0 if N/A)</small>
+          </label>
         </div>
         {editable && (
           <button className="btn" disabled={busy || !dirty} onClick={save} style={{ marginTop: 10 }}>

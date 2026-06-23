@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ContractDetailModal } from '../../components/ContractDetailModal';
 import { useData } from '../../data/DataContext';
 import { useToast } from '../../components/Toast';
 import { formatMoney } from '../../domain/money';
@@ -16,6 +17,7 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
   const { provider } = useData();
   const { toast } = useToast();
   const [contracts, setContracts] = useState<Contract[]>([]);
+  const [detail, setDetail] = useState<Contract | null>(null);
   const [subs, setSubs] = useState<Subcontractor[]>([]);
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState('');
@@ -57,6 +59,7 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
 
   return (
     <div>
+      {detail && <ContractDetailModal projectId={projectId} contract={detail} onClose={() => setDetail(null)} />}
       <div className="section-head">
         <div>
           <h3>Contracts Register</h3>
@@ -106,7 +109,7 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
                 <td className="small">{c.scopeBills.length ? c.scopeBills.join(', ') : '—'}</td>
                 <td className="num">{formatMoney(c.value)}</td>
                 <td><span className={`status-pill st-${pill(c.status)}`}>{STATUS_LABEL[c.status]}</span></td>
-                <td>{c.status !== 'closed' ? <button className="btn-ghost btn-mini" aria-label={`Advance ${c.contractNo}`} onClick={() => advance(c)}>Advance →</button> : <span className="muted small">—</span>}</td>
+                <td><button className="btn-ghost btn-mini" aria-label={`View ${c.contractNo}`} onClick={() => setDetail(c)}>View</button>{c.status !== 'closed' ? <button className="btn-ghost btn-mini" style={{ marginLeft: 6 }} aria-label={`Advance ${c.contractNo}`} onClick={() => advance(c)}>Advance →</button> : null}</td>
               </tr>
             ))}
           </tbody>

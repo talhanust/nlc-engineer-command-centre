@@ -285,7 +285,14 @@ describe('Phase 3 — Commercial tab', () => {
     const table = await screen.findByRole('table', { name: 'IPC register' });
     await user.click(within(table).getAllByRole('button', { name: /Details for IPC-/ })[0]);
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByRole('table', { name: 'IPC itemwise lines' })).toBeInTheDocument();
+    const sheet = within(dialog).getByRole('table', { name: 'IPC measurement sheet' });
+    expect(sheet).toBeInTheDocument();
+    // previous / this / cumulative measurement columns
+    expect(within(sheet).getByText('Previous')).toBeInTheDocument();
+    expect(within(sheet).getByText('This IPC')).toBeInTheDocument();
+    expect(within(sheet).getByText('Cumulative')).toBeInTheDocument();
+    // complete BOQ is shown (more rows than a single IPC's billed subset)
+    expect(within(sheet).getAllByText(/Bill 1 ·/).length).toBeGreaterThan(1);
   });
 
   it('offers a PDF certificate action on IPC rows', async () => {

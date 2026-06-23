@@ -1,6 +1,77 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-23 — Revenue composition + IPC/RAR → BOQ-line drill-downs
+- New 'Revenue composition' sub-tab (RevenueComposition.tsx + domain/revenue.ts) renders the gross
+  revenue chain: Executed work (IPC) + Price escalation (EPC, certified separately) = Gross
+  revenue → − retention → − income tax → − GST/stamp = Net certified, with Receipts (cash) shown
+  beneath. Side facts: Vetted (certified), Billed to date, Slippage = Executed − Vetted, and
+  Advances shown separately and excluded from the chain (isAdvanceReceipt matches the mobilisation
+  advance source). Deduction rates come from the project's CommercialConfig.
+- Drill-downs: the Executed/Billed/Vetted figures open an IPC/RAR → BOQ-line breakdown (each
+  certificate expands to its itemwise lines mapped to BOQ code · description, qty and amount);
+  Vetted lists only certified IPCs (vetted/forwarded/approved/paid); Receipts opens a by-source
+  ledger tagging each row Advance vs Revenue.
+- Tests: RevenueComposition.test.tsx (3) — domain chain math (gross/net/receipts-excl-advances/
+  slippage), advance flagging, and a render test that drills an IPC down to its BOQ lines.
+- Closes the financial-model rework: flagship generation, cash-flow month alignment, configurable
+  retention/taxes, revenue composition and drill-downs are all in. Web 325 (52 files); server 9;
+  typecheck clean; both builds green.
+
+2026-06-23 — Configurable retention & taxes + cash-flow month alignment
+- Cash-flow fix: the generated IPC periods, receipts and payments were anchored to each project's
+  start date, so they fell outside the fixed Sep-25..Aug-26 cash-flow window and the chart read
+  flat. Re-anchored those months to the demo "now" (Jun-2026) in the generator, so receipts land
+  Oct-25/Dec-25/Feb-26 and payments Mar-26..Jun-26 — the cash-flow chart now populates.
+- Retention & taxes are now configurable per project, applied at certification:
+  * New CommercialConfig { ipcRetentionPct (10), incomeTaxPct (7), gstPct (0) } per project, with
+    provider get/setCommercialConfig (key nlc-ecc.commcfg.<pid>, values clamped).
+  * Contract.retentionPct (default 5%, capped at 5% of contract value) set when a contract is
+    awarded (new field on the Contracts form) and editable later; provider setContractRetention.
+  * computeNet / ipcDeductionBreakdown extended with a GST/stamp line; deductionsFromConfig maps a
+    project's config to the IPC deduction rates.
+  * IPC generation now uses the project's config (the deduction-to-net panel shows retention,
+    income tax and, when set, GST). RAR generation now nets gross by the *contract's* retention
+    plus the project's income tax + GST.
+  * New 'Deductions & retention' sub-tab (CommercialConfigTab): edit the three IPC deduction rates
+    (with a live "PKR 100 → net" preview) and per-contract subcontractor retention (capped 5%),
+    gated to manager_contracts/admin.
+- ApiDataProvider stubs added for the three new methods (legacy parity). New test
+  commercialConfig.test.ts (4): config defaults/clamp, retention cap, RAR net = gross−retention
+  −tax, IPC GST line. Web 322 (51 files); server 9; typecheck clean; both builds green.
+- STILL PENDING (next): revenue-composition panel (Executed work + Escalation, advances excluded,
+  slippage = Executed − Vetted) and IPC/RAR → BOQ-line drill-downs for billed/vetted/receipts.
+
+2026-06-23 — Flagship F-14/F-15 is now a fully generated project (commercial consistency)
+- Made the flagship generated like the other 20 projects (added it to SEED_PROFILES; removed the
+  hand-authored SEED_BOQ / curated+filler path; flipped all 43 per-entity flagship fallbacks to
+  the generator; flagship progress/IPCs/RARs/contracts/distributions now come from the same
+  deterministic seed). Result: BOQ totals the contract (~19.28 bn), executed ≈ actual %, IPCs vet
+  to ≈ billed, RARs/receipts reconcile — the consistency needed for logical vetted/billed/slippage.
+- Generator: one RAR per project is now 'submitted' (pipeline demos have a verifiable bill).
+- Rebuilt the test fixture (21 tests across Commercial/Execution/Financial/Procurement/CrossCutting
+  /finance) to assert the generated data (codes 1-01.., catalogue descriptions, generated sub
+  names, BG patterns) and to be resilient (getAllBy where the generated set repeats a value).
+- Seed version bumped to v6; reconcile clears the full stale flagship cache so existing users
+  regenerate. KNOWN FOLLOW-UP: generated receipt/payment months don't align with the fixed
+  cash-flow TIMELINE, so the cash-flow chart reads flat for generated projects — to be fixed in the
+  financial-model pass (retention/tax config, revenue composition, drill-downs). Web 318 (50 files);
+  server 9; typecheck clean; both builds green.
+
+2026-06-23 — Flagship BOQ shows executed quantities; BOQ totals the contract value
+- BOQ = contract value: the flagship BOQ already tops up curated reference rows with generated
+  catalogue items to total the ~19.28 bn contract (verified). Confirmed and retained.
+- Executed qty/amount were blank because the flagship had no seeded progress (its hand progress
+  was dropped earlier, and it isn't in the generated profile set). Added flagshipProgress(): a
+  deterministic ProgressUpdate per BOQ item at ~the project's actual % (with per-item variation),
+  routed through listProgress so the BOQ register and execution tracker now show executed
+  quantities and value across the whole BOQ. Seed version bumped (v5) to drop the stale empty
+  progress cache for existing users.
+- Explored making the flagship a fully generated project (for end-to-end vetted/billed
+  consistency) but reverted: it rebuilds the entire test fixture (21 tests). Captured as a
+  pending decision pending product confirmation on the commercial model (retention/tax, revenue
+  composition, advances treatment, drill-downs). Web 318 (50 files); server 9; both builds green.
+
 2026-06-23 — Document attachments on IPCs and RARs
 - New Attachment model + provider methods (listAttachments/addAttachment/deleteAttachment across
   interface + Local + Api stub), stored per project under nlc-ecc.attach.<pid> and scoped by

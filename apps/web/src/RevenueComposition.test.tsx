@@ -13,7 +13,7 @@ describe('revenue composition domain', () => {
   it('builds the gross→net chain and excludes advances', () => {
     const c = revenueComposition({
       executed: 1000, vetted: 800, billed: 900, escalation: 100, receiptsTotal: 700, advances: 200,
-      cfg: { ipcRetentionPct: 10, incomeTaxPct: 7, gstPct: 1 },
+      cfg: { ipcRetentionPct: 10, incomeTaxPct: 7, gstPct: 1, rarIncomeTaxPct: 7, rarGstPct: 0 },
     });
     expect(c.gross).toBe(1100);            // executed + escalation
     expect(c.retention).toBeCloseTo(110);  // 10% of gross

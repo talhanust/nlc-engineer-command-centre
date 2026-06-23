@@ -1046,3 +1046,13 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .rev-fact.accent { border-color: var(--rag-amber); }
 .link-btn { background: none; border: none; padding: 0; color: var(--signal); text-decoration: underline; cursor: pointer; font: inherit; text-align: left; }
 .drill-line td { background: var(--surface-2); }
+
+/* Wide detail modal + measurement sheet */
+.modal.modal-wide { max-width: min(1100px, 96vw); }
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.measure-table { min-width: 880px; }
+.measure-table th.grp { text-align: center; background: var(--surface-2); border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+.measure-table th.grp-now, .measure-table td.grp-now { background: color-mix(in srgb, var(--signal) 9%, transparent); }
+.measure-table th.grp-now { color: var(--signal); }
+.measure-table tr.row-billed td { font-weight: 600; }
+.measure-table tfoot td { font-weight: 700; border-top: 2px solid var(--border-strong); }

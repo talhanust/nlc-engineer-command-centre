@@ -37,7 +37,7 @@ export interface ParsedRow {
   rate: number;
 }
 
-const HEADER_ALIASES: Record<keyof ParsedRow, string[]> = {
+export const HEADER_ALIASES: Record<keyof ParsedRow, string[]> = {
   billNo: ['bill', 'billno', 'bill no', 'bill_no'],
   code: ['code', 'item', 'itemcode', 'item code', 'sr', 'srno', 'sr no'],
   description: ['description', 'desc', 'particulars', 'work'],

@@ -25,7 +25,7 @@ describe('detail modals (PO + payment)', () => {
   it('renders the PO detail modal with an audit trail', async () => {
     wrap(<PoDetailModal projectId="proj-f14f15" po={po} onClose={() => {}} />);
     expect(await screen.findByRole('dialog', { name: 'PO PO-09 detail' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Audit trail' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Activity' })).toBeInTheDocument();
   });
 
   it('renders the payment detail modal with the approval chain', async () => {

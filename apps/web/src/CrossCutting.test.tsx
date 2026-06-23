@@ -88,6 +88,6 @@ describe('Phase 7 — settings', () => {
     await user.selectOptions(select, 'bn');
     await waitFor(() => expect(getMoneyFormat()).toBe('bn'));
     expect(screen.getByText(/Rs 19\.28 Bn/)).toBeInTheDocument();
-    setMoneyFormat('cr'); // restore for other tests
+    setMoneyFormat('mn'); // restore for other tests
   });
 });

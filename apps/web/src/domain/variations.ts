@@ -1,4 +1,4 @@
-import type { Variation, VariationStatus, VariationType } from '../data/types';
+import type { Variation, VariationStatus, VariationType, VariationLine, BoqItem } from '../data/types';
 
 export const VO_PIPELINE: VariationStatus[] = ['draft', 'submitted', 'recommended', 'approved'];
 
@@ -61,4 +61,68 @@ export function variationSummary(variations: Variation[], originalContractValue:
 /** Revised contract value = original + approved variations. */
 export function revisedContractValue(originalContractValue: number, variations: Variation[]): number {
   return originalContractValue + variations.filter((v) => v.status === 'approved').reduce((s, v) => s + v.amount, 0);
+}
+
+// ---- BOQ-level variations (qty / rate / add / omit) ----------------------
+
+export const VO_LINE_KIND_LABEL: Record<VariationLine['kind'], string> = {
+  qty: 'Quantity variation', rate: 'Rate change', add: 'Add item', omit: 'Omit item',
+};
+
+const round = (n: number) => Math.round(n);
+
+/** Signed contract delta for one VO line, given the current BOQ item it targets. */
+export function variationLineAmount(line: VariationLine, item?: BoqItem): number {
+  switch (line.kind) {
+    case 'qty':  return item ? round((Number(line.newQty) - item.qty) * item.rate) : 0;
+    case 'rate': return item ? round(item.qty * (Number(line.newRate) - item.rate)) : 0;
+    case 'add':  return round(Number(line.newQty || 0) * Number(line.newRate || 0));
+    case 'omit': return item ? -round(item.qty * item.rate) : 0;
+    default: return 0;
+  }
+}
+
+/** Total signed amount of a set of VO lines against the given BOQ. */
+export function variationLinesAmount(lines: VariationLine[], boq: BoqItem[]): number {
+  const byId = new Map(boq.map((b) => [b.id, b]));
+  return lines.reduce((s, l) => s + variationLineAmount(l, l.boqItemId ? byId.get(l.boqItemId) : undefined), 0);
+}
+
+/** Derive a representative VariationType from a set of lines. */
+export function dominantVariationType(lines: VariationLine[]): VariationType {
+  if (lines.length === 0) return 'addition';
+  if (lines.every((l) => l.kind === 'add')) return 'addition';
+  if (lines.every((l) => l.kind === 'omit')) return 'omission';
+  if (lines.every((l) => l.kind === 'rate')) return 'rate_change';
+  return 'substitution';
+}
+
+/**
+ * Apply an (approved) variation's lines to the BOQ, returning a NEW revised BOQ.
+ * qty/rate edit the item in place; add appends; omit zeroes the item (refs preserved).
+ */
+export function applyVariationToBoq(boq: BoqItem[], variation: Variation): BoqItem[] {
+  if (!variation.lines || variation.lines.length === 0) return boq;
+  const next = boq.map((b) => ({ ...b }));
+  const byId = new Map(next.map((b) => [b.id, b]));
+  let addSeq = 0;
+  for (const line of variation.lines) {
+    if (line.kind === 'add') {
+      addSeq++;
+      const qty = Number(line.newQty || 0); const rate = Number(line.newRate || 0);
+      next.push({
+        id: `boq-${variation.projectId}-vo-${variation.voNo}-${addSeq}`, projectId: variation.projectId,
+        billNo: line.billNo || '—', billName: undefined, section: `VO ${variation.voNo}`,
+        code: line.code || `${variation.voNo}-${addSeq}`, description: line.description || 'Added item (variation)',
+        unit: line.unit || 'No', qty, rate, amount: round(qty * rate),
+      });
+      continue;
+    }
+    const item = line.boqItemId ? byId.get(line.boqItemId) : undefined;
+    if (!item) continue;
+    if (line.kind === 'qty') { item.qty = Number(line.newQty); item.amount = round(item.qty * item.rate); item.revisedByVo = variation.voNo; }
+    else if (line.kind === 'rate') { item.rate = Number(line.newRate); item.amount = round(item.qty * item.rate); item.revisedByVo = variation.voNo; }
+    else if (line.kind === 'omit') { item.qty = 0; item.amount = 0; item.revisedByVo = variation.voNo; }
+  }
+  return next;
 }

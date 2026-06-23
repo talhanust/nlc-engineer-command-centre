@@ -1,22 +1,21 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { toCsv, nodeBreakdownCsv, nodeBreakdownAoa } from './exporters';
-import { formatMoney, setMoneyFormat } from './money';
+import { formatMoney, formatAxis, setMoneyFormat } from './money';
 import { computeNodeRollup } from './rollup';
 import { LocalDataProvider } from '../data/LocalDataProvider';
 
 describe('currency formats', () => {
   const v = 19284461163;
   it('formats the same value in each selected unit', () => {
-    expect(formatMoney(v, 'cr')).toMatch(/Cr$/);
-    expect(formatMoney(v, 'cr')).toContain('1,928');
     expect(formatMoney(v, 'mn')).toMatch(/^Rs .*Mn$/);
     expect(formatMoney(v, 'bn')).toBe('Rs 19.28 Bn');
     expect(formatMoney(v, 'rs')).toBe('Rs 19,284,461,163');
+    expect(formatAxis(v, 'bn')).toBe('19.28 Bn');
   });
   it('honours the persisted setting as the default', () => {
     setMoneyFormat('bn');
     expect(formatMoney(v)).toBe('Rs 19.28 Bn');
-    setMoneyFormat('cr'); // restore default for other tests
+    setMoneyFormat('mn'); // restore default for other tests
   });
 });
 

@@ -49,6 +49,8 @@ describe('navigation & command dashboards', () => {
     renderAt('/node/proj-f14f15');
     expect(await screen.findByRole('heading', { name: 'F-14/F-15 Islamabad' })).toBeInTheDocument();
     expect(screen.getByText(/Client: FGEHA/)).toBeInTheDocument();
+    // BOQ ships unmapped, so the cross-module data-health banner surfaces it.
+    expect(await screen.findByRole('status', { name: 'Data health' })).toBeInTheDocument();
   });
 
   it('drills down when a breakdown row is clicked', async () => {

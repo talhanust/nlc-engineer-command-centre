@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { wbsCoverage, materialCoverage, type Coverage } from '../../domain/mapping';
+import { suggestWbsLinks } from '../../domain/autoMap';
+import { MapReviewModal } from '../../components/MapReviewModal';
 import { formatMoney } from '../../domain/money';
 import { materialRecovery, issueValue, totalBalanceToRecover } from '../../domain/materialrecovery';
 import { MappingWorkflowStrip } from '../../components/MappingWorkflowStrip';
@@ -124,16 +126,51 @@ function WbsMapping({ projectId }: { projectId: string }) {
     await provider.setBoqWbs(projectId, link);
   }
 
+  const [busy, setBusy] = useState(false);
+  const [review, setReview] = useState(false);
+  const suggestions = suggestWbsLinks(items, acts, Object.values(links));
+  async function applyLinks(newLinks: BoqWbsLink[]) {
+    if (newLinks.length === 0) return;
+    setBusy(true);
+    try {
+      const next = { ...links };
+      for (const link of newLinks) {
+        next[link.boqItemId] = link;
+        await provider.setBoqWbs(projectId, link);
+      }
+      setLinks(next);
+    } finally { setBusy(false); }
+  }
+
   const c = wbsCoverage(items, Object.values(links));
   return (
     <div>
-      <div className="section-head"><h3>BOQ → WBS mapping</h3></div>
+      {review && (
+        <MapReviewModal
+          items={items}
+          activities={acts}
+          suggestions={suggestions}
+          onConfirm={applyLinks}
+          onClose={() => setReview(false)}
+        />
+      )}
+      <div className="section-head"><h3>BOQ → WBS mapping</h3>
+        <div className="head-tools">
+          {acts.length === 0
+            ? <span className="muted small">Import a schedule (Execution → Schedule) to enable mapping.</span>
+            : <button className="btn-ghost" disabled={busy || suggestions.length === 0} onClick={() => setReview(true)}
+                title="Review suggested activity links for unmapped BOQ items before applying">
+                Auto-map{suggestions.length ? ` (${suggestions.length})` : ''}
+              </button>}
+        </div>
+      </div>
       <CoverageBar c={c} />
+      <p className="muted small">Auto-map proposes activity links for unmapped items by matching descriptions; review each before confirming. Commercial executed progress flows to these activities (Execution → Schedule) through this mapping.</p>
       {items.length === 0 ? (
         <p className="muted">Import a BOQ first.</p>
       ) : (
         <table className="data-table" aria-label="WBS mapping">
-          <thead><tr><th>Code</th><th>Description</th><th>Activity (WBS)</th></tr></thead>
+          <thead><tr><th>Code</th><th>Description</th><th>Activity (WBS)</th><th>Link</th></tr></thead>
           <tbody>
             {items.map((it) => (
               <tr key={it.id}>
@@ -144,6 +181,13 @@ function WbsMapping({ projectId }: { projectId: string }) {
                     <option value="">Unmapped</option>
                     {acts.map((a) => (<option key={a.id} value={a.activityId}>{a.activityId} — {a.name}</option>))}
                   </select>
+                </td>
+                <td>
+                  {links[it.id]?.confidence === 'auto'
+                    ? <span className="status-pill st-draft">Auto</span>
+                    : links[it.id]?.confidence === 'confirmed'
+                      ? <span className="status-pill st-verified">Confirmed</span>
+                      : <span className="muted small">—</span>}
                 </td>
               </tr>
             ))}

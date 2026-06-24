@@ -1,6 +1,24 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-23 — Three professional enhancements: machinery-hire log, over-allocation guard, scope coverage
+- Machinery-usage log (Procurement): new MachineryUsage type (hours × rate = usage value), provider
+  methods listMachineryUsage / createMachineryUsage / setMachineryRecovered (Local + Api stubs +
+  interface), generator seeds EXC-320 and RLR-12T hired to sublet contractors, and a new
+  "Machinery hire" Procurement sub-tab (log + per-contractor recovery balances). domain/
+  machineryRecovery.ts mirrors materialrecovery (per-contractor usage − recovered = balance).
+  The RAR modal now surfaces the contractor's outstanding machinery balance with a one-click
+  "Recover this" that pre-fills a machinery recovery — parallel to material, suppressed for labour.
+- Over-allocation guard: the distribution planner now caps any allocation at the item's remaining
+  BOQ quantity (item.qty − Σ other lines), toasts when it clamps, and the qty input remounts so the
+  capped figure shows. Quantities can never exceed the BOQ.
+- Per-contract scope coverage: domain/allocations.ts gains contractCoverage() and the planner shows
+  a "Contract scope coverage" panel (scope value · allocated · unawarded · coverage %) so unawarded
+  scope is visible at a glance; rows with unawarded balance are flagged. Panel renders whenever
+  awarded contracts exist, independent of allocations.
+- Tests: machineryRecovery + contractCoverage domain tests, machinery register render, and the
+  coverage panel render. Web 341 (58 files); server 9; typecheck clean; both builds green.
+
 2026-06-23 — Remove RAR↔IPC recovery linking; material-recovery suggestion (verify A/B/C)
 - Confirmed the three commercial requirements are implemented and reconciled:
   * RAR recoveries (B): material / machinery / other via domain/rarRecovery.ts (rarSettlement),

@@ -10,7 +10,7 @@ import {
   itemScCost, itemLoCost, itemModeLabel, itemMarginPct, planTotals,
 } from '../../domain/allocations';
 import { canAwardByPec, pecLimitLabel } from '../../domain/pec';
-import type { Allocation, BoqItem, ContractApproval, ExecutionType, Subcontractor } from '../../data/types';
+import type { Allocation, BoqItem, Contract, ContractApproval, ExecutionType, Subcontractor } from '../../data/types';
 
 const EXEC_TYPES: ExecutionType[] = ['labor', 'sublet', 'nlc_direct'];
 const num = (n: number) => n.toLocaleString('en-PK');
@@ -24,21 +24,23 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
   const [subs, setSubs] = useState<Subcontractor[]>([]);
   const [allocs, setAllocs] = useState<Allocation[]>([]);
   const [contracts, setContracts] = useState<ContractApproval[]>([]);
+  const [regContracts, setRegContracts] = useState<Contract[]>([]);
   const [role, setRole] = useState('pd');
   const [openItem, setOpenItem] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [bill, setBill] = useState('all');
 
   async function load() {
-    const [b, s, a, c] = await Promise.all([
+    const [b, s, a, c, rc] = await Promise.all([
       provider.listBoq(projectId), provider.listSubcontractors(projectId),
-      provider.listAllocations(projectId), provider.listContractApprovals(projectId),
+      provider.listAllocations(projectId), provider.listContractApprovals(projectId), provider.listContracts(projectId),
     ]);
-    setItems(b); setSubs(s); setAllocs(a); setContracts(c);
+    setItems(b); setSubs(s); setAllocs(a); setContracts(c); setRegContracts(rc);
   }
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [provider, projectId]);
 
   const subName = (id?: string) => subs.find((s) => s.id === id)?.name ?? '—';
+  const contractForSub = (id?: string) => regContracts.find((c) => c.subcontractorId === id);
   const margin = boqMargin(items, allocs);
   const summaries = contractSummaries(items, allocs);
   const statusOf = (key: string) => contracts.find((c) => c.key === key)?.status ?? 'draft';
@@ -157,9 +159,11 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
                         <tr key={`${item.id}-detail`}>
                           <td colSpan={12}>
                             <table className="data-table" aria-label={`Allocations for ${item.code}`}>
-                              <thead><tr><th>Execution</th><th>Contractor</th><th className="num">Qty</th><th className="num">Rate</th><th className="num">Value</th><th></th></tr></thead>
+                              <thead><tr><th>Execution</th><th>Contractor</th><th>Contract</th><th className="num">Qty</th><th className="num">Rate</th><th className="num">Value</th><th></th></tr></thead>
                               <tbody>
-                                {lines.map((a) => (
+                                {lines.map((a) => {
+                                  const ctr = a.executionType === 'nlc_direct' ? undefined : contractForSub(a.contractorId);
+                                  return (
                                   <tr key={a.id}>
                                     <td>
                                       <select aria-label={`Type ${a.id}`} value={a.executionType} onChange={(e) => patch(a, { executionType: e.target.value as ExecutionType })}>
@@ -173,12 +177,21 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
                                         </select>
                                       )}
                                     </td>
+                                    <td className="small">{a.executionType === 'nlc_direct' ? <span className="muted">NLC self</span> : ctr ? <span className="mono">{ctr.contractNo}</span> : <span className="muted" title="No awarded contract for this contractor yet">no contract</span>}</td>
                                     <td className="num"><input className="qty-input" aria-label={`Qty ${a.id}`} defaultValue={a.qty} onBlur={(e) => patch(a, { qty: Number(e.target.value) || 0 })} /></td>
                                     <td className="num"><input className="qty-input" aria-label={`Rate ${a.id}`} defaultValue={a.rate} onBlur={(e) => patch(a, { rate: Number(e.target.value) || 0 })} /></td>
                                     <td className="num">{formatMoney(a.rate * a.qty)}</td>
                                     <td><button className="btn-ghost" aria-label={`Remove ${a.id}`} onClick={() => removeLine(a.id)}>✕</button></td>
                                   </tr>
-                                ))}
+                                  );
+                                })}
+                                <tr className="alloc-unassigned">
+                                  <td className="muted small">Unassigned</td><td></td><td></td>
+                                  <td className="num small">{num(Math.max(0, remainingQty(item, allocs)))} {item.unit}</td>
+                                  <td></td>
+                                  <td className="num small">{money(Math.max(0, remainingQty(item, allocs)) * item.rate)}</td>
+                                  <td></td>
+                                </tr>
                               </tbody>
                             </table>
                             <button className="btn-ghost" style={{ marginTop: 6 }} onClick={() => addLine(item)}>+ Add allocation</button>

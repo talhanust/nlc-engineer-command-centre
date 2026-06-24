@@ -12,7 +12,7 @@ import { useRole } from '../../state/Role';
 import { downloadCertificatePdf } from '../../components/certificatePdf';
 import { SortTh } from '../../components/SortTh';
 import { useBulkSelection } from '../../components/useBulkSelection';
-import type { Rar, Subcontractor, Ipc, RarIpcLink, BoqItem, Contract } from '../../data/types';
+import type { Rar, Subcontractor, BoqItem, Contract } from '../../data/types';
 import { useToast } from '../../components/Toast';
 
 export function RarRegister({ projectId }: { projectId: string }) {
@@ -23,8 +23,6 @@ export function RarRegister({ projectId }: { projectId: string }) {
   const [boq, setBoq] = useState<BoqItem[]>([]);
   const [detailRar, setDetailRar] = useState<Rar | null>(null);
   const [subs, setSubs] = useState<Subcontractor[]>([]);
-  const [ipcs, setIpcs] = useState<Ipc[]>([]);
-  const [links, setLinks] = useState<RarIpcLink[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [fSub, setFSub] = useState('all');
   const [fStage, setFStage] = useState('all');
@@ -35,16 +33,12 @@ export function RarRegister({ projectId }: { projectId: string }) {
     Promise.all([
       provider.listRars(projectId),
       provider.listSubcontractors(projectId),
-      provider.listIpcs(projectId),
-      provider.listRarIpcLinks(projectId),
       provider.listBoq(projectId),
       provider.listContracts(projectId),
-    ]).then(([r, s, i, l, b, c]) => {
+    ]).then(([r, s, b, c]) => {
       if (!alive) return;
       setRars(r);
       setSubs(s);
-      setIpcs(i);
-      setLinks(l);
       setBoq(b);
       setContracts(c);
     });
@@ -227,75 +221,6 @@ export function RarRegister({ projectId }: { projectId: string }) {
                 </tr>
               );
             })}
-          </tbody>
-        </table>
-      )}
-
-      <RecoveryLinks
-        projectId={projectId}
-        rars={rars}
-        ipcs={ipcs}
-        links={links}
-        onAdded={(l) => setLinks((prev) => [...prev, l])}
-      />
-    </div>
-  );
-}
-
-function RecoveryLinks({
-  projectId,
-  rars,
-  ipcs,
-  links,
-  onAdded,
-}: {
-  projectId: string;
-  rars: Rar[];
-  ipcs: Ipc[];
-  links: RarIpcLink[];
-  onAdded: (l: RarIpcLink) => void;
-}) {
-  const { provider } = useData();
-  const [rarId, setRarId] = useState('');
-  const [ipcId, setIpcId] = useState('');
-  const [amount, setAmount] = useState('');
-
-  const rarNo = (id: string) => rars.find((r) => r.id === id)?.rarNo ?? id;
-  const ipcNo = (id: string) => ipcs.find((i) => i.id === id)?.ipcNo ?? id;
-
-  async function add() {
-    const a = Number(amount.replace(/,/g, ''));
-    if (!rarId || !ipcId || !Number.isFinite(a) || a <= 0) return;
-    const link = await provider.addRarIpcLink(projectId, { rarId, ipcId, amount: a });
-    onAdded(link);
-    setAmount('');
-  }
-
-  return (
-    <div className="card" style={{ marginTop: 16 }}>
-      <h3>RAR ↔ IPC recovery links</h3>
-      <p className="muted small">
-        Record amounts recovered from a subcontractor RAR against a client IPC.
-      </p>
-      <div className="create-row">
-        <select aria-label="Recovery RAR" value={rarId} onChange={(e) => setRarId(e.target.value)}>
-          <option value="">Select RAR</option>
-          {rars.map((r) => (<option key={r.id} value={r.id}>{r.rarNo}</option>))}
-        </select>
-        <select aria-label="Recovery IPC" value={ipcId} onChange={(e) => setIpcId(e.target.value)}>
-          <option value="">Select IPC</option>
-          {ipcs.map((i) => (<option key={i.id} value={i.id}>{i.ipcNo}</option>))}
-        </select>
-        <input aria-label="Recovery amount" placeholder="Amount (PKR)" value={amount} onChange={(e) => setAmount(e.target.value)} />
-        <button className="btn" onClick={add}>Link recovery</button>
-      </div>
-      {links.length > 0 && (
-        <table className="data-table" aria-label="Recovery links" style={{ marginTop: 10 }}>
-          <thead><tr><th>RAR</th><th>IPC</th><th className="num">Amount</th></tr></thead>
-          <tbody>
-            {links.map((l) => (
-              <tr key={l.id}><td>{rarNo(l.rarId)}</td><td>{ipcNo(l.ipcId)}</td><td className="num">{formatMoney(l.amount)}</td></tr>
-            ))}
           </tbody>
         </table>
       )}

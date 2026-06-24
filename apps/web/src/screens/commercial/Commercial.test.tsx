@@ -91,7 +91,10 @@ describe('Phase 3 — Commercial tab', () => {
     const btns = await screen.findAllByRole('button', { name: /Details for RAR-/ });
     await user.click(btns[0]);
     const dialog = await screen.findByRole('dialog', { name: /RAR-.* detail/ });
-    expect(within(dialog).getByRole('table', { name: 'RAR payment computation' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('table', { name: 'RAR settlement' })).toBeInTheDocument();
+    // net is gross less retention/taxes/recoveries — no IPC linkage
+    expect(within(dialog).getByText('Net payable to contractor')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Recovery against IPC/)).not.toBeInTheDocument();
     await user.click(within(dialog).getByLabelText('Final bill'));
     expect(await within(dialog).findByText(/Issue payment authority \(CFO\)/)).toBeInTheDocument();
   });
@@ -507,16 +510,6 @@ describe('Phase 3 #11/#12 — RAR, subs, recovery, EPC, advances, distributions,
     await user.type(screen.getByLabelText('Contractor trade'), 'Drainage');
     await user.click(screen.getByRole('button', { name: 'Add contractor' }));
     expect(await screen.findByText('New Civil Co')).toBeInTheDocument();
-  });
-
-  it('records a RAR-IPC recovery link', async () => {
-    const user = await gotoSub('RAR Register');
-    await screen.findByRole('table', { name: 'RAR register' });
-    await user.selectOptions(screen.getByLabelText('Recovery RAR'), 'rar-proj-f14f15-2');
-    await user.selectOptions(screen.getByLabelText('Recovery IPC'), 'ipc-proj-f14f15-1');
-    await user.type(screen.getByLabelText('Recovery amount'), '500000000');
-    await user.click(screen.getByRole('button', { name: 'Link recovery' }));
-    expect(await screen.findByRole('table', { name: 'Recovery links' })).toBeInTheDocument();
   });
 
   it('generates EPC drafts from eligible IPCs and advances one', async () => {

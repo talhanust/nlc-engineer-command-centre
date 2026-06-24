@@ -107,11 +107,6 @@ export function RevenueComposition({ projectId }: { projectId: string }) {
           ) : (
             <IpcDrill ipcs={drill === 'vetted' ? certifiedIpcs : ipcs} rars={rars} codeOf={codeOf} showRars={false} />
           )}
-          {drill !== 'receipts' && (
-            <p className="muted small" style={{ marginTop: 8 }}>
-              Client billing only. Subcontractor RARs are expenditure and are tracked in the RAR register, not netted against this revenue.
-            </p>
-          )}
         </section>
       )}
     </div>

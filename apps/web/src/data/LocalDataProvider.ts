@@ -758,6 +758,8 @@ export class LocalDataProvider implements DataProvider {
       id: `act-${projectId}-${i + 1}`, projectId,
       activityId: sanitize(r.activityId), name: sanitize(r.name), wbs: sanitize(r.wbs),
       durationDays: r.durationDays, plannedStart: r.plannedStart, plannedFinish: r.plannedFinish, isMilestone: r.isMilestone,
+      ...(r.predecessors && r.predecessors.length ? { predecessors: r.predecessors.map(sanitize) } : {}),
+      ...(r.physCompletePct != null ? { physCompletePct: r.physCompletePct } : {}),
     }));
     writeJson(schedKey(projectId), acts);
     audit(projectId, 'import', 'Schedule', `${acts.length} activities`);

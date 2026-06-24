@@ -336,6 +336,10 @@ export interface ScheduleActivity {
   plannedStart: string;
   plannedFinish: string;
   isMilestone: boolean;
+  /** Predecessor activity codes (from Primavera TASKPRED); drives critical path. */
+  predecessors?: string[];
+  /** Physical % complete carried from the imported plan (phys_complete_pct). */
+  physCompletePct?: number;
 }
 
 /** One point of the monthly cumulative S-curve. `actual` is null beyond now. */

@@ -1,6 +1,117 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-24 — Auto-map review screen (confirm-before-apply) instead of blind one-click
+- components/MapReviewModal.tsx: the Mapping "Auto-map (n)" button now opens a review modal
+  rather than applying every fuzzy match. Each suggestion shows the BOQ code+description, the
+  proposed activity (editable dropdown so the engineer can re-point it), and a colour-coded
+  match strength (strong/good/weak as a %). Per-row accept checkboxes + Accept-all/Clear-all;
+  "Confirm N mappings" saves only the accepted set, as confidence:'confirmed' (human-reviewed).
+  Sorted strongest-first. Suggestions are still computed by domain/autoMap (suggestWbsLinks).
+- Small theme additions for the strength chip and muted skipped rows (color-mix, already used).
+- Tests: a mapping flow test opens the review modal, confirms, and asserts confirmed links
+  appear on the register. (Restored the material-recovery test that an earlier edit had
+  dropped — caught via a flat test count.) Web 374 (65 files); server 9; typecheck clean;
+  both builds green.
+
+2026-06-24 — Schedule logic links + critical path (CPM) from the imported Primavera plan
+- ScheduleActivity gains optional predecessors[] (activity codes) and physCompletePct. The .xer
+  parser now reads TASKPRED — mapping successor/predecessor task_ids to task_codes — and carries
+  phys_complete_pct, so the imported plan keeps its logic network and any as-imported progress.
+  LocalDataProvider.replaceSchedule persists both (sanitised); the xlsx/paste path is unaffected
+  (fields optional). Api stub unchanged (passes rows through).
+- domain/criticalPath.ts runs CPM over the network: Kahn topological order (cycle-tolerant —
+  a malformed plan can't hang the UI), a forward pass (early start/finish), a backward pass
+  (late start/finish) and total float = LS − ES; activities with ~zero float are critical.
+  Returns per-activity nodes, the project duration (longest path) and the critical-id set.
+- Execution → Schedule: the Gantt colours critical bars red (new optional criticalIds prop),
+  a "Critical path / Project duration" KPI shows when a network exists, and the table gains a
+  Float column (a "Critical" pill or the slack in days). All inert for plans without logic
+  links (the flagship's 6-activity seed), lighting up once a real .xer is imported.
+- Tests: criticalPath (5 — longest path, critical vs slack, ES/LS, no-network, cycle safety);
+  xer predecessor resolution; schedule Float column render. Web 373 (65 files); server 9;
+  typecheck clean; both builds green.
+
+2026-06-24 — Cross-module data-health banner on the project executive view
+- domain/dataHealth.ts turns cross-module integrity signals into actionable checks: BOQ value
+  not yet mapped to the schedule (warning, or critical past half the BOQ value — it can't earn
+  schedule actuals until mapped), oversold stock (critical — issues exceed receipts, from the
+  material register), pending/unvalidated progress (warning) and a missing schedule baseline
+  (warning). Returns checks + worst level + issue count.
+- components/DataHealthBanner.tsx computes the inputs from the provider (BOQ/wbs links/schedule/
+  progress + the material register), reuses the existing alert-banner styling, refreshes on
+  nlc:audit, and renders only when there's something to fix. Each issue deep-links to the tab
+  where it's resolved (mapping/execution/procurement). Mounted at the top of ProjectView's
+  Executive tab. The flagship ships with an unmapped BOQ, so the banner surfaces it immediately.
+- Tests: dataHealth (5 — all-ok, missing baseline, unmapped warn→critical, negative stock +
+  pending progress, no-BOQ skip); App test asserts the banner renders on the flagship executive
+  view. Web 367 (64 files); server 9; typecheck clean; both builds green.
+
+2026-06-24 — Material stores drill-down: per-code receipts/issues ledger with running balance
+- domain/materialLedger.ts: for one material code it threads every receipt (CRV line, valued
+  at the demand rate via PO→Demand) and every issue/consumption into a running-balance
+  movement ledger plus the two source lists, valuing each issue at its own recovery rate or
+  the store average. receivedQty / issuedQty / balanceQty / avgRate summarised.
+- The Procurement Material register makes each code a link; clicking it opens a wide
+  MaterialLedgerModal with KPIs (received / issued / on hand / avg rate), a Receipts (CRV)
+  table, an Issues/consumption table (with contractor + value), and a Movement ledger whose
+  balance reads top-to-bottom — the modern "click the number to see what's behind it" drill.
+- Tests: materialLedger (4 — receipt valuation, running balance across receipts→issues,
+  per-issue vs average rate, code isolation); the Procurement test now opens the ledger and
+  asserts the movement table. Web 362 (63 files); server 9; typecheck clean; both builds green.
+
+2026-06-24 — Procurement becomes the system of record for material issuance/consumption
+- The Procurement "Material register" tab now records issues/consumption, not just reads them:
+  a "Record issue / consumption" form (date, material code with a datalist of known codes,
+  qty, issued-to, optional contractor + recovery rate) calls provider.createMaterialIssue
+  and reloads. Issuing to a contractor sets the recoverable balance and defaults the rate to
+  the store's weighted-average if left blank; issuing to "Own works" records plain
+  consumption. A live on-hand hint shows the balance for the chosen code and warns when an
+  issue would exceed recorded stock. A "Recent issues" log (newest first) lists the last 25.
+- This makes Procurement the single point of material entry the brief asked for. The same
+  MaterialIssue store still feeds Mapping -> Material recovery and the Execution -> Production
+  reconciliation, so nothing is double-keyed; the Execution issue form remains for shop-floor
+  use but Procurement is now authoritative.
+- Tests: the Procurement material-register test now also types a new issue in Procurement and
+  asserts it lands in the issues log (register + recovery + reconciliation all read it).
+  Web 358 (62 files); server 9; typecheck clean; both builds green.
+
+2026-06-24 — Primavera .xer import, BOQ↔WBS auto-map, Commercial→Execution progress translation, Procurement material register
+- Primavera P6 .xer import: new domain/xer.ts parses the tab-delimited %T/%F/%R/%E
+  table format (PROJECT/PROJWBS/TASK/TASKPRED), resolves each task's WBS path by walking
+  PROJWBS parents (root project node skipped), derives durationDays from target dates
+  (falling back to target_drtn_hr_cnt/8) and flags TT_Mile/TT_FinMile milestones. The
+  Schedule "Import baseline" (components/BaselineImport.tsx) now accepts .xer alongside
+  .xlsx/.csv/paste: a .xer is read as text, parsed, and previewed (plan name · WBS · link
+  counts) before Apply → provider.replaceSchedule. Verified against the attached F-14/F-15
+  baseline (76 tasks, 25 WBS, 98 relationships).
+- BOQ → WBS auto-mapping: domain/autoMap.ts scores each unmapped BOQ item against every
+  activity by token overlap of (code+description) vs (name+wbs path), with a stopword list
+  tuned for civil BOQ wording, and proposes the best activity above a threshold as a
+  confidence:'auto' link. Mapping → "BOQ → WBS" gains an "Auto-map (n)" button that
+  persists all suggestions in one click, a Link column showing Auto/Confirmed pills, and a
+  note explaining the Commercial→Execution flow. Manual selection still marks 'confirmed'.
+- Commercial → Execution progress translation: domain/scheduleProgress.ts turns validated
+  Commercial ProgressUpdates into per-activity actuals THROUGH the BOQ→WBS mapping — each
+  activity's actual % is the value-weighted (BOQ amount) average of its mapped items'
+  itemPctComplete, with a time-elapsed planned % and variance. The Execution → Schedule
+  table now shows Actual %/Planned %/Var columns plus a KPI header (overall actual vs
+  planned, schedule variance, mapped activities); unmapped activities show "—". So executed
+  progress keyed in Commercial surfaces as schedule actuals with no re-keying.
+- Procurement material register: domain/materialRegister.ts threads the full cross-module
+  chain Demand→PO→CRV→Issue into a valued stores ledger per material code (received qty &
+  value at the demand rate, weighted avg rate, issued/consumed, balance on hand & value,
+  the BOQ items each material was procured for, negative-balance flags). New Procurement
+  "Material register" sub-tab (screens/procurement/MaterialsTab.tsx) renders it with
+  received/issued/on-hand value KPIs. This gives Procurement a professional stores register
+  that reconciles receipts against issues and ties back to the BOQ; the older
+  Execution→Production reconciliation panel remains for shop-floor entry.
+- No new provider methods (reused listSchedule/listBoq/listBoqWbs/listProgress/listCrvs/
+  listDemands/listPurchaseOrders/listMaterialIssues) → no ApiDataProvider stubs needed.
+- Tests: xer (4), autoMap (4), scheduleProgress (4), materialRegister (4); Procurement
+  material-register render; schedule Actual% column + mapping Auto/Confirmed assertions.
+  Web 358 (62 files); server 9; typecheck clean; both builds green.
+
 2026-06-23 — Three professional enhancements: machinery-hire log, over-allocation guard, scope coverage
 - Machinery-usage log (Procurement): new MachineryUsage type (hours × rate = usage value), provider
   methods listMachineryUsage / createMachineryUsage / setMachineryRecovered (Local + Api stubs +

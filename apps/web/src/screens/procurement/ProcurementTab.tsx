@@ -7,13 +7,14 @@ import { PoCrvTab } from './PoCrvTab';
 import { ProcPaymentsTab } from './ProcPaymentsTab';
 import { SuppliersHiresTab } from './SuppliersHiresTab';
 import { InventoryTab, PolTab, FixedAssetsTab, MaintenanceTab } from './AssetsTabs';
+import { MachineryTab } from './MachineryTab';
 
 const ROLES = ['pic', 'pm', 'pd', 'comd_engrs', 'dir_sp', 'dg', 'preaudit', 'fm', 'fh', 'manager_procurement'];
-const SUB = ['inbox', 'demands', 'pocrv', 'payments', 'vendors', 'inventory', 'pol', 'fixedassets', 'maintenance'] as const;
+const SUB = ['inbox', 'demands', 'pocrv', 'payments', 'vendors', 'inventory', 'machinery', 'pol', 'fixedassets', 'maintenance'] as const;
 type Sub = (typeof SUB)[number];
 const LABEL: Record<Sub, string> = {
   inbox: 'Approval inbox', demands: 'Demands', pocrv: 'POs & CRVs', payments: 'Payments', vendors: 'Suppliers & hires',
-  inventory: 'Inventory', pol: 'POL', fixedassets: 'Fixed assets', maintenance: 'Maintenance',
+  inventory: 'Inventory', machinery: 'Machinery hire', pol: 'POL', fixedassets: 'Fixed assets', maintenance: 'Maintenance',
 };
 
 /** Stage progress chips for a chain document. */
@@ -66,6 +67,7 @@ export function ProcurementTab({ projectId }: { projectId: string }) {
       {sub === 'vendors' && <SuppliersHiresTab projectId={projectId} />}
       {sub === 'inventory' && <InventoryTab projectId={projectId} />}
       {sub === 'pol' && <PolTab projectId={projectId} />}
+      {sub === 'machinery' && <MachineryTab projectId={projectId} />}
       {sub === 'fixedassets' && <FixedAssetsTab projectId={projectId} />}
       {sub === 'maintenance' && <MaintenanceTab projectId={projectId} role={role} />}
     </div>

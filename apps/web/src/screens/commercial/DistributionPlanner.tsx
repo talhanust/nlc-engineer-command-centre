@@ -6,7 +6,7 @@ import { formatMoney } from '../../domain/money';
 import { ROLE_LABEL } from '../../domain/chains';
 import {
   EXECUTION_LABEL, allocatedQty, remainingQty, isOverAllocated,
-  boqMargin, contractSummaries, requiredAuthority, canApproveContract,
+  boqMargin, contractSummaries, contractCoverage, requiredAuthority, canApproveContract,
   itemScCost, itemLoCost, itemModeLabel, itemMarginPct, planTotals,
 } from '../../domain/allocations';
 import { canAwardByPec, pecLimitLabel } from '../../domain/pec';
@@ -43,6 +43,7 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
   const contractForSub = (id?: string) => regContracts.find((c) => c.subcontractorId === id);
   const margin = boqMargin(items, allocs);
   const summaries = contractSummaries(items, allocs);
+  const coverage = contractCoverage(regContracts, items, allocs);
   const statusOf = (key: string) => contracts.find((c) => c.key === key)?.status ?? 'draft';
 
   const billNos = useMemo(() => Array.from(new Set(items.map((i) => i.billNo))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), [items]);
@@ -60,7 +61,20 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
     setAllocs([...next]);
   }
   async function patch(a: Allocation, p: Partial<Allocation>) {
-    const next = await provider.upsertAllocation(projectId, { ...a, ...p });
+    // Over-allocation guard: an item's allocations may never exceed its BOQ qty.
+    let next2 = { ...a, ...p };
+    if (p.qty !== undefined) {
+      const item = items.find((it) => it.id === a.boqItemId);
+      if (item) {
+        const others = allocs.filter((x) => x.boqItemId === a.boqItemId && x.id !== a.id).reduce((s, x) => s + x.qty, 0);
+        const maxQty = +(item.qty - others).toFixed(4);
+        if (p.qty > maxQty + 1e-6) {
+          next2 = { ...next2, qty: Math.max(0, maxQty) };
+          toast({ message: `Capped at ${num(maxQty)} ${item.unit} — only that much of ${item.code} is left to award`, kind: 'error' });
+        }
+      }
+    }
+    const next = await provider.upsertAllocation(projectId, next2);
     setAllocs([...next]);
   }
   async function removeLine(id: string) {
@@ -178,7 +192,7 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
                                       )}
                                     </td>
                                     <td className="small">{a.executionType === 'nlc_direct' ? <span className="muted">NLC self</span> : ctr ? <span className="mono">{ctr.contractNo}</span> : <span className="muted" title="No awarded contract for this contractor yet">no contract</span>}</td>
-                                    <td className="num"><input className="qty-input" aria-label={`Qty ${a.id}`} defaultValue={a.qty} onBlur={(e) => patch(a, { qty: Number(e.target.value) || 0 })} /></td>
+                                    <td className="num"><input key={`q-${a.id}-${a.qty}`} className="qty-input" aria-label={`Qty ${a.id}`} defaultValue={a.qty} onBlur={(e) => patch(a, { qty: Number(e.target.value) || 0 })} /></td>
                                     <td className="num"><input className="qty-input" aria-label={`Rate ${a.id}`} defaultValue={a.rate} onBlur={(e) => patch(a, { rate: Number(e.target.value) || 0 })} /></td>
                                     <td className="num">{formatMoney(a.rate * a.qty)}</td>
                                     <td><button className="btn-ghost" aria-label={`Remove ${a.id}`} onClick={() => removeLine(a.id)}>✕</button></td>
@@ -218,7 +232,7 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
         </>
       )}
 
-      {summaries.length > 0 && (
+      {(summaries.length > 0 || coverage.length > 0) && (
         <div style={{ marginTop: 20 }}>
           <div className="section-head">
             <h3>Contracts</h3>
@@ -228,6 +242,24 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
               </select>
             </label>
           </div>
+          {coverage.length > 0 && (
+          <table className="data-table" aria-label="Contract scope coverage" style={{ marginBottom: 16 }}>
+            <thead><tr><th>Contract</th><th>Contractor</th><th className="num">Scope value</th><th className="num">Allocated</th><th className="num">Unawarded</th><th className="num">Coverage</th></tr></thead>
+            <tbody>
+              {coverage.map((c) => (
+                <tr key={c.contractId} className={c.unawarded > 1 ? 'row-flag' : ''}>
+                  <td className="mono small">{c.contractNo}</td>
+                  <td>{subName(c.subcontractorId)}</td>
+                  <td className="num">{formatMoney(c.scopeValue)}</td>
+                  <td className="num">{formatMoney(c.allocatedValue)}</td>
+                  <td className={`num${c.unawarded > 1 ? ' neg' : ''}`}>{formatMoney(c.unawarded)}</td>
+                  <td className="num">{(c.pct * 100).toFixed(0)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          )}
+          {summaries.length > 0 && (
           <table className="data-table" aria-label="Contracts">
             <thead><tr><th>Type</th><th>Contractor</th><th className="num">Value</th><th className="num">Margin</th><th>Competent Authority</th><th>PEC</th><th>Status</th><th></th></tr></thead>
             <tbody>
@@ -259,6 +291,7 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
               })}
             </tbody>
           </table>
+          )}
         </div>
       )}
     </div>

@@ -5,14 +5,12 @@ import { ipcDeductionBreakdown, deductionsFromConfig, IPC_STATUS_LABEL, DEFAULT_
 import { measurementSheet } from '../domain/measurement';
 import { AuditTrail } from './AuditTrail';
 import { Attachments } from './Attachments';
-import type { Ipc, Rar, RarIpcLink, BoqItem, CommercialConfig } from '../data/types';
+import type { Ipc, BoqItem, CommercialConfig } from '../data/types';
 
 const qty = (n: number) => (n ? n.toLocaleString('en-PK', { maximumFractionDigits: 2 }) : '—');
 
 export function IpcDetailModal({ projectId, ipc, onClose }: { projectId: string; ipc: Ipc; onClose: () => void }) {
   const { provider } = useData();
-  const [links, setLinks] = useState<RarIpcLink[]>([]);
-  const [rars, setRars] = useState<Rar[]>([]);
   const [boq, setBoq] = useState<BoqItem[]>([]);
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
   const [cfg, setCfg] = useState<CommercialConfig>(DEFAULT_COMMERCIAL_CONFIG);
@@ -21,18 +19,15 @@ export function IpcDetailModal({ projectId, ipc, onClose }: { projectId: string;
   useEffect(() => {
     let a = true;
     Promise.all([
-      provider.listRarIpcLinks(projectId), provider.listRars(projectId), provider.listBoq(projectId),
-      provider.listIpcs(projectId), provider.getCommercialConfig(projectId),
-    ]).then(([l, r, b, i, c]) => {
-      if (a) { setLinks(l.filter((x) => x.ipcId === ipc.id)); setRars(r); setBoq(b); setIpcs(i); setCfg(c); }
+      provider.listBoq(projectId), provider.listIpcs(projectId), provider.getCommercialConfig(projectId),
+    ]).then(([b, i, c]) => {
+      if (a) { setBoq(b); setIpcs(i); setCfg(c); }
     });
     return () => { a = false; };
   }, [provider, projectId, ipc.id]);
 
   const sheet = useMemo(() => measurementSheet(ipc, ipcs, boq, { onlyBilled }), [ipc, ipcs, boq, onlyBilled]);
   const ded = ipcDeductionBreakdown(ipc.gross, { d: deductionsFromConfig(cfg) });
-  const rarNo = (id: string) => rars.find((r) => r.id === id)?.rarNo ?? id;
-  const recovered = links.reduce((a, l) => a + l.amount, 0);
   const cumPct = sheet.boqTotal > 0 ? sheet.cumGross / sheet.boqTotal : 0;
 
   return (
@@ -110,17 +105,6 @@ export function IpcDetailModal({ projectId, ipc, onClose }: { projectId: string;
           </tbody>
           <tfoot><tr><td>Net payable</td><td className="num">{formatMoney(ded.net)}</td></tr></tfoot>
         </table>
-
-        <h3 style={{ marginTop: 14 }}>Advance recovery linked</h3>
-        {links.length === 0 ? (
-          <p className="muted small">No advance recovery linked to this IPC. (Subcontractor RARs are expenditure and are not deducted from client billing.)</p>
-        ) : (
-          <table className="data-table" aria-label="IPC recovery links">
-            <thead><tr><th>Reference</th><th className="num">Amount</th></tr></thead>
-            <tbody>{links.map((l) => (<tr key={l.id}><td>{rarNo(l.rarId)}</td><td className="num">{formatMoney(l.amount)}</td></tr>))}</tbody>
-            <tfoot><tr><td>Total recovered</td><td className="num">{formatMoney(recovered)}</td></tr></tfoot>
-          </table>
-        )}
 
         <div style={{ marginTop: 14 }}><Attachments projectId={projectId} entity="IPC" reference={ipc.ipcNo} /></div>
         <div style={{ marginTop: 14 }}><AuditTrail entity="IPC" reference={ipc.ipcNo} /></div>

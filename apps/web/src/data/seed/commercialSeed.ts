@@ -1,4 +1,4 @@
-import type { BoqItem, Distribution, ProgressUpdate, Ipc, IpcLine, Rar, RarLine, Variation, BankGuarantee, Subcontractor, ScheduleActivity, Resource, OverheadLine, FinancialReceipt, FinancialPayment, FinancialLiability, Supplier, Demand, Salient, ProductionRun, MaterialIssue, InventoryItem, PolRecord, FixedAsset, Contract } from '../types';
+import type { BoqItem, Distribution, ProgressUpdate, Ipc, IpcLine, Rar, RarLine, RarRecovery, Variation, BankGuarantee, Subcontractor, ScheduleActivity, Resource, OverheadLine, FinancialReceipt, FinancialPayment, FinancialLiability, Supplier, Demand, Salient, ProductionRun, MaterialIssue, InventoryItem, PolRecord, FixedAsset, Contract } from '../types';
 import type { EscalationComponent } from '../../domain/escalation';
 import { DEFAULT_PBS_COMPONENTS } from '../../domain/escalation';
 import { computeNet } from '../../domain/ipc';
@@ -171,10 +171,18 @@ function build(profile: SeedProfile): GeneratedSeed {
       return { boqItemId: it.id, qty, rate, amount: money(qty, rate) };
     });
     const gross = lines.reduce((s, l) => s + l.amount, 0);
+    // Recoveries: NLC-issued material consumed (+ machinery on alternate RARs). Sublet only.
+    const recoveries: RarRecovery[] = [
+      { id: `rec-${pid}-${rarSeq}-mat`, kind: 'material', description: 'NLC-issued cement & steel consumed', amount: round(gross * 0.10 * (0.8 + 0.4 * r())) },
+    ];
+    if (rarSeq % 2 === 1) recoveries.push({ id: `rec-${pid}-${rarSeq}-mch`, kind: 'machinery', description: 'NLC excavator & roller hire', amount: round(gross * 0.03) });
+    const recoveryTotal = recoveries.reduce((s, x) => s + x.amount, 0);
+    // net = gross − contract retention (5%) − RAR income tax (7%) − recoveries
+    const netPayable = computeNet(gross, { retentionPct: 5, incomeTaxPct: 7, gstPct: 0 }) - recoveryTotal;
     rars.push({
       id: `rar-${pid}-${rarSeq}`, projectId: pid, rarNo: `RAR-${String(rarSeq).padStart(2, '0')}`, seq: rarSeq,
       period: monthLabel(addMonths(profile.start, 4 + rarSeq)), date: addMonths(profile.start, 4 + rarSeq),
-      status: rarStatuses[(rarSeq - 1) % rarStatuses.length], subcontractorId: sub.id, contractId: contractOf(sub.id), gross, netPayable: computeNet(gross), lines,
+      status: rarStatuses[(rarSeq - 1) % rarStatuses.length], subcontractorId: sub.id, contractId: contractOf(sub.id), gross, netPayable, lines, recoveries,
     });
   });
 

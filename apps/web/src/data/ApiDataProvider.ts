@@ -1,6 +1,6 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
-  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation, Contract, ContractStatus, CommercialConfig,
+  Subcontractor, Rar, RarLine, RarRecovery, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation, Contract, ContractStatus, CommercialConfig,
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
@@ -206,6 +206,9 @@ export class ApiDataProvider implements DataProvider {
   }
   async setRarRecoveriesNetted(projectId: string, rarNo: string, netted: boolean): Promise<Rar> {
     return this.send<Rar>(`/api/projects/${projectId}/rars/${rarNo}/recoveries-netted`, 'PATCH', { netted });
+  }
+  async setRarRecoveries(projectId: string, rarNo: string, recoveries: RarRecovery[]): Promise<Rar> {
+    return this.send<Rar>(`/api/projects/${projectId}/rars/${rarNo}/recoveries`, 'PATCH', { recoveries });
   }
   async advanceRarChain(projectId: string, rarNo: string, role: string): Promise<Rar> {
     return this.send<Rar>(`/api/projects/${projectId}/rars/${rarNo}/chain/advance`, 'POST', { role });

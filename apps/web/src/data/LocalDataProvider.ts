@@ -1,6 +1,6 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
-  Subcontractor, Rar, RarLine, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation, VariationLine, Contract, CommercialConfig,
+  Subcontractor, Rar, RarLine, RarRecovery, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation, VariationLine, Contract, CommercialConfig,
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
@@ -516,6 +516,25 @@ export class LocalDataProvider implements DataProvider {
     rar.recoveriesNetted = netted;
     writeJson(rarKey(projectId), all);
     audit(projectId, netted ? 'recoveries_netted' : 'recoveries_unset', 'RAR', rar.rarNo);
+    return rar;
+  }
+  async setRarRecoveries(projectId: string, rarNo: string, recoveries: RarRecovery[]): Promise<Rar> {
+    const all = readJson<Rar[]>(rarKey(projectId), () => (gen(projectId)?.rars ?? SEED_RARS));
+    const rar = all.find((r) => r.rarNo === rarNo);
+    if (!rar) throw new Error(`RAR ${rarNo} not found`);
+    const clean = recoveries
+      .map((r, i) => ({ id: r.id || `rec-${projectId}-${rarNo}-${i}`, kind: r.kind, description: sanitize(r.description ?? ''), amount: Math.max(0, Number(r.amount) || 0) }))
+      .filter((r) => r.amount > 0 || r.description);
+    rar.recoveries = clean;
+    // Recompute net: gross − contract retention − RAR taxes − recoveries.
+    const contracts = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? SEED_CONTRACTS)));
+    const contract = rar.contractId ? contracts.find((c) => c.id === rar.contractId) : undefined;
+    const retentionPct = Math.min(5, contract?.retentionPct ?? DEFAULT_CONTRACT_RETENTION_PCT);
+    const cfg = readJson<CommercialConfig>(commCfgKey(projectId), () => ({ ...DEFAULT_COMMERCIAL_CONFIG }));
+    const recoveryTotal = clean.reduce((s, r) => s + r.amount, 0);
+    rar.netPayable = computeNet(rar.gross, { retentionPct, incomeTaxPct: cfg.rarIncomeTaxPct, gstPct: cfg.rarGstPct }) - recoveryTotal;
+    writeJson(rarKey(projectId), all);
+    audit(projectId, 'recoveries', 'RAR', rar.rarNo, `${clean.length} item(s) · PKR ${Math.round(recoveryTotal).toLocaleString('en-PK')}`);
     return rar;
   }
   async advanceRarChain(projectId: string, rarNo: string, role: string): Promise<Rar> {

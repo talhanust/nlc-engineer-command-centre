@@ -244,11 +244,27 @@ export interface Rar {
   gross: number;
   netPayable: number;
   lines?: RarLine[];
+  recoveries?: RarRecovery[];
   note?: string;
   // Billing approval chain (interim vs final bill)
   isFinal?: boolean;
   chainStage?: number;
   recoveriesNetted?: boolean;
+}
+
+export type RarRecoveryKind = 'material' | 'machinery' | 'other';
+
+/**
+ * A recovery deducted from a subcontractor RAR:
+ *  - material:  NLC-issued material consumed in the executed works (not labour contracts)
+ *  - machinery: NLC plant/machinery usage charges (not labour-only contracts)
+ *  - other:     any other recovery, described with an amount.
+ */
+export interface RarRecovery {
+  id: string;
+  kind: RarRecoveryKind;
+  description: string;
+  amount: number;
 }
 
 /** Recovery link: amount recovered from a RAR against a client IPC. */
@@ -750,6 +766,7 @@ export interface DataProvider {
   transitionRar(projectId: string, rarNo: string, action: string): Promise<Rar>;
   setRarFinal(projectId: string, rarNo: string, isFinal: boolean): Promise<Rar>;
   setRarRecoveriesNetted(projectId: string, rarNo: string, netted: boolean): Promise<Rar>;
+  setRarRecoveries(projectId: string, rarNo: string, recoveries: RarRecovery[]): Promise<Rar>;
   advanceRarChain(projectId: string, rarNo: string, role: string): Promise<Rar>;
   setRarNote(projectId: string, rarNo: string, note: string): Promise<Rar>;
   listRarIpcLinks(projectId: string): Promise<RarIpcLink[]>;

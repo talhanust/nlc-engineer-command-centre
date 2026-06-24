@@ -1,6 +1,48 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-23 — Remove RAR↔IPC recovery linking; material-recovery suggestion (verify A/B/C)
+- Confirmed the three commercial requirements are implemented and reconciled:
+  * RAR recoveries (B): material / machinery / other via domain/rarRecovery.ts (rarSettlement),
+    with material & machinery suppressed for labour-only contractors (allowedRecoveryKinds);
+    RAR net = gross − contract retention − RAR taxes − recoveries; IPCs never involved.
+  * Distribution splitting (C): domain/allocations.ts + DistributionPlanner already support
+    multiple allocations per BOQ item (labour / sublet / NLC-direct), partial quantities with a
+    live remaining-to-assign balance, the awarded contract shown per line, and a Mode label of
+    Unassigned/Self/Sublet/Labor/Mixed.
+- Removed the remaining RAR↔IPC recovery linking UI (the RecoveryLinks panel in the RAR register,
+  its state/loaders and the obsolete test) and the lingering revenue-panel note — there is now no
+  mention of recovering RAR against IPC anywhere in the app.
+- Professional touch: the RAR recoveries panel now surfaces the contractor's outstanding NLC
+  material balance (issued value − recovered, from domain/materialrecovery) with a one-click
+  "Recover this" that pre-fills a material recovery — directly supporting "amount corresponding to
+  material consumed". Suppressed for labour contracts.
+- Tests: added regressions (no Recovery-against/RAR↔IPC UI; RAR settled by retention+taxes
+  +recoveries). Web 337 (57 files); server 9; typecheck clean; both builds green.
+
+2026-06-23 — RAR recoveries (material/machinery/other), no RAR↔IPC recovery, planner contract refs
+- Removed all RAR↔IPC recovery from the app (it's a given): IPC modal no longer shows an
+  "Advance recovery linked" section or any RAR mention; RAR modal no longer has "Recovery against
+  IPCs" or an IPC-dependent payment computation. RAR settlement is now standalone.
+- RAR recoveries (domain/rarRecovery.ts + types RarRecovery/RarRecoveryKind on Rar):
+  a) material — NLC-issued material consumed in the executed works,
+  b) machinery — NLC plant/machinery usage,
+  c) other — described free-text + amount.
+  Material & machinery are blocked for labour-only contracts (allowedRecoveryKinds → ['other']);
+  sublet contracts allow all three. RAR net = gross − contract retention − RAR income tax − RAR GST
+  − recoveries. New provider.setRarRecoveries recomputes net and audits; generated sublet RARs now
+  carry a material recovery (+ machinery on alternate RARs) so the model is populated.
+- RAR detail modal rebuilt: KPIs (gross / recoveries / net), the contractor-BOQ measurement sheet,
+  an editable Recoveries table (type gated by contract kind, live preview), a clean Settlement
+  waterfall, and the billing approval chain (with the contractor-advance netting gate, not IPC).
+- Distribution planner: the split model (one BOQ item across labour / sublet / NLC-direct with
+  partial quantities) already existed; added a Contract column per allocation (mapped from the
+  Contracts register by contractor) and an explicit Unassigned remainder row, so it's clear how
+  much of each item is assigned and to which contract.
+- Tests: rarRecovery.test (3: settlement math, labour gating, persistence recompute),
+  DistributionSplit.test (1: contract column, unassigned row, sublet+labour split). Updated the
+  RAR-detail test to the settlement table. Web 336 (57 files); server 9; both builds green.
+
 2026-06-23 — Fix: IPC gross now reconciles to its itemwise lines (flagship was hand-seeded)
 - Root cause of "Gross certified 4,200 Mn vs This-IPC total 94 Mn": a leftover readIpcs() helper
   still returned the hand-authored SEED_IPCS for the flagship (gross set by hand to 4.2/3.8/3.2 bn

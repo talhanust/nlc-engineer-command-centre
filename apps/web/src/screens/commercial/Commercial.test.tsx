@@ -238,8 +238,8 @@ describe('Phase 3 — Commercial tab', () => {
     await user.selectOptions(screen.getAllByLabelText("Switch acting role")[0], 'fm');
     await user.click(screen.getByRole('tab', { name: 'IPC register' }));
     const table = await screen.findByRole('table', { name: 'IPC register' });
-    // IPC-03 is vetted → next step "Submit to client" requires PM → disabled for Finance.
-    const row = within(table).getByText('IPC-03').closest('tr')! as HTMLElement;
+    // IPC-04 is vetted → next step "Submit to client" requires PM → disabled for Finance.
+    const row = within(table).getByText('IPC-04').closest('tr')! as HTMLElement;
     expect(within(row).getByRole('button', { name: 'Submit to client' })).toBeDisabled();
   });
 
@@ -410,11 +410,11 @@ describe('Phase 3 — Commercial tab', () => {
     await screen.findByRole('heading', { name: 'Bill of Quantities' });
     await user.click(screen.getByRole('tab', { name: 'IPC register' }));
     const table = await screen.findByRole('table', { name: 'IPC register' });
-    // IPC-03 is seeded as 'vetted' → next action "Submit to client".
-    const row = within(table).getByText('IPC-03').closest('tr')! as HTMLElement;
+    // IPC-04 is generated as 'vetted' → next action "Submit to client".
+    const row = within(table).getByText('IPC-04').closest('tr')! as HTMLElement;
     await user.click(within(row).getByRole('button', { name: 'Submit to client' }));
     await waitFor(() => expect(within(row).getByText('With client')).toBeInTheDocument());
-    expect(await screen.findByText(/IPC-03 → With client/)).toBeInTheDocument();
+    expect(await screen.findByText(/IPC-04 → With client/)).toBeInTheDocument();
   });
 
   it('creates a new draft IPC', async () => {
@@ -483,10 +483,10 @@ describe('Phase 3 #11/#12 — RAR, subs, recovery, EPC, advances, distributions,
   it('bulk-advances selected IPCs', async () => {
     const user = await gotoSub('IPC register');
     const table = await screen.findByRole('table', { name: 'IPC register' });
-    await user.click(within(table).getByLabelText('Select IPC-03')); // vetted -> forward
+    await user.click(within(table).getByLabelText('Select IPC-04')); // vetted -> forward
     await user.click(screen.getByRole('button', { name: /Advance 1 eligible/ }));
     await waitFor(() => {
-      const row = within(table).getByText('IPC-03').closest('tr')! as HTMLElement;
+      const row = within(table).getByText('IPC-04').closest('tr')! as HTMLElement;
       expect(within(row).getByText('With client')).toBeInTheDocument();
     });
   });

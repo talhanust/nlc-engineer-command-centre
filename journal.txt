@@ -1,6 +1,24 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-06-23 — Fix: IPC gross now reconciles to its itemwise lines (flagship was hand-seeded)
+- Root cause of "Gross certified 4,200 Mn vs This-IPC total 94 Mn": a leftover readIpcs() helper
+  still returned the hand-authored SEED_IPCS for the flagship (gross set by hand to 4.2/3.8/3.2 bn
+  but only 3 sample lines each), even though the BOQ and every other register had moved to the
+  generator. The measurement sheet summed the 3 lines (94 Mn) while the waterfall showed the
+  hand gross (4,200 Mn).
+- Fix: readIpcs() now uses the generator for the flagship like every other project, so each IPC's
+  gross == Σ line.amount (≈70 lines/IPC). Removed the dead SEED_IPCS constant. RAR mutation
+  fallbacks made generator-aware too (gen()?.rars ?? SEED_RARS). Seed version bumped to v7 so
+  existing sessions drop the stale hand-seeded IPC cache and regenerate.
+- Swept for similar issues: RARs already reconcile (gross == Σ lines, generated); the only other
+  flagship hand-seed special-case left is photos, which is intentional (not generated).
+- New guard: data/seedConsistency.test.ts asserts every IPC/RAR gross equals the sum of its lines
+  for the flagship and a sample of generated projects, and that IPCs carry the full certified set
+  (not a token sample). Updated 6 tests that assumed the old hand statuses — the generated vetted
+  IPC is IPC-04 (not IPC-03), and the retention-timeline test is now derived rather than hard-coded.
+- Web 332 (55 files); server 9; typecheck clean; both builds green.
+
 2026-06-23 — Complete IPC/RAR measurement sheets, contractor BOQ, and RAR-specific taxes
 - IPC detail now shows the COMPLETE certificate: a Previous · This IPC · Cumulative measurement
   sheet across every BOQ item (new domain/measurement.ts), with BOQ qty, balance and % columns,

@@ -1,4 +1,4 @@
-import type { BoqItem, Distribution, ProgressUpdate, Ipc, IpcLine, Rar, RarLine, RarRecovery, Variation, BankGuarantee, Subcontractor, ScheduleActivity, Resource, OverheadLine, FinancialReceipt, FinancialPayment, FinancialLiability, Supplier, Demand, Salient, ProductionRun, MaterialIssue, InventoryItem, PolRecord, FixedAsset, Contract } from '../types';
+import type { BoqItem, Distribution, ProgressUpdate, Ipc, IpcLine, Rar, RarLine, RarRecovery, Variation, BankGuarantee, Subcontractor, ScheduleActivity, Resource, OverheadLine, FinancialReceipt, FinancialPayment, FinancialLiability, Supplier, Demand, Salient, ProductionRun, MaterialIssue, MachineryUsage, InventoryItem, PolRecord, FixedAsset, Contract } from '../types';
 import type { EscalationComponent } from '../../domain/escalation';
 import { DEFAULT_PBS_COMPONENTS } from '../../domain/escalation';
 import { computeNet } from '../../domain/ipc';
@@ -34,6 +34,7 @@ export interface GeneratedSeed {
   salients: Salient[];
   production: ProductionRun[];
   issues: MaterialIssue[];
+  machinery: MachineryUsage[];
   inventory: InventoryItem[];
   pol: PolRecord[];
   fixedAssets: FixedAsset[];
@@ -297,6 +298,12 @@ function build(profile: SeedProfile): GeneratedSeed {
     { id: `iss-${pid}-3`, projectId: pid, dated: addMonths(profile.start, 8), materialCode: 'M-BIT', qty: round(80000 * scale), issuedTo: 'Bill 1 — Surfacing', rate: 285 },
   ];
 
+  // --- Machinery usage (NLC plant hired to contractors, recovery linkage) --
+  const machinery: MachineryUsage[] = [
+    { id: `mu-${pid}-1`, projectId: pid, dated: addMonths(profile.start, 5), machineryCode: 'EXC-320', description: 'Excavator CAT 320 (hire)', hours: round(420 * scale), rate: 6500, contractorId: subs[2]?.id, recovered: round(420 * scale * 6500 * 0.35) },
+    { id: `mu-${pid}-2`, projectId: pid, dated: addMonths(profile.start, 7), machineryCode: 'RLR-12T', description: '12T vibratory roller (hire)', hours: round(260 * scale), rate: 4200, contractorId: subs[3]?.id, recovered: 0 },
+  ];
+
   // --- Inventory (plant / equipment / vehicles) ----------------------------
   const invPool: Array<[InventoryItem['kind'], string]> = [['plant', 'Asphalt batching plant'], ['plant', 'Concrete batching plant'], ['equipment', 'Excavator CAT 320'], ['equipment', 'Motor grader'], ['equipment', 'Vibratory roller'], ['vehicle', 'Dump truck (Hino)'], ['vehicle', 'Water bowser']];
   const statuses: InventoryItem['status'][] = ['operational', 'operational', 'idle', 'breakdown'];
@@ -320,7 +327,7 @@ function build(profile: SeedProfile): GeneratedSeed {
     { id: `fa-${pid}-3`, projectId: pid, category: 'Survey & IT', description: 'Survey instruments & site IT', value: round(profile.cv * 0.001), acquired: addMonths(profile.start, 1) },
   ];
 
-  return { boq, subs, distributions, progress, ipcs, rars, variations, bgs, escalation, schedule, resources, overheads, receipts, payments, liabilities, suppliers, demands, salients, production, issues, inventory, pol, fixedAssets, contracts };
+  return { boq, subs, distributions, progress, ipcs, rars, variations, bgs, escalation, schedule, resources, overheads, receipts, payments, liabilities, suppliers, demands, salients, production, issues, machinery, inventory, pol, fixedAssets, contracts };
 }
 
 const cache = new Map<string, GeneratedSeed>();

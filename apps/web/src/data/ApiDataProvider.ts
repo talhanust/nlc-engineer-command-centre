@@ -5,7 +5,7 @@ import {
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
-  ProductionRun, MaterialIssue, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
+  ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
 import type { BoqWorkflowState } from '../domain/boqworkflow';
@@ -550,6 +550,15 @@ export class ApiDataProvider implements DataProvider {
   }
   async setMaterialRecovered(projectId: string, id: string, recovered: number): Promise<MaterialIssue[]> {
     return (await this.send<{ items: MaterialIssue[] }>(`/api/projects/${projectId}/material-issues/${id}/recovered`, 'PATCH', { recovered })).items;
+  }
+  async listMachineryUsage(projectId: string): Promise<MachineryUsage[]> {
+    return (await this.get<{ items: MachineryUsage[] }>(`/api/projects/${projectId}/machinery-usage`)).items;
+  }
+  async createMachineryUsage(projectId: string, input: Omit<MachineryUsage, 'id' | 'projectId'>): Promise<MachineryUsage> {
+    return this.send<MachineryUsage>(`/api/projects/${projectId}/machinery-usage`, 'POST', input);
+  }
+  async setMachineryRecovered(projectId: string, id: string, recovered: number): Promise<MachineryUsage[]> {
+    return (await this.send<{ items: MachineryUsage[] }>(`/api/projects/${projectId}/machinery-usage/${id}/recovered`, 'PATCH', { recovered })).items;
   }
   async getMappingWorkflow(projectId: string): Promise<BaselineWorkflowState> {
     return this.get<BaselineWorkflowState>(`/api/projects/${projectId}/mapping/workflow`);

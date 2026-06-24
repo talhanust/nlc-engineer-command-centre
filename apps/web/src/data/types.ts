@@ -528,6 +528,23 @@ export interface MaterialIssue {
   recovered?: number;  // amount recovered to date
 }
 
+/**
+ * NLC plant/machinery hired out to a contractor for execution. Usage value =
+ * hours × hourly rate; the balance (value − recovered) is recoverable from the
+ * contractor's RAR (except labour-only contracts). Parallels MaterialIssue.
+ */
+export interface MachineryUsage {
+  id: string;
+  projectId: string;
+  dated: string;
+  machineryCode: string;   // plant/equipment code or reg no.
+  description: string;
+  hours: number;
+  rate: number;            // hourly hire rate (PKR/hr) → value = hours × rate
+  contractorId?: string;
+  recovered?: number;
+}
+
 /** Planned indirect/overhead cost line (Planning Engineer); actuals from Financial. */
 export interface OverheadLine {
   id: string;
@@ -842,6 +859,9 @@ export interface DataProvider {
   listMaterialIssues(projectId: string): Promise<MaterialIssue[]>;
   createMaterialIssue(projectId: string, input: Omit<MaterialIssue, 'id' | 'projectId'>): Promise<MaterialIssue>;
   setMaterialRecovered(projectId: string, id: string, recovered: number): Promise<MaterialIssue[]>;
+  listMachineryUsage(projectId: string): Promise<MachineryUsage[]>;
+  createMachineryUsage(projectId: string, input: Omit<MachineryUsage, 'id' | 'projectId'>): Promise<MachineryUsage>;
+  setMachineryRecovered(projectId: string, id: string, recovered: number): Promise<MachineryUsage[]>;
   // Mapping approval cycle
   getMappingWorkflow(projectId: string): Promise<BaselineWorkflowState>;
   advanceMappingWorkflow(projectId: string, role: string): Promise<BaselineWorkflowState>;

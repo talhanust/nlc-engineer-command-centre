@@ -5,7 +5,7 @@ import {
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry,
-  ProductionRun, MaterialIssue, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
+  ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
 import { itemAmount } from '../domain/boq';
@@ -1149,6 +1149,24 @@ export class LocalDataProvider implements DataProvider {
     if (iss) { iss.recovered = recovered; writeJson(issueKey(projectId), all); audit(projectId, 'recover', 'Material', iss.materialCode, `${recovered}`); }
     return all;
   }
+  async listMachineryUsage(projectId: string): Promise<MachineryUsage[]> {
+    return readJson(machineryKey(projectId), () => (gen(projectId)?.machinery ?? []));
+  }
+  async createMachineryUsage(projectId: string, input: Omit<MachineryUsage, 'id' | 'projectId'>): Promise<MachineryUsage> {
+    const all = readJson<MachineryUsage[]>(machineryKey(projectId), () => (gen(projectId)?.machinery ?? []));
+    const m: MachineryUsage = { id: `mu-${projectId}-${all.length + 1}`, projectId, ...input, machineryCode: sanitize(input.machineryCode), description: sanitize(input.description) };
+    all.push(m);
+    all.sort((a, b) => a.dated.localeCompare(b.dated));
+    writeJson(machineryKey(projectId), all);
+    audit(projectId, 'create', 'Machinery', m.machineryCode, `${Math.round(m.hours * m.rate)}`);
+    return m;
+  }
+  async setMachineryRecovered(projectId: string, id: string, recovered: number): Promise<MachineryUsage[]> {
+    const all = readJson<MachineryUsage[]>(machineryKey(projectId), () => (gen(projectId)?.machinery ?? []));
+    const m = all.find((x) => x.id === id);
+    if (m) { m.recovered = recovered; writeJson(machineryKey(projectId), all); audit(projectId, 'recover', 'Machinery', m.machineryCode, `${recovered}`); }
+    return all;
+  }
   async getMappingWorkflow(projectId: string): Promise<BaselineWorkflowState> {
     return readJson(mapWfKey(projectId), () => INITIAL_MAPPING_WORKFLOW);
   }
@@ -1781,6 +1799,7 @@ const ppayKey = (pid: string) => `nlc-ecc.ppays.${pid}`;
 const hireKey = (pid: string) => `nlc-ecc.hires.${pid}`;
 const prodKey = (pid: string) => `nlc-ecc.production.${pid}`;
 const issueKey = (pid: string) => `nlc-ecc.materialIssues.${pid}`;
+const machineryKey = (pid: string) => `nlc-ecc.machinery.${pid}`;
 const salientKey = (pid: string) => `nlc-ecc.salients.${pid}`;
 const photoKey = (pid: string) => `nlc-ecc.photos.${pid}`;
 const attachKey = (pid: string) => `nlc-ecc.attach.${pid}`;

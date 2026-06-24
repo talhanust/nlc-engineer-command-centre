@@ -6,12 +6,13 @@ import { ROLE_LABEL } from '../domain/chains';
 import { rarChain, pendingRarStage, isRarPaid } from '../domain/rarchain';
 import { measurementSheet } from '../domain/measurement';
 import { materialRecovery } from '../domain/materialrecovery';
+import { machineryRecovery } from '../domain/machineryRecovery';
 import { rarSettlement, allowedRecoveryKinds, RAR_RECOVERY_LABEL, isLabourContractor } from '../domain/rarRecovery';
 import { DEFAULT_COMMERCIAL_CONFIG } from '../domain/ipc';
 import { useRole } from '../state/Role';
 import { AuditTrail } from './AuditTrail';
 import { Attachments } from './Attachments';
-import type { Rar, RarRecovery, RarRecoveryKind, Subcontractor, Advance, BoqItem, Contract, CommercialConfig, MaterialIssue } from '../data/types';
+import type { Rar, RarRecovery, RarRecoveryKind, Subcontractor, Advance, BoqItem, Contract, CommercialConfig, MaterialIssue, MachineryUsage } from '../data/types';
 
 const newId = () => `rec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -21,6 +22,7 @@ export function RarDetailModal({ projectId, rar, onClose }: { projectId: string;
   const [subs, setSubs] = useState<Subcontractor[]>([]);
   const [advances, setAdvances] = useState<Advance[]>([]);
   const [issues, setIssues] = useState<MaterialIssue[]>([]);
+  const [machinery, setMachinery] = useState<MachineryUsage[]>([]);
   const [boq, setBoq] = useState<BoqItem[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [allRars, setAllRars] = useState<Rar[]>([]);
@@ -33,12 +35,12 @@ export function RarDetailModal({ projectId, rar, onClose }: { projectId: string;
   const [recDirty, setRecDirty] = useState(false);
 
   async function reload() {
-    const [s, rs, adv, b, ct, c, mi] = await Promise.all([
+    const [s, rs, adv, b, ct, c, mi, mu] = await Promise.all([
       provider.listSubcontractors(projectId), provider.listRars(projectId), provider.listAdvances(projectId),
-      provider.listBoq(projectId), provider.listContracts(projectId), provider.getCommercialConfig(projectId), provider.listMaterialIssues(projectId),
+      provider.listBoq(projectId), provider.listContracts(projectId), provider.getCommercialConfig(projectId), provider.listMaterialIssues(projectId), provider.listMachineryUsage(projectId),
     ]);
     const mine = rs.find((x) => x.rarNo === rar.rarNo) ?? rar;
-    setSubs(s); setAllRars(rs); setAdvances(adv); setBoq(b); setContracts(ct); setCfg(c); setIssues(mi);
+    setSubs(s); setAllRars(rs); setAdvances(adv); setBoq(b); setContracts(ct); setCfg(c); setIssues(mi); setMachinery(mu);
     setCur(mine); setDraft(mine.recoveries ? mine.recoveries.map((r) => ({ ...r })) : []); setRecDirty(false);
   }
   useEffect(() => { void reload(); /* eslint-disable-next-line */ }, [provider, projectId, rar.id]);
@@ -54,6 +56,12 @@ export function RarDetailModal({ projectId, rar, onClose }: { projectId: string;
   const alreadyMaterial = draft.some((r) => r.kind === 'material');
   function recoverMaterial() {
     setDraft((d) => [...d, { id: newId(), kind: 'material', description: 'NLC material issued — balance to recover', amount: Math.round(materialDue) }]);
+    setRecDirty(true);
+  }
+  const machineryDue = labour ? 0 : Math.max(0, machineryRecovery(machinery).find((r) => r.contractorId === cur.subcontractorId)?.balance ?? 0);
+  const alreadyMachinery = draft.some((r) => r.kind === 'machinery');
+  function recoverMachinery() {
+    setDraft((d) => [...d, { id: newId(), kind: 'machinery', description: 'NLC machinery usage — balance to recover', amount: Math.round(machineryDue) }]);
     setRecDirty(true);
   }
 
@@ -176,6 +184,12 @@ export function RarDetailModal({ projectId, rar, onClose }: { projectId: string;
           <p className="muted small" style={{ marginTop: 0 }}>
             Outstanding NLC material issued to this contractor: <strong>{formatMoney(materialDue)}</strong>.{' '}
             <button className="link-btn" aria-label="Recover NLC material" onClick={recoverMaterial}>Recover this</button>
+          </p>
+        )}
+        {!labour && machineryDue > 0 && !alreadyMachinery && editable && (
+          <p className="muted small" style={{ marginTop: 0 }}>
+            Outstanding NLC machinery usage by this contractor: <strong>{formatMoney(machineryDue)}</strong>.{' '}
+            <button className="link-btn" aria-label="Recover NLC machinery" onClick={recoverMachinery}>Recover this</button>
           </p>
         )}
         {draft.length === 0 ? (

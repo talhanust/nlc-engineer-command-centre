@@ -128,3 +128,39 @@ export function planTotals(items: BoqItem[], allocs: Allocation[]): PlanTotals {
   const revenue = boqMargin(items, allocs).revenue;
   return { amount, scCost, loCost, margin, marginPct: revenue > 0 ? +((margin / revenue) * 100).toFixed(1) : 0 };
 }
+
+export interface ContractCoverage {
+  contractId: string;
+  contractNo: string;
+  subcontractorId: string;
+  scopeValue: number;     // BOQ value of the contract's scope bills
+  allocatedValue: number; // BOQ value allocated to this contractor within scope
+  unawarded: number;      // scopeValue − allocatedValue
+  pct: number;            // allocated / scope, 0..1
+}
+
+/**
+ * Per-contract scope vs allocated coverage. "Scope" is the BOQ value of the
+ * contract's scope bills; "allocated" is the BOQ value of quantities assigned to
+ * that contractor within scope. Unawarded scope = scope − allocated.
+ */
+export function contractCoverage(
+  contracts: Array<{ id: string; contractNo: string; subcontractorId: string; scopeBills: string[] }>,
+  items: BoqItem[],
+  allocs: Allocation[],
+): ContractCoverage[] {
+  return contracts.map((c) => {
+    const scopeItems = items.filter((it) => !c.scopeBills.length || c.scopeBills.includes(it.billNo));
+    const scopeIds = new Set(scopeItems.map((it) => it.id));
+    const scopeValue = scopeItems.reduce((s, it) => s + it.amount, 0);
+    const rateOf = new Map(scopeItems.map((it) => [it.id, it.rate]));
+    const allocatedValue = allocs
+      .filter((a) => a.contractorId === c.subcontractorId && a.executionType !== 'nlc_direct' && scopeIds.has(a.boqItemId))
+      .reduce((s, a) => s + (rateOf.get(a.boqItemId) ?? 0) * a.qty, 0);
+    const unawarded = +(scopeValue - allocatedValue).toFixed(2);
+    return {
+      contractId: c.id, contractNo: c.contractNo, subcontractorId: c.subcontractorId,
+      scopeValue, allocatedValue, unawarded, pct: scopeValue > 0 ? Math.min(1, allocatedValue / scopeValue) : 0,
+    };
+  });
+}

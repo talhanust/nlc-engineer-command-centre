@@ -24,12 +24,12 @@ describe('audited IPC reverse', () => {
 
   it('steps the status back one stage and records an audit entry', async () => {
     const p = new LocalDataProvider();
-    await p.transitionIpc('proj-f14f15', 'IPC-03', 'forward'); // vetted -> forwarded_to_client
-    const reversed = await p.reverseIpc('proj-f14f15', 'IPC-03');
+    await p.transitionIpc('proj-f14f15', 'IPC-04', 'forward'); // vetted -> forwarded_to_client
+    const reversed = await p.reverseIpc('proj-f14f15', 'IPC-04');
     expect(reversed.status).toBe('vetted');
     const log = await p.listAudit();
     expect(log[0].action).toBe('reverse');
-    expect(log[0].ref).toBe('IPC-03');
+    expect(log[0].ref).toBe('IPC-04');
   });
 
   it('refuses to reverse a draft IPC', async () => {

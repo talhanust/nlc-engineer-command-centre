@@ -46,10 +46,10 @@ describe('audit trail', () => {
   it('records workflow events append-only', async () => {
     const p = new LocalDataProvider();
     expect(await p.listAudit()).toHaveLength(0);
-    await p.transitionIpc('proj-f14f15', 'IPC-03', 'forward'); // vetted -> forwarded
+    await p.transitionIpc('proj-f14f15', 'IPC-04', 'forward'); // vetted -> forwarded
     const log = await p.listAudit();
     expect(log.length).toBeGreaterThanOrEqual(1);
     expect(log[0].entity).toBe('IPC');
-    expect(log[0].ref).toBe('IPC-03');
+    expect(log[0].ref).toBe('IPC-04');
   });
 });

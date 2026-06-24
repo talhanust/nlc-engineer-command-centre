@@ -42,4 +42,24 @@ describe('contract & RAR detail views', () => {
     expect(within(sheet).getByText('This RAR')).toBeInTheDocument();
     expect(within(sheet).getByText('Cumulative')).toBeInTheDocument();
   });
+
+  it('has no RAR↔IPC recovery linking anywhere in the RAR register', async () => {
+    await gotoSub('RAR Register');
+    await screen.findByRole('table', { name: 'RAR register' });
+    expect(screen.queryByLabelText('Recovery RAR')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Recovery IPC')).not.toBeInTheDocument();
+    expect(screen.queryByText(/RAR ↔ IPC recovery/)).not.toBeInTheDocument();
+  });
+
+  it('settles a RAR by retention + RAR taxes + recoveries, with no IPC linkage', async () => {
+    const user = await gotoSub('RAR Register');
+    const reg = await screen.findByRole('table', { name: 'RAR register' });
+    await user.click(within(reg).getAllByRole('button', { name: /Details for RAR-|RAR-0/ })[0]);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('table', { name: 'RAR settlement' })).toBeInTheDocument();
+    expect(within(dialog).getByText('Net payable to contractor')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Recovery against IPC/)).not.toBeInTheDocument();
+    // recoveries section present (material/machinery/other)
+    expect(within(dialog).getByRole('heading', { name: 'Recoveries' })).toBeInTheDocument();
+  });
 });

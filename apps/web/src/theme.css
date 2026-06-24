@@ -1056,3 +1056,5 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .measure-table th.grp-now { color: var(--signal); }
 .measure-table tr.row-billed td { font-weight: 600; }
 .measure-table tfoot td { font-weight: 700; border-top: 2px solid var(--border-strong); }
+
+.alloc-unassigned td { background: var(--surface-2); border-top: 1px dashed var(--border-strong); }

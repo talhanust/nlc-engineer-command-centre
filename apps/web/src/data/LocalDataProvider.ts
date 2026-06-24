@@ -489,7 +489,7 @@ export class LocalDataProvider implements DataProvider {
     return rar;
   }
   async transitionRar(projectId: string, rarNo: string, action: string): Promise<Rar> {
-    const all = readJson<Rar[]>(rarKey(projectId), () => SEED_RARS);
+    const all = readJson<Rar[]>(rarKey(projectId), () => (gen(projectId)?.rars ?? SEED_RARS));
     const rar = all.find((r) => r.rarNo === rarNo);
     if (!rar) throw new Error(`RAR ${rarNo} not found`);
     const to = applyRarAction(rar.status, action);
@@ -500,7 +500,7 @@ export class LocalDataProvider implements DataProvider {
     return rar;
   }
   async setRarFinal(projectId: string, rarNo: string, isFinal: boolean): Promise<Rar> {
-    const all = readJson<Rar[]>(rarKey(projectId), () => SEED_RARS);
+    const all = readJson<Rar[]>(rarKey(projectId), () => (gen(projectId)?.rars ?? SEED_RARS));
     const rar = all.find((r) => r.rarNo === rarNo);
     if (!rar) throw new Error(`RAR ${rarNo} not found`);
     rar.isFinal = isFinal;
@@ -510,7 +510,7 @@ export class LocalDataProvider implements DataProvider {
     return rar;
   }
   async setRarRecoveriesNetted(projectId: string, rarNo: string, netted: boolean): Promise<Rar> {
-    const all = readJson<Rar[]>(rarKey(projectId), () => SEED_RARS);
+    const all = readJson<Rar[]>(rarKey(projectId), () => (gen(projectId)?.rars ?? SEED_RARS));
     const rar = all.find((r) => r.rarNo === rarNo);
     if (!rar) throw new Error(`RAR ${rarNo} not found`);
     rar.recoveriesNetted = netted;
@@ -519,7 +519,7 @@ export class LocalDataProvider implements DataProvider {
     return rar;
   }
   async advanceRarChain(projectId: string, rarNo: string, role: string): Promise<Rar> {
-    const all = readJson<Rar[]>(rarKey(projectId), () => SEED_RARS);
+    const all = readJson<Rar[]>(rarKey(projectId), () => (gen(projectId)?.rars ?? SEED_RARS));
     const rar = all.find((r) => r.rarNo === rarNo);
     if (!rar) throw new Error(`RAR ${rarNo} not found`);
     const state = { isFinal: !!rar.isFinal, stageIndex: rar.chainStage ?? 0 };
@@ -542,7 +542,7 @@ export class LocalDataProvider implements DataProvider {
     return rar;
   }
   async setRarNote(projectId: string, rarNo: string, note: string): Promise<Rar> {
-    const all = readJson<Rar[]>(rarKey(projectId), () => SEED_RARS);
+    const all = readJson<Rar[]>(rarKey(projectId), () => (gen(projectId)?.rars ?? SEED_RARS));
     const rar = all.find((r) => r.rarNo === rarNo);
     if (!rar) throw new Error(`RAR ${rarNo} not found`);
     rar.note = sanitize(note);
@@ -1695,7 +1695,7 @@ const projectsKey = 'nlc-ecc.projects';
 const seedVersionKey = 'nlc-ecc.seedVersion';
 // Bump when the bundled project roster / seed changes so existing cached stores
 // pick up newly-seeded projects and nodes without losing user-created data.
-const SEED_VERSION = '2026-06-23.v6-flagship-generated';
+const SEED_VERSION = '2026-06-23.v7-flagship-ipc-lines';
 
 /** Merge any newly-seeded projects/nodes into an already-persisted store and
  *  backfill date/coordinate fields on seeded projects. Runs once per version. */
@@ -1964,21 +1964,13 @@ function readIpcs(projectId: string): Ipc[] {
   } catch {
     /* ignore */
   }
-  if (projectId === 'proj-f14f15') {
-    writeJson(ipcKey(projectId), SEED_IPCS);
-    return JSON.parse(JSON.stringify(SEED_IPCS)) as Ipc[];
-  }
+  // Flagship is generated like every other project so its IPC lines total the gross.
   const g = gen(projectId);
   if (g) { writeJson(ipcKey(projectId), g.ipcs); return JSON.parse(JSON.stringify(g.ipcs)) as Ipc[]; }
   return [];
 }
 
 
-const SEED_IPCS: Ipc[] = [
-  { id: 'ipc-proj-f14f15-1', projectId: 'proj-f14f15', ipcNo: 'IPC-01', seq: 1, period: 'Jan-2026', status: 'paid', gross: 4200000000, netPayable: computeNet(4200000000), cumGross: 4200000000, lines: [{ boqItemId: 'boq-proj-f14f15-0', qty: 27000, rate: 85, amount: 2295000 }, { boqItemId: 'boq-proj-f14f15-1', qty: 72000, rate: 420, amount: 30240000 }, { boqItemId: 'boq-proj-f14f15-2', qty: 12800, rate: 4800, amount: 61440000 }] },
-  { id: 'ipc-proj-f14f15-2', projectId: 'proj-f14f15', ipcNo: 'IPC-02', seq: 2, period: 'Mar-2026', status: 'approved', gross: 3800000000, netPayable: computeNet(3800000000), cumGross: 8000000000, lines: [{ boqItemId: 'boq-proj-f14f15-3', qty: 19000, rate: 5400, amount: 102600000 }, { boqItemId: 'boq-proj-f14f15-4', qty: 8400, rate: 23500, amount: 197400000 }] },
-  { id: 'ipc-proj-f14f15-3', projectId: 'proj-f14f15', ipcNo: 'IPC-03', seq: 3, period: 'May-2026', status: 'vetted', gross: 3200000000, netPayable: computeNet(3200000000), cumGross: 11200000000, lines: [{ boqItemId: 'boq-proj-f14f15-1', qty: 36000, rate: 420, amount: 15120000 }, { boqItemId: 'boq-proj-f14f15-5', qty: 7250, rate: 27800, amount: 201550000 }] },
-];
 
 function readComments(nodeId: string): NodeComment[] {
   try {

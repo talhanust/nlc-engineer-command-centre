@@ -1068,3 +1068,6 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .status-pill.st-ack { background: color-mix(in srgb, var(--rag-amber) 20%, transparent); }
 .status-pill.st-resolved { background: color-mix(in srgb, var(--rag-green) 16%, transparent); }
 .status-pill.st-muted { opacity: .65; }
+
+/* Worklist bell badge (req 3h(4) notification) */
+.bell-badge { position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--rag-red); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }

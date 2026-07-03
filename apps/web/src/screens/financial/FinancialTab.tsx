@@ -174,11 +174,19 @@ function Payments({ projectId, b, onAdded }: { projectId: string; b: Bundle; onA
   const [month, setMonth] = useState('Jun-26');
   const [category, setCategory] = useState<PaymentCategory>('materials');
   const [amount, setAmount] = useState('');
+  const [boqItemId, setBoqItemId] = useState('');
+  const [boq, setBoq] = useState<BoqItem[]>([]);
+  useEffect(() => {
+    let a = true;
+    provider.listBoq(projectId).then((x) => a && setBoq(x));
+    return () => { a = false; };
+  }, [provider, projectId]);
+  const codeOf = (id?: string) => (id ? boq.find((x) => x.id === id)?.code ?? '—' : '');
   async function add() {
     const a = Number(amount.replace(/,/g, ''));
     if (!Number.isFinite(a) || a <= 0) return;
-    await provider.addPayment(projectId, { month, category, amount: a });
-    setAmount(''); onAdded();
+    await provider.addPayment(projectId, { month, category, amount: a, boqItemId: boqItemId || undefined });
+    setAmount(''); setBoqItemId(''); onAdded();
   }
   const total = b.payments.reduce((s, p) => s + p.amount, 0);
   return (
@@ -190,11 +198,15 @@ function Payments({ projectId, b, onAdded }: { projectId: string; b: Bundle; onA
           {['materials', 'labour', 'plant', 'subcontract', 'overhead'].map((c) => (<option key={c} value={c}>{c}</option>))}
         </select>
         <input aria-label="Payment amount" placeholder="Amount (PKR)" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        <select aria-label="Payment BOQ item" value={boqItemId} onChange={(e) => setBoqItemId(e.target.value)} title="Optional BOQ item reference — item-level planned vs paid comparison">
+          <option value="">BOQ ref (optional)</option>
+          {boq.map((it) => (<option key={it.id} value={it.id}>{it.code} — {it.description.slice(0, 40)}</option>))}
+        </select>
         <button className="btn" onClick={add}>Record payment</button>
       </div>
       <Focusable title="Payments">{() => (
-      <table className="data-table" aria-label="Payments"><thead><tr><th>Month</th><th>Category</th><th className="num">Amount</th></tr></thead>
-        <tbody>{b.payments.map((p) => (<tr key={p.id}><td>{p.month}</td><td style={{ textTransform: 'capitalize' }}>{p.category}</td><td className="num">{formatMoney(p.amount)}</td></tr>))}</tbody>
+      <table className="data-table" aria-label="Payments"><thead><tr><th>Month</th><th>Category</th><th>BOQ ref</th><th className="num">Amount</th></tr></thead>
+        <tbody>{b.payments.map((p) => (<tr key={p.id}><td>{p.month}</td><td style={{ textTransform: 'capitalize' }}>{p.category}</td><td className="mono small">{codeOf(p.boqItemId)}</td><td className="num">{formatMoney(p.amount)}</td></tr>))}</tbody>
       </table>
       )}</Focusable>
     </div>

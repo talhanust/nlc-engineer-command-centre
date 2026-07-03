@@ -8,7 +8,8 @@ import {
   getAccessMatrix, setAccessMatrix, CAPABILITIES, CAPABILITY_LABEL, MATRIX_ROLES,
   type Capability, type AccessMatrix,
 } from '../domain/access';
-import type { AuditEntry } from '../data/types';
+import type { AuditEntry, AppUser } from '../data/types';
+import { useRole, SWITCHABLE_ROLES } from '../state/Role';
 
 export function Settings() {
   return (
@@ -19,10 +20,71 @@ export function Settings() {
       <DisplaySettings />
       <BackupRestore />
       <OrgAdmin />
+      <UsersAdmin />
       <PowersEditor />
       <AccessMatrixEditor />
       <AuditLog />
     </div>
+  );
+}
+
+function UsersAdmin() {
+  const { provider, nodes } = useData();
+  const { can } = useRole();
+  const [users, setUsers] = useState<AppUser[]>([]);
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('pm');
+  const [nodeId, setNodeId] = useState('hq-nlc');
+  const editable = can('admin'); // admin only
+
+  useEffect(() => {
+    let a = true;
+    provider.listUsers().then((u) => a && setUsers(u));
+    return () => { a = false; };
+  }, [provider]);
+
+  async function add() {
+    if (!name.trim()) return;
+    setUsers(await provider.upsertUser({ name: name.trim(), role, nodeId }));
+    setName('');
+  }
+  async function remove(id: string) {
+    setUsers(await provider.deleteUser(id));
+  }
+
+  return (
+    <section className="card" style={{ marginTop: 16 }}>
+      <div className="section-head">
+        <h3>Users & scope</h3>
+        <span className="muted small">appointment role + organisational scope — the user sees their node and below (req 3j)</span>
+      </div>
+      {editable && (
+        <div className="create-row">
+          <input aria-label="User name" placeholder="Name / appointment" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1, minWidth: 180 }} />
+          <select aria-label="User role" value={role} onChange={(e) => setRole(e.target.value)}>
+            {SWITCHABLE_ROLES.map((r) => <option key={r} value={r}>{r === 'admin' ? 'Admin' : ROLE_LABEL[r] ?? r}</option>)}
+          </select>
+          <select aria-label="User scope" value={nodeId} onChange={(e) => setNodeId(e.target.value)}>
+            {nodes.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}
+          </select>
+          <button className="btn" onClick={add}>Add user</button>
+        </div>
+      )}
+      <table className="data-table" aria-label="Users">
+        <thead><tr><th>Name</th><th>Role</th><th>Scope</th><th></th></tr></thead>
+        <tbody>
+          {users.map((u) => (
+            <tr key={u.id}>
+              <td>{u.name}</td>
+              <td>{u.role === 'admin' ? 'Admin' : ROLE_LABEL[u.role] ?? u.role}</td>
+              <td>{nodes.find((n) => n.id === u.nodeId)?.name ?? u.nodeId}</td>
+              <td>{editable && <button className="link-btn" aria-label={`Delete ${u.name}`} onClick={() => remove(u.id)}>remove</button>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="muted small">Sign in from the header user switcher. SSO / directory binding attaches to this model when available.</p>
+    </section>
   );
 }
 

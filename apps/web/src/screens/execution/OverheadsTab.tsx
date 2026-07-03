@@ -2,19 +2,22 @@ import { useEffect, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { formatMoney } from '../../domain/money';
 import { TIMELINE } from '../../domain/scurve';
-import type { OverheadLine, FinancialPayment } from '../../data/types';
+import type { OverheadLine, FinancialPayment, HrUnit } from '../../data/types';
+import { nodeOwnHrMonthly } from '../../domain/hrrollup';
+import { CURRENT_IDX } from '../../domain/scurve';
 
 export function OverheadsTab({ projectId }: { projectId: string }) {
   const { provider } = useData();
   const [lines, setLines] = useState<OverheadLine[]>([]);
   const [payments, setPayments] = useState<FinancialPayment[]>([]);
+  const [hrUnits, setHrUnits] = useState<HrUnit[]>([]);
   const [category, setCategory] = useState('');
   const [month, setMonth] = useState(TIMELINE[9]);
   const [cost, setCost] = useState('');
 
   async function load() {
-    const [o, p] = await Promise.all([provider.listOverheads(projectId), provider.listPayments(projectId)]);
-    setLines(o); setPayments(p);
+    const [o, p, u] = await Promise.all([provider.listOverheads(projectId), provider.listPayments(projectId), provider.listHrUnits(projectId)]);
+    setLines(o); setPayments(p); setHrUnits(u);
   }
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [provider, projectId]);
 
@@ -26,7 +29,11 @@ export function OverheadsTab({ projectId }: { projectId: string }) {
   const plannedByMonth = new Map<string, number>();
   for (const l of lines) plannedByMonth.set(l.month, (plannedByMonth.get(l.month) ?? 0) + l.plannedCost);
 
-  const plannedTotal = lines.reduce((s, l) => s + l.plannedCost, 0);
+  // Manpower cost booked automatically from the HR establishment (req 3d(1)):
+  // derived live per month — one HR record updates project cost with no re-entry.
+  const hrMonthly = nodeOwnHrMonthly(hrUnits, projectId);
+  const hrBookedMonths = CURRENT_IDX + 1; // months elapsed in the fixed timeline
+  const plannedTotal = lines.reduce((s, l) => s + l.plannedCost, 0) + hrMonthly * hrBookedMonths;
   const actualTotal = [...actualByMonth.values()].reduce((s, v) => s + v, 0);
 
   async function add() {
@@ -55,6 +62,12 @@ export function OverheadsTab({ projectId }: { projectId: string }) {
         <button className="btn" onClick={add}>Add line</button>
       </div>
 
+      {hrMonthly > 0 && (
+        <div className="card" style={{ margin: '10px 0', padding: '8px 12px' }} aria-label="HR manpower posting">
+          <strong>Manpower (HR establishment)</strong>{' '}
+          <span className="muted small">— booked automatically: {formatMoney(hrMonthly)}/month × {hrBookedMonths} months to date = <strong>{formatMoney(hrMonthly * hrBookedMonths)}</strong>. Derived from this project's establishment (held seats × pay band); update HR and it re-books with no re-entry.</span>
+        </div>
+      )}
       <table className="data-table" aria-label="Overhead lines">
         <thead><tr><th>Category</th><th>Month</th><th className="num">Planned</th><th></th></tr></thead>
         <tbody>

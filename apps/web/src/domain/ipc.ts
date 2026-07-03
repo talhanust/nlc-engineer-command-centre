@@ -57,7 +57,7 @@ export interface Deductions { retentionPct: number; incomeTaxPct: number; gstPct
 export const DEFAULT_DEDUCTIONS: Deductions = { retentionPct: 10, incomeTaxPct: 7, gstPct: 0 };
 
 /** Per-project commercial config defaults (client-side IPC deductions). */
-export const DEFAULT_COMMERCIAL_CONFIG = { ipcRetentionPct: 10, incomeTaxPct: 7, gstPct: 0, rarIncomeTaxPct: 7, rarGstPct: 0 };
+export const DEFAULT_COMMERCIAL_CONFIG = { ipcRetentionPct: 10, incomeTaxPct: 7, gstPct: 0, rarIncomeTaxPct: 7, rarGstPct: 0, divergenceTolerancePct: 10 };
 /** Default subcontractor retention (% of each RAR gross), capped at 5% of contract value. */
 export const DEFAULT_CONTRACT_RETENTION_PCT = 5;
 

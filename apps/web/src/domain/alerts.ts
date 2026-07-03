@@ -42,3 +42,61 @@ export function alertCounts(alerts: Alert[]): { critical: number; warning: numbe
     total: alerts.length,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Alert lifecycle (req 3i(2)): alerts route to a responsible role and are
+// trackable from flag → acknowledged → resolved (or muted with reason).
+// ---------------------------------------------------------------------------
+
+import type { AlertState, AlertStatus, MaterialIssue, MachineryUsage } from '../data/types';
+import { totalBalanceToRecover } from './materialrecovery';
+import { totalMachineryToRecover } from './machineryRecovery';
+
+/** Responsible role per alert stream (routing, req 3i(2)). */
+export const ALERT_OWNER: Record<string, string> = {
+  recon: 'pm',                // over-claimed contractors → Project Manager
+  aging: 'pd',                // aged approvals → Project Director
+  adv: 'fm',                  // BG / advance exposure → Finance Manager
+  planner: 'pm',              // divergence & unmapped scope → Project Manager
+  rar: 'manager_contracts',   // unrecovered contractor balances → Manager Contracts
+  procurement: 'pm',          // lead-time risk → Project Manager
+};
+
+export interface TriagedAlert extends Alert {
+  owner: string;
+  status: AlertStatus;
+  note?: string;
+  updatedAt?: string;
+}
+
+/** Merge computed alerts with persisted triage states (default open). */
+export function mergeAlertStates(alerts: Alert[], states: AlertState[]): TriagedAlert[] {
+  const byId = new Map(states.map((s) => [s.alertId, s]));
+  return alerts.map((a) => {
+    const s = byId.get(a.id);
+    return { ...a, owner: ALERT_OWNER[a.sub] ?? 'pm', status: s?.status ?? 'open', note: s?.note, updatedAt: s?.updatedAt };
+  });
+}
+
+/** Alerts still demanding attention (open or acknowledged). */
+export function activeAlerts(alerts: TriagedAlert[]): TriagedAlert[] {
+  return alerts.filter((a) => a.status === 'open' || a.status === 'ack');
+}
+
+/** Unrecovered material / machinery balances (req 3i(1)). */
+export function recoveryAlerts(issues: MaterialIssue[], machinery: MachineryUsage[]): Alert[] {
+  const out: Alert[] = [];
+  const mat = totalBalanceToRecover(issues);
+  if (mat > 0) out.push({
+    id: 'ur-material', severity: 'warning',
+    title: 'Unrecovered NLC material with contractors',
+    detail: `PKR ${Math.round(mat).toLocaleString('en-PK')} issued value outstanding — recover via RARs`, sub: 'rar',
+  });
+  const mach = totalMachineryToRecover(machinery);
+  if (mach > 0) out.push({
+    id: 'ur-machinery', severity: 'warning',
+    title: 'Unrecovered NLC machinery usage',
+    detail: `PKR ${Math.round(mach).toLocaleString('en-PK')} hire value outstanding — recover via RARs`, sub: 'rar',
+  });
+  return out;
+}

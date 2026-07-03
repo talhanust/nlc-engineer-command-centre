@@ -78,3 +78,38 @@ export function retentionRelease(held: number): RetentionRelease {
   const half = +(held / 2).toFixed(2);
   return { held, withFinalBill: half, afterDlp: +(held - half).toFixed(2) };
 }
+
+/**
+ * Hard over-claim gate (req 3b(4)): the claimable cap per BOQ item is the
+ * approved BOQ quantity PLUS approved variation quantity deltas, MINUS what
+ * earlier IPCs already claimed. Claims above the cap are blocked unless an
+ * authorised override (competent role + reason) is recorded in the audit trail.
+ */
+export function claimCap(
+  item: { id: string; qty: number },
+  approvedVariationQtyDelta: number,
+  claimedQty: number,
+): number {
+  return Math.max(0, item.qty + approvedVariationQtyDelta - claimedQty);
+}
+
+/** Per-item approved variation qty deltas ('qty' and 'add' lines of approved VOs). */
+export function approvedVariationQtyByItem(
+  variations: Array<{ status: string; lines?: Array<{ kind: string; boqItemId?: string; newQty?: number }> }>,
+  boq: Array<{ id: string; qty: number }>,
+): Record<string, number> {
+  const qtyOf = new Map(boq.map((b) => [b.id, b.qty]));
+  const out: Record<string, number> = {};
+  for (const v of variations) {
+    if (v.status !== 'approved') continue;
+    for (const l of v.lines ?? []) {
+      if (l.kind === 'qty' && l.boqItemId && l.newQty !== undefined) {
+        out[l.boqItemId] = (out[l.boqItemId] ?? 0) + (l.newQty - (qtyOf.get(l.boqItemId) ?? 0));
+      }
+      if (l.kind === 'omit' && l.boqItemId) {
+        out[l.boqItemId] = (out[l.boqItemId] ?? 0) - (qtyOf.get(l.boqItemId) ?? 0);
+      }
+    }
+  }
+  return out;
+}

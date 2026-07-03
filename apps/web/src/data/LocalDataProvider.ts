@@ -4,7 +4,7 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
@@ -1079,6 +1079,25 @@ export class LocalDataProvider implements DataProvider {
     return hire;
   }
 
+  async listUsers(): Promise<AppUser[]> {
+    return readJson(USERS_KEY, () => SEED_USERS);
+  }
+  async upsertUser(input: Omit<AppUser, 'id'> & { id?: string }): Promise<AppUser[]> {
+    const all = readJson<AppUser[]>(USERS_KEY, () => SEED_USERS);
+    if (input.id) {
+      const idx = all.findIndex((u) => u.id === input.id);
+      if (idx >= 0) all[idx] = { ...all[idx], ...input, name: sanitize(input.name) } as AppUser;
+    } else {
+      all.push({ id: `u-${Date.now().toString(36)}`, name: sanitize(input.name), role: input.role, nodeId: input.nodeId });
+    }
+    writeJson(USERS_KEY, all);
+    return all;
+  }
+  async deleteUser(id: string): Promise<AppUser[]> {
+    const all = readJson<AppUser[]>(USERS_KEY, () => SEED_USERS).filter((u) => u.id !== id);
+    writeJson(USERS_KEY, all);
+    return all;
+  }
   async listAlertStates(projectId: string): Promise<AlertState[]> {
     return readJson(alertStateKey(projectId), () => []);
   }
@@ -1825,6 +1844,14 @@ const prodKey = (pid: string) => `nlc-ecc.production.${pid}`;
 const issueKey = (pid: string) => `nlc-ecc.materialIssues.${pid}`;
 const machineryKey = (pid: string) => `nlc-ecc.machinery.${pid}`;
 const alertStateKey = (pid: string) => `nlc-ecc.alertstates.${pid}`;
+const USERS_KEY = 'nlc-ecc.users';
+const SEED_USERS: AppUser[] = [
+  { id: 'u-admin', name: 'System Admin', role: 'admin', nodeId: 'hq-nlc' },
+  { id: 'u-gm-mon', name: 'GM Monitoring (HQ)', role: 'fm', nodeId: 'hq-nlc' },
+  { id: 'u-pd-north', name: 'Project Director — North', role: 'pd', nodeId: 'pd-north' },
+  { id: 'u-pm-f14', name: 'PM — F-14/F-15', role: 'pm', nodeId: 'proj-f14f15' },
+  { id: 'u-mc', name: 'Manager Contracts', role: 'manager_contracts', nodeId: 'hq-engrs' },
+];
 const salientKey = (pid: string) => `nlc-ecc.salients.${pid}`;
 const photoKey = (pid: string) => `nlc-ecc.photos.${pid}`;
 const attachKey = (pid: string) => `nlc-ecc.attach.${pid}`;

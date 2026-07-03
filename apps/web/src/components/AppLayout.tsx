@@ -9,6 +9,8 @@ import { RouteFade } from './RouteFade';
 import { useData } from '../data/DataContext';
 import { useUiState } from '../state/UiState';
 import { useRole, SWITCHABLE_ROLES } from '../state/Role';
+import type { AppUser } from '../data/types';
+import { useWorklist } from '../screens/Worklist';
 import { ROLE_LABEL } from '../domain/chains';
 
 function isTypingTarget(e: KeyboardEvent): boolean {
@@ -24,7 +26,14 @@ export function AppLayout() {
     theme, setTheme, sidebarOpen, toggleSidebar, sidebarWidth, setSidebarWidth,
     zoom, setZoom, density, setDensity, presentation, setPresentation, setLastNode,
   } = useUiState();
-  const { role, setRole } = useRole();
+  const { role, setRole, user, setUser } = useRole();
+  const [users, setUsers] = useState<AppUser[]>([]);
+  const { items: worklist } = useWorklist();
+  useEffect(() => {
+    let a = true;
+    provider.listUsers().then((u) => a && setUsers(u)).catch(() => undefined);
+    return () => { a = false; };
+  }, [provider]);
   const navigate = useNavigate();
   const location = useLocation();
   const [isFull, setIsFull] = useState(false);
@@ -138,6 +147,21 @@ export function AppLayout() {
             aria-label="Toggle row density" aria-pressed={density === 'compact'} title={density === 'compact' ? 'Comfortable rows' : 'Compact rows'}>
             {density === 'compact' ? '≡' : '☰'}
           </button>
+          <button className="icon-btn" style={{ position: 'relative' }} aria-label={`My approvals (${worklist.length} pending)`} title="My approvals — pending actions awaiting your role" onClick={() => navigate('/worklist')}>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            {worklist.length > 0 && <span className="bell-badge" aria-hidden="true">{worklist.length > 99 ? '99+' : worklist.length}</span>}
+          </button>
+          <label className="role-switch" title="Signed-in user — sets role and organisational scope">
+            <select aria-label="Switch user" value={user?.name ?? ''} onChange={(e) => {
+              const u = users.find((x) => x.name === e.target.value);
+              setUser(u ? { name: u.name, role: u.role, nodeId: u.nodeId } : null);
+            }}>
+              <option value="">No user (dev)</option>
+              {users.map((u) => <option key={u.id} value={u.name}>{u.name}</option>)}
+            </select>
+          </label>
           <label className="role-switch" title="Acting role (dev)">
             <span className="role-badge" aria-hidden>{ROLE_LABEL[role] ?? (role === 'admin' ? 'Admin' : role)}</span>
             <select aria-label="Switch acting role" value={role} onChange={(e) => setRole(e.target.value)}>

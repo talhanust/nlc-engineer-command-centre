@@ -394,6 +394,8 @@ export interface FinancialPayment {
   category: PaymentCategory;
   amount: number;
   note?: string;
+  /** Optional BOQ item reference (req 3e(3)) so planned / committed / incurred / paid compare at item level. */
+  boqItemId?: string;
 }
 export interface FinancialLiability {
   id: string;
@@ -500,6 +502,16 @@ export interface MachineryHire {
 }
 
 // ---- Audit (Phase 7) — append-only workflow trail ----
+/** A named system user (req 3j): appointment role + organisational scope.
+ * Access is scoped to the user's node subtree — directorate and project users
+ * see their own data; HQ users see the roll-up. SSO binds to this later. */
+export interface AppUser {
+  id: string;
+  name: string;
+  role: string;    // ROLE_LABEL key or 'admin'
+  nodeId: string;  // org scope: this node and everything beneath it
+}
+
 /** Triage status of a computed alert (req 3i(2)): flag → acknowledge → resolve, or mute with reason. */
 export type AlertStatus = 'open' | 'ack' | 'resolved' | 'muted';
 export interface AlertState {
@@ -896,6 +908,9 @@ export interface DataProvider {
   // Audit
   listAudit(): Promise<AuditEntry[]>;
   /** Alert triage lifecycle (req 3i(2)): computed alerts carry stable ids; states persist triage. */
+  listUsers(): Promise<AppUser[]>;
+  upsertUser(input: Omit<AppUser, 'id'> & { id?: string }): Promise<AppUser[]>;
+  deleteUser(id: string): Promise<AppUser[]>;
   listAlertStates(projectId: string): Promise<AlertState[]>;
   setAlertState(projectId: string, state: Omit<AlertState, 'updatedAt'>): Promise<AlertState[]>;
   /** Write an authorised-override entry to the audit trail (req 3b(4)). */

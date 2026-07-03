@@ -4,7 +4,7 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
@@ -406,6 +406,15 @@ export class ApiDataProvider implements DataProvider {
   }
   async addHireUtilization(projectId: string, hireNo: string, entry: { dated: string; units: number }): Promise<MachineryHire> {
     return this.send<MachineryHire>(`/api/projects/${projectId}/hires/${hireNo}/utilization`, 'POST', entry);
+  }
+  async listUsers(): Promise<AppUser[]> {
+    return (await this.get<{ items: AppUser[] }>('/api/users')).items;
+  }
+  async upsertUser(input: Omit<AppUser, 'id'> & { id?: string }): Promise<AppUser[]> {
+    return (await this.send<{ items: AppUser[] }>('/api/users', 'POST', input)).items;
+  }
+  async deleteUser(id: string): Promise<AppUser[]> {
+    return (await this.send<{ items: AppUser[] }>(`/api/users/${id}/delete`, 'POST', {})).items;
   }
   async listAlertStates(projectId: string): Promise<AlertState[]> {
     return (await this.get<{ items: AlertState[] }>(`/api/projects/${projectId}/alert-states`)).items;

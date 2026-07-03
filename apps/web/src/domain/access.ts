@@ -57,3 +57,24 @@ export function can(role: string, cap: Capability, matrix: AccessMatrix = getAcc
 }
 
 export { ROLE_LABEL };
+
+/**
+ * Organisational scoping (req 3j(3)): a user scoped to a node sees that node
+ * and everything beneath it. HQ-scoped users therefore see the full roll-up;
+ * directorate and project users see only their own subtree. No scope (dev
+ * role-only mode) means unscoped.
+ */
+export function nodeInScope(
+  nodes: Array<{ id: string; parentId: string | null }>,
+  scopeNodeId: string | null | undefined,
+  nodeId: string,
+): boolean {
+  if (!scopeNodeId) return true;
+  const parentOf = new Map(nodes.map((n) => [n.id, n.parentId]));
+  let cur: string | null | undefined = nodeId;
+  while (cur) {
+    if (cur === scopeNodeId) return true;
+    cur = parentOf.get(cur) ?? null;
+  }
+  return false;
+}

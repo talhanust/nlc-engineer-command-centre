@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useData } from '../data/DataContext';
 import { parseScheduleRows, parseScurveRows, textToRows, type Row } from '../domain/importers';
-import { parseXer, type ParsedXer } from '../domain/xer';
 import { readSheetRows } from './xlsxImport';
 
 type Kind = 'schedule' | 'scurve';
@@ -10,53 +9,29 @@ type Kind = 'schedule' | 'scurve';
 export function BaselineImport({ projectId, kind, onClose, onDone }: { projectId: string; kind: Kind; onClose: () => void; onDone: () => void }) {
   const { provider } = useData();
   const [rows, setRows] = useState<Row[]>([]);
-  const [xer, setXer] = useState<ParsedXer | null>(null);
   const [paste, setPaste] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   const title = kind === 'schedule' ? 'Import schedule baseline' : 'Import S-curve baseline';
-  // A parsed .xer takes precedence over sheet/paste rows for the schedule kind.
-  const xerRows = kind === 'schedule' ? xer?.activities ?? null : null;
   const parsed = kind === 'schedule' ? parseScheduleRows(rows) : parseScurveRows(rows);
-  const count = xerRows
-    ? xerRows.length
-    : kind === 'schedule'
-      ? (parsed as ReturnType<typeof parseScheduleRows>).rows.length
-      : (parsed as ReturnType<typeof parseScurveRows>).points.length;
+  const count = kind === 'schedule' ? (parsed as ReturnType<typeof parseScheduleRows>).rows.length : (parsed as ReturnType<typeof parseScurveRows>).points.length;
 
   async function onFile(file: File) {
     setError('');
-    if (kind === 'schedule' && /\.xer$/i.test(file.name)) {
-      try {
-        const text = await file.text();
-        const p = parseXer(text);
-        setRows([]);
-        setXer(p);
-        if (p.error) setError(p.error);
-      } catch { setError('Could not read that .xer file.'); }
-      return;
-    }
-    setXer(null);
     try { setRows(await readSheetRows(file)); }
     catch { setError('Could not read that file.'); }
   }
   function applyPaste() {
-    setXer(null);
     setRows(textToRows(paste));
   }
   async function apply() {
     setBusy(true);
     try {
       if (kind === 'schedule') {
-        if (xerRows) {
-          if (xer?.error) { setError(xer.error); return; }
-          await provider.replaceSchedule(projectId, xerRows);
-        } else {
-          const r = parseScheduleRows(rows);
-          if (r.error) { setError(r.error); return; }
-          await provider.replaceSchedule(projectId, r.rows);
-        }
+        const r = parseScheduleRows(rows);
+        if (r.error) { setError(r.error); return; }
+        await provider.replaceSchedule(projectId, r.rows);
       } else {
         const r = parseScurveRows(rows);
         if (r.error) { setError(r.error); return; }
@@ -75,13 +50,13 @@ export function BaselineImport({ projectId, kind, onClose, onDone }: { projectId
         <h3>{title}</h3>
         <p className="muted small">
           {kind === 'schedule'
-            ? 'Primavera P6 .xer, or columns: Activity ID, Name, WBS, Start, Finish, [Milestone].'
+            ? 'Columns: Activity ID, Name, WBS, Start, Finish, [Milestone].'
             : 'Columns: Month, Planned %, [Actual %].'}
         </p>
         <div className="create-row">
           <label className="btn-ghost" style={{ cursor: 'pointer' }}>
-            {kind === 'schedule' ? 'Choose .xer / .xlsx / .csv' : 'Choose .xlsx / .csv'}
-            <input type="file" accept={kind === 'schedule' ? '.xer,.xlsx,.xls,.csv' : '.xlsx,.xls,.csv'} aria-label={`${kind} file`} style={{ display: 'none' }}
+            Choose .xlsx / .csv
+            <input type="file" accept=".xlsx,.xls,.csv" aria-label={`${kind} file`} style={{ display: 'none' }}
               onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
           </label>
           <span className="muted small">or paste below</span>
@@ -97,16 +72,13 @@ export function BaselineImport({ projectId, kind, onClose, onDone }: { projectId
         <div className="create-row" style={{ marginTop: 6 }}>
           <button className="btn-ghost" onClick={applyPaste} disabled={!paste.trim()}>Parse pasted text</button>
           {count > 0 && <span className="pos small">{count} {kind === 'schedule' ? 'activities' : 'months'} ready</span>}
-          {xer && !xer.error && (
-            <span className="muted small">Primavera plan{xer.projectName ? ` · ${xer.projectName}` : ''} · {xer.wbsCount} WBS · {xer.relationshipCount} links</span>
-          )}
           {error && <span className="neg small">{error}</span>}
         </div>
 
         {count > 0 && (
           <div className="sample" style={{ marginTop: 8, maxHeight: 160, overflowY: 'auto' }}>
             {kind === 'schedule'
-              ? (xerRows ?? (parsed as ReturnType<typeof parseScheduleRows>).rows).slice(0, 8).map((a, i) => (<div key={i}>{a.activityId} · {a.name} · {a.plannedStart}→{a.plannedFinish}{a.isMilestone ? ' · ◆' : ''}</div>))
+              ? (parsed as ReturnType<typeof parseScheduleRows>).rows.slice(0, 8).map((a, i) => (<div key={i}>{a.activityId} · {a.name} · {a.plannedStart}→{a.plannedFinish}</div>))
               : (parsed as ReturnType<typeof parseScurveRows>).points.slice(0, 12).map((p, i) => (<div key={i}>{p.month}: planned {p.planned}% {p.actual != null ? `· actual ${p.actual}%` : ''}</div>))}
           </div>
         )}

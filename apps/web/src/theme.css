@@ -1058,3 +1058,13 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .measure-table tfoot td { font-weight: 700; border-top: 2px solid var(--border-strong); }
 
 .alloc-unassigned td { background: var(--surface-2); border-top: 1px dashed var(--border-strong); }
+
+/* Composite health score chips (req 3f(4)) */
+.health-score { display: inline-block; min-width: 34px; text-align: center; padding: 2px 6px; border-radius: var(--r-sm); font-weight: 600; font-family: var(--font-mono); }
+.hs-green { background: color-mix(in srgb, var(--rag-green) 18%, transparent); color: var(--rag-green); }
+.hs-amber { background: color-mix(in srgb, var(--rag-amber) 22%, transparent); color: var(--rag-amber); }
+.hs-red { background: color-mix(in srgb, var(--rag-red) 18%, transparent); color: var(--rag-red); }
+.status-pill.st-open { background: color-mix(in srgb, var(--rag-red) 16%, transparent); }
+.status-pill.st-ack { background: color-mix(in srgb, var(--rag-amber) 20%, transparent); }
+.status-pill.st-resolved { background: color-mix(in srgb, var(--rag-green) 16%, transparent); }
+.status-pill.st-muted { opacity: .65; }

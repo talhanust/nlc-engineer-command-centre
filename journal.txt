@@ -1,6 +1,48 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-07-03 — Unified approver work-list with bell notification; BOQ references on payments
+- Unified work-list (closes the last 3h(4) partial). New domain/worklist.ts projectWorklist():
+  every record whose NEXT approval step belongs to the acting role, across modules — IPCs (status
+  transition map), RARs (status transition map), procurement demands and payments (chain
+  pendingStage) — each with the pending step's label, amount and a deep link. New /worklist screen
+  "My approvals" lists the queue across every project in the signed-in user's SCOPE (nodeInScope),
+  and a header BELL with a count badge is the notification — it refreshes live on the provider's
+  'nlc:audit' event, so acting anywhere updates every approver's count without reload.
+- BOQ references on payments (closes 3e(3)). FinancialPayment gains optional boqItemId; the
+  Financial → Payments form offers a "BOQ ref (optional)" select and the ledger shows the item
+  code — payments now carry project AND item references so planned / committed / incurred / paid
+  compare at BOQ-item level.
+- Tests: worklist routing math per role (PM vs FM vs PD queues), bell + queue navigation, PM queue
+  after role switch, and payment-with-BOQ-ref ledger round-trip. Web 368 (62 files); server 9;
+  typecheck clean; both builds green.
+
+2026-07-03 — Integration seams 6·8·10: HR cost auto-posting + four-level rule, configurable dashboard, per-user access scoping
+- HR cost auto-posting + roll-up rule (req 3d(1)(2)). New domain/hrrollup.ts: unitMonthly (held
+  seats × pay band), nodeOwnHrMonthly, and hrCostRollup applying the organisation's rule exactly —
+  project = own HR; HQ-PD includes its own; HQ-Engrs includes its own; TOP HQ shown but EXCLUDING
+  its own HR (children only). The Overheads tab now books "Manpower (HR establishment)" into
+  project cost AUTOMATICALLY: monthly cost derived live from the project's establishment × months
+  elapsed, included in the planned total — update HR and it re-books with no re-entry. The command
+  dashboard gained a "Manpower cost roll-up (monthly)" card: own / from children / reported total
+  for the node and each child, with the rule annotated.
+- Configurable dashboard (req 3g(4)). New state/dashPrefs.ts persists PER-ROLE metric selection
+  (contract, billed, received, planned, actual, slippage, score, manpower card). "⚙ Customize"
+  popover on the breakdown card toggles columns live; a PD's view no longer affects the CFO's.
+  RAG thresholds remain configurable via the existing filter-bar control.
+- Per-user access scoping (req 3j(3), preps 3j(4)). New AppUser model (name, appointment role,
+  organisational scope nodeId) with provider listUsers/upsertUser/deleteUser (global key
+  nlc-ecc.users; seed: System Admin, GM Monitoring, PD North, PM F-14/F-15, Manager Contracts;
+  Api stubs). RoleProvider gains user/setUser — signing in from the new header user switcher sets
+  role AND scope together (persisted). domain/access.ts nodeInScope() walks the org tree; the
+  command dashboard blocks nodes outside the signed-in user's subtree with an "Outside your scope"
+  notice + jump to their own dashboard — directorate and project users see their own data, HQ sees
+  the roll-up. Settings gained a "Users & scope" admin card (add/remove users, role + node scope);
+  the dev role switcher is retained for acting-as. SSO/directory binding attaches to this model.
+- Tests: four-level rule math, auto-posted overheads banner (proj-rwp-ring establishment), scope
+  walking + PD sign-in blocked at HQ node + jump home, per-role column customize. Web 364
+  (61 files); server 9; typecheck clean; both builds green.
+
 2026-07-03 — Integration seams 4·5·7·9: alert centre lifecycle, lead-time planner, health score, margin basis
 - Alert centre with lifecycle (req 3i). New commercial sub-tab "Alert centre": every computed
   exception in one queue, ROUTED to a responsible role (ALERT_OWNER: recon→PM, aging→PD, adv→FM,

@@ -19,7 +19,6 @@ import { ProcurementTab } from './procurement/ProcurementTab';
 import { HrCockpit } from '../components/HrCockpit';
 import { PhotoGallery } from '../components/PhotoGallery';
 import { NodeMap } from '../components/NodeMap';
-import { DataHealthBanner } from '../components/DataHealthBanner';
 
 const TABS = ['executive', 'commercial', 'execution', 'mapping', 'procurement', 'financial', 'hr', 'gallery'] as const;
 type Tab = (typeof TABS)[number];
@@ -91,7 +90,6 @@ export function ProjectView({ nodeId }: { nodeId: string }) {
 
       {active === 'executive' && (
         <>
-          <DataHealthBanner nodeId={nodeId} />
           <div className="kpi-grid">
             <KpiCard label="Contract value" value={formatMoney(toNum(project.contractValue))} />
             <KpiCard label="Billed to date" value={formatMoney(toNum(project.billedToDate))} />

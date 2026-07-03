@@ -116,6 +116,13 @@ export function CommercialConfigTab({ projectId }: { projectId: string }) {
               onChange={(e) => field('rarGstPct', e.target.value)} />
             <small className="muted">second statutory line (0 if N/A)</small>
           </label>
+          <label className="cfg-field">
+            <span>Divergence tolerance ± %</span>
+            <input type="number" aria-label="Divergence tolerance %" min={0} max={100} step={1}
+              value={cfg.divergenceTolerancePct ?? 10} disabled={!editable}
+              onChange={(e) => field('divergenceTolerancePct', e.target.value)} />
+            <small className="muted">allowed gap between an activity's derived physical % and its schedule-expected % before it is flagged</small>
+          </label>
         </div>
         {editable && (
           <button className="btn" disabled={busy || !dirty} onClick={save} style={{ marginTop: 10 }}>

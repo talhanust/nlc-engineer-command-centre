@@ -227,6 +227,8 @@ export interface CommercialConfig {
   rarIncomeTaxPct: number;
   /** GST / stamp on subcontractor RARs (% of gross). */
   rarGstPct: number;
+  /** Tolerance (± % points) between an activity's schedule-expected %% and its derived physical %% before a divergence flag (req 3a(6)). */
+  divergenceTolerancePct?: number;
 }
 
 export interface RarLine { boqItemId: string; qty: number; rate: number; amount: number }
@@ -336,10 +338,6 @@ export interface ScheduleActivity {
   plannedStart: string;
   plannedFinish: string;
   isMilestone: boolean;
-  /** Predecessor activity codes (from Primavera TASKPRED); drives critical path. */
-  predecessors?: string[];
-  /** Physical % complete carried from the imported plan (phys_complete_pct). */
-  physCompletePct?: number;
 }
 
 /** One point of the monthly cumulative S-curve. `actual` is null beyond now. */
@@ -366,6 +364,8 @@ export interface BoqWbsLink {
   projectId: string;
   activityId: string;
   confidence: MapConfidence;
+  /** Share of the item's value carried by this activity (0..1). Omitted = even split across the item's links. */
+  weight?: number;
 }
 export interface BoqMaterialLink {
   boqItemId: string;
@@ -373,6 +373,8 @@ export interface BoqMaterialLink {
   materialRef: string;
   coeff: number;
   confidence: MapConfidence;
+  /** Procurement lead time for this material (days from order to receipt). */
+  leadDays?: number;
 }
 
 // ---- Financial (Phase 5) ----
@@ -498,6 +500,16 @@ export interface MachineryHire {
 }
 
 // ---- Audit (Phase 7) — append-only workflow trail ----
+/** Triage status of a computed alert (req 3i(2)): flag → acknowledge → resolve, or mute with reason. */
+export type AlertStatus = 'open' | 'ack' | 'resolved' | 'muted';
+export interface AlertState {
+  alertId: string;     // stable computed alert id (e.g. 'bg-…', 'dv-…')
+  status: AlertStatus;
+  by: string;          // acting role
+  note?: string;       // required for mute/resolve
+  updatedAt: string;
+}
+
 export interface AuditEntry {
   id: string;
   at: string;
@@ -831,7 +843,9 @@ export interface DataProvider {
   addResource(projectId: string, input: Omit<Resource, 'id' | 'projectId'>): Promise<Resource>;
   // Mapping
   listBoqWbs(projectId: string): Promise<BoqWbsLink[]>;
+  /** Upsert keyed by (boqItemId, activityId) — a BOQ item may map to many activities and vice versa. */
   setBoqWbs(projectId: string, link: BoqWbsLink): Promise<BoqWbsLink>;
+  removeBoqWbs(projectId: string, boqItemId: string, activityId: string): Promise<BoqWbsLink[]>;
   listBoqMaterial(projectId: string): Promise<BoqMaterialLink[]>;
   setBoqMaterial(projectId: string, link: BoqMaterialLink): Promise<BoqMaterialLink>;
   // Financial
@@ -881,6 +895,11 @@ export interface DataProvider {
   setPeriodMapping(projectId: string, ipcNo: string, month: string): Promise<Record<string, string>>;
   // Audit
   listAudit(): Promise<AuditEntry[]>;
+  /** Alert triage lifecycle (req 3i(2)): computed alerts carry stable ids; states persist triage. */
+  listAlertStates(projectId: string): Promise<AlertState[]>;
+  setAlertState(projectId: string, state: Omit<AlertState, 'updatedAt'>): Promise<AlertState[]>;
+  /** Write an authorised-override entry to the audit trail (req 3b(4)). */
+  recordOverride(projectId: string, entity: string, ref: string, detail: string): Promise<void>;
   // Progress updates (QS enter → PM validate) — single source of physical progress
   listProgress(projectId: string): Promise<ProgressUpdate[]>;
   upsertProgress(projectId: string, input: { boqItemId: string; period: string; executedQty: number; role: string; id?: string }): Promise<ProgressUpdate[]>;

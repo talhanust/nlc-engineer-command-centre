@@ -9,9 +9,9 @@ import { ScheduleWorkflowStrip } from '../../components/ScheduleWorkflowStrip';
 import { PeriodMappingTab } from './PeriodMappingTab';
 import { OverheadsTab } from './OverheadsTab';
 import { ProgressTab } from './ProgressTab';
-import { scheduleProgress, type ActivityActual } from '../../domain/scheduleProgress';
-import { criticalPath } from '../../domain/criticalPath';
-import type { MonthlySeriesPoint, ScheduleActivity, Resource, ResourceClass, BoqItem, BoqWbsLink, ProgressUpdate } from '../../data/types';
+import type { MonthlySeriesPoint, ScheduleActivity, Resource, ResourceClass } from '../../data/types';
+import { activityDerivedProgress, type ActivityDerivedRow } from '../../domain/derivedProgress';
+import { DEFAULT_COMMERCIAL_CONFIG } from '../../domain/ipc';
 
 const SUB = ['schedule', 'lookahead', 'scurve', 'progress', 'periodmap', 'overheads', 'production', 'resources'] as const;
 type Sub = (typeof SUB)[number];
@@ -94,37 +94,25 @@ function Lookahead({ projectId }: { projectId: string }) {
 function Schedule({ projectId }: { projectId: string }) {
   const { provider } = useData();
   const [acts, setActs] = useState<ScheduleActivity[]>([]);
-  const [items, setItems] = useState<BoqItem[]>([]);
-  const [links, setLinks] = useState<BoqWbsLink[]>([]);
-  const [updates, setUpdates] = useState<ProgressUpdate[]>([]);
   const [importing, setImporting] = useState(false);
   const [locked, setLocked] = useState(false);
-  function load() {
-    Promise.all([
-      provider.listSchedule(projectId),
-      provider.listBoq(projectId),
-      provider.listBoqWbs(projectId),
-      provider.listProgress(projectId),
-    ]).then(([s, b, l, p]) => { setActs(s); setItems(b); setLinks(l); setUpdates(p); });
-  }
+  const [derived, setDerived] = useState<ActivityDerivedRow[]>([]);
+  const [tol, setTol] = useState<number>(DEFAULT_COMMERCIAL_CONFIG.divergenceTolerancePct ?? 10);
+  function load() { provider.listSchedule(projectId).then(setActs); }
   useEffect(() => {
-    let alive = true;
-    Promise.all([
-      provider.listSchedule(projectId),
-      provider.listBoq(projectId),
-      provider.listBoqWbs(projectId),
-      provider.listProgress(projectId),
-    ]).then(([s, b, l, p]) => { if (alive) { setActs(s); setItems(b); setLinks(l); setUpdates(p); } });
-    return () => { alive = false; };
+    let a = true;
+    void Promise.all([
+      provider.listSchedule(projectId), provider.listBoq(projectId),
+      provider.listBoqWbs(projectId), provider.listProgress(projectId), provider.getCommercialConfig(projectId),
+    ]).then(([sched, items, links, progress, cfg]) => {
+      if (!a) return;
+      setActs(sched);
+      setTol(cfg.divergenceTolerancePct ?? 10);
+      setDerived(activityDerivedProgress(sched, items, links, progress, new Date().toISOString().slice(0, 10)));
+    });
+    return () => { a = false; };
   }, [provider, projectId]);
-
-  // "As of" anchored to the demo's current month so planned % is meaningful.
-  const asOf = new Date('2026-06-01');
-  const sp = scheduleProgress(acts, items, links, updates, asOf);
-  const actualByActivity = new Map<string, ActivityActual>(sp.rows.map((r) => [r.activity.id, r]));
-  const hasActuals = sp.mappedActivities > 0;
-  const cp = criticalPath(acts);
-
+  const derivedOf = Object.fromEntries(derived.map((d) => [d.activityId, d]));
   return (
     <div>
       {importing && <BaselineImport projectId={projectId} kind="schedule" onClose={() => setImporting(false)} onDone={load} />}
@@ -136,45 +124,25 @@ function Schedule({ projectId }: { projectId: string }) {
         </div>
       </div>
       {acts.length === 0 ? (
-        <p className="muted">No schedule baseline yet. Use <strong>Import baseline</strong> to upload a Primavera <strong>.xer</strong>, an .xlsx, or paste activities.</p>
+        <p className="muted">No schedule baseline yet. Use <strong>Import baseline</strong> to upload an .xlsx or paste activities.</p>
       ) : (
         <>
-          {hasActuals && (
-            <div className="kpi-grid" aria-label="Schedule progress from Commercial">
-              <div className="kpi"><div className="kpi-label">Actual (from Commercial)</div><div className="kpi-value">{sp.overallActualPct}%</div></div>
-              <div className="kpi"><div className="kpi-label">Planned to date</div><div className="kpi-value">{sp.overallPlannedPct}%</div></div>
-              <div className="kpi"><div className="kpi-label">Schedule variance</div><div className={`kpi-value ${sp.overallActualPct - sp.overallPlannedPct < 0 ? 'neg' : 'pos'}`}>{sp.overallActualPct - sp.overallPlannedPct >= 0 ? '+' : ''}{(sp.overallActualPct - sp.overallPlannedPct).toFixed(1)}%</div></div>
-              <div className="kpi"><div className="kpi-label">Mapped activities</div><div className="kpi-value">{sp.mappedActivities}/{acts.length}</div></div>
-            </div>
-          )}
-          <p className="muted small">
-            {hasActuals
-              ? 'Actual % is translated from validated Commercial progress through the BOQ → WBS mapping (value-weighted). Unmapped activities show “—”.'
-              : 'Map BOQ items to activities (Mapping → BOQ → WBS) to translate Commercial executed progress into schedule actuals here.'}
-          </p>
-          {cp.hasNetwork && (
-            <div className="kpi-grid" aria-label="Critical path">
-              <div className="kpi"><div className="kpi-label">Critical path</div><div className="kpi-value">{cp.criticalIds.size} activities</div></div>
-              <div className="kpi"><div className="kpi-label">Project duration</div><div className="kpi-value">{cp.projectDuration} d</div></div>
-            </div>
-          )}
-          <GanttChart activities={acts} criticalIds={cp.criticalIds} />
+          <GanttChart activities={acts} />
           <table className="data-table" aria-label="Schedule">
-          <thead><tr><th>WBS</th><th>Activity</th><th>Name</th><th className="num">Days</th><th>Start</th><th>Finish</th><th>Type</th><th className="num">Float</th><th className="num">Actual %</th><th className="num">Planned %</th><th className="num">Var</th></tr></thead>
+          <thead><tr><th>WBS</th><th>Activity</th><th>Name</th><th className="num">Days</th><th>Start</th><th>Finish</th><th>Type</th><th className="num" title="Derived from validated executed BOQ quantities through the BOQ↔WBS mapping">Physical % (derived)</th><th className="num">Expected %</th><th className="num">Δ</th></tr></thead>
           <tbody>
             {acts.map((a) => {
-              const r = actualByActivity.get(a.id);
-              const mapped = r && r.mappedItems > 0;
+              const d = derivedOf[a.activityId];
+              const flag = d?.mapped && Math.abs(d.divergence) > tol;
               return (
-                <tr key={a.id}>
-                  <td>{a.wbs}</td><td>{a.activityId}</td><td>{a.name}</td>
-                  <td className="num">{a.durationDays}</td><td>{a.plannedStart}</td><td>{a.plannedFinish}</td>
-                  <td>{a.isMilestone ? <span className="status-pill">Milestone</span> : 'Task'}</td>
-                  <td className="num">{cp.hasNetwork ? (cp.nodes.get(a.activityId)?.critical ? <span className="status-pill st-marked_payment">Critical</span> : `${cp.nodes.get(a.activityId)?.totalFloat ?? 0}d`) : <span className="muted small">—</span>}</td>
-                  <td className="num">{mapped ? `${r!.actualPct}%` : <span className="muted small">—</span>}</td>
-                  <td className="num">{mapped ? `${r!.plannedPct}%` : <span className="muted small">—</span>}</td>
-                  <td className={`num ${mapped ? (r!.variancePct < 0 ? 'neg' : 'pos') : ''}`}>{mapped ? `${r!.variancePct >= 0 ? '+' : ''}${r!.variancePct}` : ''}</td>
-                </tr>
+              <tr key={a.id} className={flag ? 'row-flag' : ''}>
+                <td>{a.wbs}</td><td>{a.activityId}</td><td>{a.name}</td>
+                <td className="num">{a.durationDays}</td><td>{a.plannedStart}</td><td>{a.plannedFinish}</td>
+                <td>{a.isMilestone ? <span className="status-pill">Milestone</span> : 'Task'}</td>
+                <td className="num">{a.isMilestone ? '—' : d?.mapped ? `${d.derivedPct}%` : <span className="muted small" title="No confirmed BOQ↔WBS mapping — map in the Mapping tab">unmapped</span>}</td>
+                <td className="num">{a.isMilestone ? '—' : `${d?.expectedPct ?? 0}%`}</td>
+                <td className={`num${flag ? ' neg' : ''}`}>{a.isMilestone || !d?.mapped ? '—' : `${d.divergence > 0 ? '+' : ''}${d.divergence}%${flag ? ' ⚠' : ''}`}</td>
+              </tr>
               );
             })}
           </tbody>

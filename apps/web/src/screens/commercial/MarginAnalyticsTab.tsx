@@ -77,6 +77,29 @@ export function MarginAnalyticsTab({ projectId }: { projectId: string }) {
           )}
         </div>
       </div>
+      <details className="card" style={{ marginTop: 14, padding: '10px 14px' }}>
+        <summary style={{ cursor: 'pointer' }}><strong>How profitability is computed</strong> <span className="muted small">(documented margin basis, req 3e(2))</span></summary>
+        <div className="small" style={{ marginTop: 8, lineHeight: 1.55 }}>
+          <p style={{ margin: '4px 0' }}>
+            <strong>Revenue basis.</strong> Client-side revenue is the executed BOQ value certified through IPCs plus EPC price escalation,
+            net of the configured retention and statutory deductions. Subcontractor RARs are expenditure — they are never netted against revenue.
+          </p>
+          <p style={{ margin: '4px 0' }}>
+            <strong>Direct cost basis.</strong> Item-level cost comes from the distribution plan: sublet and labour allocations at their awarded rates;
+            NLC-direct scope carries no contractor cost here and is covered by resources, overheads and plant usage in the project ledger.
+          </p>
+          <p style={{ margin: '4px 0' }}>
+            <strong>Centrally procured &amp; recovered material.</strong> Material NLC issues to a contractor is NOT double-counted: its cost sits in
+            Procurement (PO/CRV), and the corresponding value is <em>recovered from the contractor's RAR</em> (material recovery), which restores the margin
+            at settlement. The same treatment applies to NLC machinery hired to contractors (machinery recovery). Labour-only contracts carry no
+            material or machinery recovery by rule.
+          </p>
+          <p style={{ margin: '4px 0' }}>
+            <strong>Margin.</strong> Item margin = BOQ value − allocated contractor cost; project margin aggregates items and is read with the
+            recovery balances above. Items where the awarded rate exceeds the risk threshold of the BOQ rate are flagged in the risk list.
+          </p>
+        </div>
+      </details>
     </div>
   );
 }

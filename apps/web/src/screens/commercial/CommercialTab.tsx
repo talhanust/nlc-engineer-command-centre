@@ -13,6 +13,7 @@ import { GenerateRar } from './GenerateRar';
 import { AgingTab } from './AgingTab';
 import { MarginAnalyticsTab } from './MarginAnalyticsTab';
 import { CashFlowTab } from './CashFlowTab';
+import { AlertCentre } from './AlertCentre';
 import { CommercialDashboard } from './CommercialDashboard';
 import { VariationsTab } from './VariationsTab';
 import { EvmTab } from './EvmTab';
@@ -26,6 +27,7 @@ import { AdvancesTab } from './AdvancesTab';
 
 const SUBS = [
   ['dashboard', 'Dashboard'],
+  ['alerts', 'Alert centre'],
   ['boq', 'Bill of Quantities'],
   ['genipc', 'Generate IPC'],
   ['ipc', 'IPC register'],
@@ -71,6 +73,7 @@ export function CommercialTab({ projectId }: { projectId: string }) {
       </div>
       {sub === 'boq' && <BoqRegister projectId={projectId} />}
       {sub === 'dashboard' && <CommercialDashboard projectId={projectId} onNavigate={(s) => setSub(s as Sub)} />}
+      {sub === 'alerts' && <AlertCentre projectId={projectId} />}
       {sub === 'cashflow' && <CashFlowTab projectId={projectId} />}
       {sub === 'genipc' && <GenerateIpc projectId={projectId} onGenerated={() => setSub('ipc')} />}
       {sub === 'ipc' && <IpcRegister projectId={projectId} />}

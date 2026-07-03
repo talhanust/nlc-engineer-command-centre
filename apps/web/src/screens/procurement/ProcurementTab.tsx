@@ -8,14 +8,14 @@ import { ProcPaymentsTab } from './ProcPaymentsTab';
 import { SuppliersHiresTab } from './SuppliersHiresTab';
 import { InventoryTab, PolTab, FixedAssetsTab, MaintenanceTab } from './AssetsTabs';
 import { MachineryTab } from './MachineryTab';
-import { MaterialsTab } from './MaterialsTab';
+import { LeadTimesTab } from './LeadTimesTab';
 
 const ROLES = ['pic', 'pm', 'pd', 'comd_engrs', 'dir_sp', 'dg', 'preaudit', 'fm', 'fh', 'manager_procurement'];
-const SUB = ['inbox', 'demands', 'pocrv', 'payments', 'vendors', 'materials', 'inventory', 'machinery', 'pol', 'fixedassets', 'maintenance'] as const;
+const SUB = ['inbox', 'demands', 'pocrv', 'leadtimes', 'payments', 'vendors', 'inventory', 'machinery', 'pol', 'fixedassets', 'maintenance'] as const;
 type Sub = (typeof SUB)[number];
 const LABEL: Record<Sub, string> = {
   inbox: 'Approval inbox', demands: 'Demands', pocrv: 'POs & CRVs', payments: 'Payments', vendors: 'Suppliers & hires',
-  materials: 'Material register', inventory: 'Inventory', machinery: 'Machinery hire', pol: 'POL', fixedassets: 'Fixed assets', maintenance: 'Maintenance',
+  inventory: 'Inventory', machinery: 'Machinery hire', pol: 'POL', fixedassets: 'Fixed assets', maintenance: 'Maintenance', leadtimes: 'Lead times',
 };
 
 /** Stage progress chips for a chain document. */
@@ -66,10 +66,10 @@ export function ProcurementTab({ projectId }: { projectId: string }) {
       {sub === 'pocrv' && <PoCrvTab projectId={projectId} />}
       {sub === 'payments' && <ProcPaymentsTab projectId={projectId} role={role} />}
       {sub === 'vendors' && <SuppliersHiresTab projectId={projectId} />}
-      {sub === 'materials' && <MaterialsTab projectId={projectId} />}
       {sub === 'inventory' && <InventoryTab projectId={projectId} />}
       {sub === 'pol' && <PolTab projectId={projectId} />}
       {sub === 'machinery' && <MachineryTab projectId={projectId} />}
+      {sub === 'leadtimes' && <LeadTimesTab projectId={projectId} />}
       {sub === 'fixedassets' && <FixedAssetsTab projectId={projectId} />}
       {sub === 'maintenance' && <MaintenanceTab projectId={projectId} role={role} />}
     </div>

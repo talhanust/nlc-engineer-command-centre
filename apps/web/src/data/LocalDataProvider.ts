@@ -4,7 +4,7 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
@@ -690,6 +690,7 @@ export class LocalDataProvider implements DataProvider {
       gstPct: clampPct(config.gstPct),
       rarIncomeTaxPct: clampPct(config.rarIncomeTaxPct),
       rarGstPct: clampPct(config.rarGstPct),
+      divergenceTolerancePct: clampPct(config.divergenceTolerancePct ?? 10),
     };
     writeJson(commCfgKey(projectId), clean);
     audit(projectId, 'config', 'Commercial', 'deductions', `ret ${clean.ipcRetentionPct}% · tax ${clean.incomeTaxPct}% · gst ${clean.gstPct}%`);
@@ -758,8 +759,6 @@ export class LocalDataProvider implements DataProvider {
       id: `act-${projectId}-${i + 1}`, projectId,
       activityId: sanitize(r.activityId), name: sanitize(r.name), wbs: sanitize(r.wbs),
       durationDays: r.durationDays, plannedStart: r.plannedStart, plannedFinish: r.plannedFinish, isMilestone: r.isMilestone,
-      ...(r.predecessors && r.predecessors.length ? { predecessors: r.predecessors.map(sanitize) } : {}),
-      ...(r.physCompletePct != null ? { physCompletePct: r.physCompletePct } : {}),
     }));
     writeJson(schedKey(projectId), acts);
     audit(projectId, 'import', 'Schedule', `${acts.length} activities`);
@@ -840,11 +839,18 @@ export class LocalDataProvider implements DataProvider {
   }
   async setBoqWbs(projectId: string, link: BoqWbsLink): Promise<BoqWbsLink> {
     const all = readJson<BoqWbsLink[]>(wbsKey(projectId), () => []);
-    const idx = all.findIndex((l) => l.boqItemId === link.boqItemId);
+    // Many-to-many: upsert keyed by (boqItemId, activityId).
+    const idx = all.findIndex((l) => l.boqItemId === link.boqItemId && l.activityId === link.activityId);
     if (idx >= 0) all[idx] = link;
     else all.push(link);
     writeJson(wbsKey(projectId), all);
     return link;
+  }
+  async removeBoqWbs(projectId: string, boqItemId: string, activityId: string): Promise<BoqWbsLink[]> {
+    const all = readJson<BoqWbsLink[]>(wbsKey(projectId), () => [])
+      .filter((l) => !(l.boqItemId === boqItemId && l.activityId === activityId));
+    writeJson(wbsKey(projectId), all);
+    return all;
   }
   async listBoqMaterial(projectId: string): Promise<BoqMaterialLink[]> {
     return readJson(matKey(projectId), () => []);
@@ -1073,6 +1079,22 @@ export class LocalDataProvider implements DataProvider {
     return hire;
   }
 
+  async listAlertStates(projectId: string): Promise<AlertState[]> {
+    return readJson(alertStateKey(projectId), () => []);
+  }
+  async setAlertState(projectId: string, state: Omit<AlertState, 'updatedAt'>): Promise<AlertState[]> {
+    const all = readJson<AlertState[]>(alertStateKey(projectId), () => []);
+    const next: AlertState = { ...state, note: state.note ? sanitize(state.note) : undefined, updatedAt: new Date().toISOString() };
+    const idx = all.findIndex((a) => a.alertId === state.alertId);
+    if (idx >= 0) all[idx] = next;
+    else all.push(next);
+    writeJson(alertStateKey(projectId), all);
+    audit(projectId, state.status, 'Alert', state.alertId, state.note ?? '');
+    return all;
+  }
+  async recordOverride(projectId: string, entity: string, ref: string, detail: string): Promise<void> {
+    audit(projectId, 'override', entity, sanitize(ref), sanitize(detail));
+  }
   async listAudit(): Promise<AuditEntry[]> {
     return readAudit();
   }
@@ -1802,6 +1824,7 @@ const hireKey = (pid: string) => `nlc-ecc.hires.${pid}`;
 const prodKey = (pid: string) => `nlc-ecc.production.${pid}`;
 const issueKey = (pid: string) => `nlc-ecc.materialIssues.${pid}`;
 const machineryKey = (pid: string) => `nlc-ecc.machinery.${pid}`;
+const alertStateKey = (pid: string) => `nlc-ecc.alertstates.${pid}`;
 const salientKey = (pid: string) => `nlc-ecc.salients.${pid}`;
 const photoKey = (pid: string) => `nlc-ecc.photos.${pid}`;
 const attachKey = (pid: string) => `nlc-ecc.attach.${pid}`;

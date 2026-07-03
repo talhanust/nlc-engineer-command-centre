@@ -3,7 +3,9 @@ import { useData } from '../../data/DataContext';
 import { useToast } from '../../components/Toast';
 import { formatMoney } from '../../domain/money';
 import { ipcDeductionBreakdown, ipcClaimedQtyByItem, deductionsFromConfig, DEFAULT_COMMERCIAL_CONFIG } from '../../domain/ipc';
-import type { BoqItem, Ipc, ProgressUpdate, CommercialConfig } from '../../data/types';
+import { claimCap, approvedVariationQtyByItem } from '../../domain/billing';
+import { useRole } from '../../state/Role';
+import type { BoqItem, Ipc, ProgressUpdate, CommercialConfig, Variation } from '../../data/types';
 
 const num = (n: number) => n.toLocaleString('en-PK');
 const money = (n: number) => (n > 0 ? formatMoney(n) : '—');
@@ -21,10 +23,13 @@ export function GenerateIpc({ projectId, onGenerated }: { projectId: string; onG
   const [sel, setSel] = useState<Record<string, number>>({});
   const [cfg, setCfg] = useState<CommercialConfig>(DEFAULT_COMMERCIAL_CONFIG);
   const [busy, setBusy] = useState(false);
+  const [variations, setVariations] = useState<Variation[]>([]);
+  const [override, setOverride] = useState<{ open: boolean; reason: string }>({ open: false, reason: '' });
+  const { role } = useRole();
 
   async function load() {
-    const [b, p, i, c] = await Promise.all([provider.listBoq(projectId), provider.listProgress(projectId), provider.listIpcs(projectId), provider.getCommercialConfig(projectId)]);
-    setItems(b); setProgress(p); setIpcs(i); setCfg(c);
+    const [b, p, i, c, v] = await Promise.all([provider.listBoq(projectId), provider.listProgress(projectId), provider.listIpcs(projectId), provider.getCommercialConfig(projectId), provider.listVariations(projectId)]);
+    setItems(b); setProgress(p); setIpcs(i); setCfg(c); setVariations(v);
   }
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [provider, projectId]);
 
@@ -48,6 +53,17 @@ export function GenerateIpc({ projectId, onGenerated }: { projectId: string; onG
       });
   }, [items, executedByItem, claimedByItem, search, bill]);
 
+  const voDelta = useMemo(() => approvedVariationQtyByItem(variations, items), [variations, items]);
+  // Hard over-claim gate (req 3b(4)): cap = approved BOQ qty + approved VO deltas − already claimed.
+  const breaches = useMemo(() => Object.entries(sel)
+    .map(([id, qty]) => {
+      const it = items.find((x) => x.id === id);
+      if (!it || qty <= 0) return null;
+      const cap = claimCap(it, voDelta[id] ?? 0, claimedByItem[id] ?? 0);
+      return qty > cap + 1e-6 ? { item: it, qty, cap } : null;
+    })
+    .filter((x): x is { item: BoqItem; qty: number; cap: number } => x !== null), [sel, items, voDelta, claimedByItem]);
+  const canOverride = role === 'admin' || role === 'pd';
   const selectedCount = Object.values(sel).filter((q) => q > 0).length;
   const gross = useMemo(() => Object.entries(sel).reduce((a, [id, qty]) => {
     const it = items.find((x) => x.id === id);
@@ -71,16 +87,22 @@ export function GenerateIpc({ projectId, onGenerated }: { projectId: string; onG
   }
   function clearAll() { setSel({}); }
 
-  async function generate() {
+  async function generate(overrideReason?: string) {
     const lines = Object.entries(sel).filter(([, q]) => q > 0).map(([id, qty]) => {
       const it = items.find((x) => x.id === id)!;
       return { boqItemId: id, qty, rate: it.rate, amount: +(qty * it.rate).toFixed(2) };
     });
     if (lines.length === 0) return;
+    if (breaches.length > 0 && !overrideReason) { setOverride({ open: true, reason: '' }); return; }
     setBusy(true);
     const created = await provider.createIpc(projectId, { period: period.trim() || date, date, gross, lines });
+    if (breaches.length > 0 && overrideReason) {
+      await provider.recordOverride(projectId, 'IPC', created.ipcNo,
+        `over-claim authorised by ${role}: ${breaches.map((b) => `${b.item.code} qty ${b.qty} > cap ${b.cap}`).join('; ')} — reason: ${overrideReason}`);
+    }
     setBusy(false);
     setSel({});
+    setOverride({ open: false, reason: '' });
     await load();
     toast({ message: `${created.ipcNo} generated · ${formatMoney(gross)} gross`, kind: 'success' });
     onGenerated?.();
@@ -163,9 +185,38 @@ export function GenerateIpc({ projectId, onGenerated }: { projectId: string; onG
                 <tr className="ipc-net-row"><th>Net payable</th><td className="num"><strong>{formatMoney(ded.net)}</strong></td></tr>
               </tbody>
             </table>
-            <button className="btn" style={{ marginTop: 10 }} disabled={busy || gross <= 0} onClick={generate}>Generate IPC</button>
+            {breaches.length > 0 && (
+              <div className="alert-banner sev-critical" role="status" aria-label="Over-claim gate" style={{ marginTop: 10 }}>
+                <p className="small" style={{ margin: 0 }}>
+                  <strong>⛔ Over-claim blocked:</strong> {breaches.map((b) => `${b.item.code} claims ${num(b.qty)} ${b.item.unit} but only ${num(+b.cap.toFixed(2))} remains claimable (approved BOQ + approved variations − already claimed)`).join('; ')}.
+                  {canOverride ? ' An authorised override will be recorded in the audit trail.' : ' Only the Project Director (or admin) may authorise an override.'}
+                </p>
+              </div>
+            )}
+            <button className="btn" style={{ marginTop: 10 }} disabled={busy || gross <= 0 || (breaches.length > 0 && !canOverride)}
+              onClick={() => generate()}>
+              {breaches.length > 0 ? (canOverride ? 'Generate with override…' : 'Blocked — over-claim') : 'Generate IPC'}
+            </button>
           </div>
         </>
+      )}
+      {override.open && (
+        <div className="modal-backdrop" onClick={() => setOverride({ open: false, reason: '' })}>
+          <div className="modal" role="dialog" aria-label="Authorise over-claim override" onClick={(e) => e.stopPropagation()}>
+            <h3>Authorise over-claim override</h3>
+            <p className="muted small">
+              This IPC claims beyond the approved BOQ + variation quantity on {breaches.length} item{breaches.length === 1 ? '' : 's'}.
+              Provide the justification; the override, your role and the reason are written to the audit trail.
+            </p>
+            <textarea aria-label="Override reason" rows={3} style={{ width: '100%' }} placeholder="Reason / authority reference…"
+              value={override.reason} onChange={(e) => setOverride((o) => ({ ...o, reason: e.target.value }))} />
+            <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn-ghost" onClick={() => setOverride({ open: false, reason: '' })}>Cancel</button>
+              <button className="btn" disabled={busy || override.reason.trim().length < 5}
+                onClick={() => generate(override.reason.trim())}>Record override & generate</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

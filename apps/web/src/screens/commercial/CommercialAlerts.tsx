@@ -1,30 +1,39 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
-import { commercialAlerts, alertCounts } from '../../domain/alerts';
-import type { Ipc, Rar, Epc, Distribution, BoqItem, Subcontractor, BankGuarantee } from '../../data/types';
+import { commercialAlerts, alertCounts, mergeAlertStates, activeAlerts } from '../../domain/alerts';
+import { activityDerivedProgress, divergenceAlerts, unmappedBoqAlert } from '../../domain/derivedProgress';
+import type { AlertState } from '../../data/types';
+import type { Ipc, Rar, Epc, Distribution, BoqItem, Subcontractor, BankGuarantee, BoqWbsLink, ScheduleActivity, ProgressUpdate, CommercialConfig } from '../../data/types';
 
 export function CommercialAlerts({ projectId, onNavigate }: { projectId: string; onNavigate: (sub: string) => void }) {
   const { provider } = useData();
-  const [data, setData] = useState<{ ipcs: Ipc[]; rars: Rar[]; epcs: Epc[]; dists: Distribution[]; boq: BoqItem[]; subs: Subcontractor[]; bgs: BankGuarantee[] } | null>(null);
+  const [data, setData] = useState<{ ipcs: Ipc[]; rars: Rar[]; epcs: Epc[]; dists: Distribution[]; boq: BoqItem[]; subs: Subcontractor[]; bgs: BankGuarantee[]; links: BoqWbsLink[]; sched: ScheduleActivity[]; progress: ProgressUpdate[]; cfg: CommercialConfig; states: AlertState[] } | null>(null);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let a = true;
-    void Promise.all([
-      provider.listIpcs(projectId), provider.listRars(projectId), provider.listEpcs(projectId),
-      provider.listDistributions(projectId), provider.listBoq(projectId), provider.listSubcontractors(projectId), provider.listBankGuarantees(projectId),
-    ]).then(([ipcs, rars, epcs, dists, boq, subs, bgs]) => { if (a) setData({ ipcs, rars, epcs, dists, boq, subs, bgs }); });
-    const onAudit = () => {
+    const loadAll = () => {
       void Promise.all([
         provider.listIpcs(projectId), provider.listRars(projectId), provider.listEpcs(projectId),
         provider.listDistributions(projectId), provider.listBoq(projectId), provider.listSubcontractors(projectId), provider.listBankGuarantees(projectId),
-      ]).then(([ipcs, rars, epcs, dists, boq, subs, bgs]) => { if (a) setData({ ipcs, rars, epcs, dists, boq, subs, bgs }); });
+        provider.listBoqWbs(projectId), provider.listSchedule(projectId), provider.listProgress(projectId), provider.getCommercialConfig(projectId), provider.listAlertStates(projectId),
+      ]).then(([ipcs, rars, epcs, dists, boq, subs, bgs, links, sched, progress, cfg, states]) => { if (a) setData({ ipcs, rars, epcs, dists, boq, subs, bgs, links, sched, progress, cfg, states }); });
     };
+    loadAll();
+    const onAudit = loadAll;
     window.addEventListener('nlc:audit', onAudit);
     return () => { a = false; window.removeEventListener('nlc:audit', onAudit); };
   }, [provider, projectId]);
 
-  const alerts = useMemo(() => (data ? commercialAlerts(data) : []), [data]);
+  const alerts = useMemo(() => {
+    if (!data) return [];
+    const base = commercialAlerts(data);
+    const rows = activityDerivedProgress(data.sched, data.boq, data.links, data.progress, new Date().toISOString().slice(0, 10));
+    const dv = divergenceAlerts(rows, data.cfg.divergenceTolerancePct ?? 10);
+    const um = unmappedBoqAlert(data.boq, data.links);
+    // Alert-centre lifecycle: resolved/muted alerts leave the banner (req 3i(2)).
+    return activeAlerts(mergeAlertStates([...base, ...dv, ...(um ? [um] : [])], data.states));
+  }, [data]);
   const counts = alertCounts(alerts);
   if (counts.total === 0) return null;
 

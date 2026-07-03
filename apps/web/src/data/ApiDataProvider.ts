@@ -4,7 +4,7 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
@@ -335,6 +335,9 @@ export class ApiDataProvider implements DataProvider {
   async setBoqWbs(projectId: string, link: BoqWbsLink): Promise<BoqWbsLink> {
     return this.send<BoqWbsLink>(`/api/projects/${projectId}/boq-wbs`, 'PUT', link);
   }
+  async removeBoqWbs(projectId: string, boqItemId: string, activityId: string): Promise<BoqWbsLink[]> {
+    return (await this.send<{ items: BoqWbsLink[] }>(`/api/projects/${projectId}/boq-wbs/remove`, 'POST', { boqItemId, activityId })).items;
+  }
   async listBoqMaterial(projectId: string): Promise<BoqMaterialLink[]> {
     return (await this.get<{ items: BoqMaterialLink[] }>(`/api/projects/${projectId}/boq-material`)).items;
   }
@@ -403,6 +406,15 @@ export class ApiDataProvider implements DataProvider {
   }
   async addHireUtilization(projectId: string, hireNo: string, entry: { dated: string; units: number }): Promise<MachineryHire> {
     return this.send<MachineryHire>(`/api/projects/${projectId}/hires/${hireNo}/utilization`, 'POST', entry);
+  }
+  async listAlertStates(projectId: string): Promise<AlertState[]> {
+    return (await this.get<{ items: AlertState[] }>(`/api/projects/${projectId}/alert-states`)).items;
+  }
+  async setAlertState(projectId: string, state: Omit<AlertState, 'updatedAt'>): Promise<AlertState[]> {
+    return (await this.send<{ items: AlertState[] }>(`/api/projects/${projectId}/alert-states`, 'POST', state)).items;
+  }
+  async recordOverride(projectId: string, entity: string, ref: string, detail: string): Promise<void> {
+    await this.send<void>(`/api/projects/${projectId}/audit/override`, 'POST', { entity, ref, detail });
   }
   async listAudit(): Promise<AuditEntry[]> {
     return (await this.get<{ items: AuditEntry[] }>(`/api/audit`)).items;

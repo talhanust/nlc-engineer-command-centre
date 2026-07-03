@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useData } from '../data/DataContext';
 import { useUiState } from '../state/UiState';
 import { computeNodeRollup } from '../domain/rollup';
+import { healthScore, healthLabel } from '../domain/health';
 import { descendantNodes, descendantProjectIds } from '../domain/org';
 import { applyFilter } from '../domain/filter';
 import { formatMoney, formatPct } from '../domain/money';
@@ -119,6 +120,7 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
               <th className="num">Planned</th>
               <th className="num">Actual</th>
               <th className="num">Slippage</th>
+              <th className="num" title="Composite 0–100: schedule 40% · billing alignment 30% · collection 30%">Score</th>
               <th>Health</th>
             </tr>
           </thead>
@@ -134,6 +136,10 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
                 <td className={`num ${c.slippage < 0 ? 'neg' : 'pos'}`}>
                   {c.slippage >= 0 ? '+' : ''}
                   {formatPct(c.slippage)}
+                </td>
+                <td className="num">
+                  {(() => { const h = healthScore({ plannedPct: c.plannedPct, actualPct: c.actualPct, contractValue: c.contractValue, billed: c.billed, received: c.received });
+                    return <span className={`health-score hs-${h.band}`} title={healthLabel(h)} aria-label={`Health score ${c.name}`}>{h.score}</span>; })()}
                 </td>
                 <td><RagBadge rag={c.rag} /></td>
               </tr>

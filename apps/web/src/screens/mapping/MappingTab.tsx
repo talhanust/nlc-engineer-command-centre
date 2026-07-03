@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
-import { wbsCoverage, materialCoverage, type Coverage } from '../../domain/mapping';
-import { suggestWbsLinks } from '../../domain/autoMap';
-import { MapReviewModal } from '../../components/MapReviewModal';
+import { materialCoverage, valueCoverage, activityCoverage, linksByItem, effectiveWeight, type Coverage } from '../../domain/mapping';
+import { suggestWbsLinks } from '../../domain/mappingSuggest';
 import { formatMoney } from '../../domain/money';
 import { materialRecovery, issueValue, totalBalanceToRecover } from '../../domain/materialrecovery';
 import { MappingWorkflowStrip } from '../../components/MappingWorkflowStrip';
@@ -105,94 +104,133 @@ function WbsMapping({ projectId }: { projectId: string }) {
   const { provider } = useData();
   const [items, setItems] = useState<BoqItem[]>([]);
   const [acts, setActs] = useState<ScheduleActivity[]>([]);
-  const [links, setLinks] = useState<Record<string, BoqWbsLink>>({});
+  const [links, setLinks] = useState<BoqWbsLink[]>([]);
+  const [onlyUnmapped, setOnlyUnmapped] = useState(false);
 
   useEffect(() => {
     let a = true;
     Promise.all([provider.listBoq(projectId), provider.listSchedule(projectId), provider.listBoqWbs(projectId)]).then(
       ([b, s, l]) => {
         if (!a) return;
-        setItems(b); setActs(s);
-        setLinks(Object.fromEntries(l.map((x) => [x.boqItemId, x])));
+        setItems(b); setActs(s); setLinks(l);
       },
     );
     return () => { a = false; };
   }, [provider, projectId]);
 
-  async function setActivity(item: BoqItem, activityId: string) {
-    if (!activityId) return;
+  const byItem = useMemo(() => linksByItem(links), [links]);
+  const vc = useMemo(() => valueCoverage(items, links), [items, links]);
+  const actPct = useMemo(() => activityCoverage(acts, links), [acts, links]);
+  const pending = useMemo(() => links.filter((l) => l.confidence === 'auto'), [links]);
+  const actName = useMemo(() => Object.fromEntries(acts.map((a) => [a.activityId, a.name])), [acts]);
+  const itemOf = useMemo(() => Object.fromEntries(items.map((i) => [i.id, i])), [items]);
+
+  async function addLink(item: BoqItem, activityId: string) {
+    if (!activityId || byItem.get(item.id)?.some((l) => l.activityId === activityId)) return;
     const link: BoqWbsLink = { boqItemId: item.id, projectId, activityId, confidence: 'confirmed' };
-    setLinks((prev) => ({ ...prev, [item.id]: link }));
     await provider.setBoqWbs(projectId, link);
+    setLinks(await provider.listBoqWbs(projectId));
+  }
+  async function removeLink(l: BoqWbsLink) {
+    setLinks(await provider.removeBoqWbs(projectId, l.boqItemId, l.activityId));
+  }
+  async function setWeight(l: BoqWbsLink, v: string) {
+    const w = Math.max(0, Math.min(100, Number(v) || 0)) / 100;
+    await provider.setBoqWbs(projectId, { ...l, weight: w });
+    setLinks(await provider.listBoqWbs(projectId));
+  }
+  async function confirmLink(l: BoqWbsLink) {
+    await provider.setBoqWbs(projectId, { ...l, confidence: 'confirmed' });
+    setLinks(await provider.listBoqWbs(projectId));
+  }
+  async function runSuggest() {
+    const sugg = suggestWbsLinks(items, acts, links);
+    for (const s of sugg) await provider.setBoqWbs(projectId, s.link);
+    setLinks(await provider.listBoqWbs(projectId));
   }
 
-  const [busy, setBusy] = useState(false);
-  const [review, setReview] = useState(false);
-  const suggestions = suggestWbsLinks(items, acts, Object.values(links));
-  async function applyLinks(newLinks: BoqWbsLink[]) {
-    if (newLinks.length === 0) return;
-    setBusy(true);
-    try {
-      const next = { ...links };
-      for (const link of newLinks) {
-        next[link.boqItemId] = link;
-        await provider.setBoqWbs(projectId, link);
-      }
-      setLinks(next);
-    } finally { setBusy(false); }
-  }
+  const rows = onlyUnmapped ? vc.unmappedItems : items;
 
-  const c = wbsCoverage(items, Object.values(links));
   return (
     <div>
-      {review && (
-        <MapReviewModal
-          items={items}
-          activities={acts}
-          suggestions={suggestions}
-          onConfirm={applyLinks}
-          onClose={() => setReview(false)}
-        />
-      )}
-      <div className="section-head"><h3>BOQ → WBS mapping</h3>
-        <div className="head-tools">
-          {acts.length === 0
-            ? <span className="muted small">Import a schedule (Execution → Schedule) to enable mapping.</span>
-            : <button className="btn-ghost" disabled={busy || suggestions.length === 0} onClick={() => setReview(true)}
-                title="Review suggested activity links for unmapped BOQ items before applying">
-                Auto-map{suggestions.length ? ` (${suggestions.length})` : ''}
-              </button>}
+      <div className="section-head">
+        <h3>BOQ → WBS mapping</h3>
+        <div>
+          <button className="btn-ghost" onClick={runSuggest} title="Score unmapped items against activity names and queue candidates for review">✨ Suggest mappings</button>
         </div>
       </div>
-      <CoverageBar c={c} />
-      <p className="muted small">Auto-map proposes activity links for unmapped items by matching descriptions; review each before confirming. Commercial executed progress flows to these activities (Execution → Schedule) through this mapping.</p>
+      <div className="coverage">
+        <div className="coverage-track"><div className="coverage-fill" style={{ width: `${vc.pct}%` }} /></div>
+        <span className="muted small" aria-label="Mapping coverage">
+          {vc.pct}% of BOQ value mapped ({formatMoney(vc.mappedValue)} of {formatMoney(vc.totalValue)}) · {actPct}% of activities covered · {vc.unmappedItems.length} items unmapped
+        </span>
+      </div>
+
+      {pending.length > 0 && (
+        <div className="card" style={{ margin: '10px 0' }}>
+          <div className="section-head"><h4>Suggested mappings — pending review</h4>
+            <span className="muted small">auto-suggested; a named user must confirm before they take effect</span>
+          </div>
+          <table className="data-table" aria-label="Mapping review queue">
+            <thead><tr><th>BOQ item</th><th>→ Activity</th><th></th></tr></thead>
+            <tbody>
+              {pending.map((l) => (
+                <tr key={`${l.boqItemId}-${l.activityId}`}>
+                  <td>{itemOf[l.boqItemId]?.code} — {itemOf[l.boqItemId]?.description}</td>
+                  <td>{l.activityId} — {actName[l.activityId] ?? ''}</td>
+                  <td>
+                    <button className="btn btn-mini" aria-label={`Confirm ${itemOf[l.boqItemId]?.code} to ${l.activityId}`} onClick={() => confirmLink(l)}>Confirm</button>{' '}
+                    <button className="btn-ghost btn-mini" aria-label={`Reject ${itemOf[l.boqItemId]?.code} to ${l.activityId}`} onClick={() => removeLink(l)}>Reject</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {items.length === 0 ? (
         <p className="muted">Import a BOQ first.</p>
       ) : (
-        <table className="data-table" aria-label="WBS mapping">
-          <thead><tr><th>Code</th><th>Description</th><th>Activity (WBS)</th><th>Link</th></tr></thead>
-          <tbody>
-            {items.map((it) => (
-              <tr key={it.id}>
-                <td>{it.code}</td>
-                <td>{it.description}</td>
-                <td>
-                  <select aria-label={`WBS for ${it.code}`} value={links[it.id]?.activityId ?? ''} onChange={(e) => setActivity(it, e.target.value)}>
-                    <option value="">Unmapped</option>
-                    {acts.map((a) => (<option key={a.id} value={a.activityId}>{a.activityId} — {a.name}</option>))}
-                  </select>
-                </td>
-                <td>
-                  {links[it.id]?.confidence === 'auto'
-                    ? <span className="status-pill st-draft">Auto</span>
-                    : links[it.id]?.confidence === 'confirmed'
-                      ? <span className="status-pill st-verified">Confirmed</span>
-                      : <span className="muted small">—</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <>
+          <label className="small" style={{ display: 'inline-block', margin: '6px 0' }}>
+            <input type="checkbox" checked={onlyUnmapped} onChange={(e) => setOnlyUnmapped(e.target.checked)} /> Show unmapped only
+          </label>
+          <table className="data-table" aria-label="WBS mapping">
+            <thead><tr><th>Code</th><th>Description</th><th>Mapped activities</th><th>Add activity</th></tr></thead>
+            <tbody>
+              {rows.map((it) => {
+                const itemLinks = byItem.get(it.id) ?? [];
+                return (
+                  <tr key={it.id}>
+                    <td>{it.code}</td>
+                    <td>{it.description}</td>
+                    <td>
+                      {itemLinks.length === 0 ? <span className="muted small">Unmapped</span> : itemLinks.map((l) => (
+                        <span key={l.activityId} className="chip" style={{ marginRight: 6 }}>
+                          {l.activityId}{l.confidence === 'auto' ? ' (auto)' : ''}
+                          {itemLinks.length > 1 && (
+                            <> · <input className="qty-input" aria-label={`Weight ${it.code} ${l.activityId}`} style={{ width: 44 }}
+                              defaultValue={Math.round(effectiveWeight(l, itemLinks) * 100)}
+                              onBlur={(e) => setWeight(l, e.target.value)} />%</>
+                          )}
+                          <button className="link-btn" aria-label={`Unlink ${it.code} ${l.activityId}`} onClick={() => removeLink(l)} style={{ marginLeft: 4 }}>×</button>
+                        </span>
+                      ))}
+                    </td>
+                    <td>
+                      <select aria-label={`WBS for ${it.code}`} value="" onChange={(e) => addLink(it, e.target.value)}>
+                        <option value="">+ link activity…</option>
+                        {acts.filter((a) => !itemLinks.some((l) => l.activityId === a.activityId))
+                          .map((a) => (<option key={a.id} value={a.activityId}>{a.activityId} — {a.name}</option>))}
+                      </select>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </>
       )}
     </div>
   );

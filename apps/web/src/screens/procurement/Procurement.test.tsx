@@ -97,29 +97,4 @@ describe('Phase 6 — procurement', () => {
     const log = await screen.findByRole('table', { name: 'Utilization log' });
     expect(within(log).getByText('12')).toBeInTheDocument();
   });
-
-  it('shows the material register and records an issue from Procurement', async () => {
-    const user = await open();
-    await user.click(screen.getByRole('tab', { name: 'Material register' }));
-    const table = await screen.findByRole('table', { name: 'Material register' });
-    // The flagship seeds material receipts and issues, so the register has rows
-    // with received / issued / on-hand columns and a totals header.
-    expect(within(table).getAllByRole('row').length).toBeGreaterThan(1);
-    expect(screen.getByText('Received value')).toBeInTheDocument();
-    expect(screen.getByText('Issued / consumed')).toBeInTheDocument();
-
-    // Record a new issue/consumption directly in Procurement.
-    const firstCode = within(within(table).getAllByRole('row')[1]).getAllByRole('cell')[0].textContent || '';
-    await user.type(screen.getByLabelText('Material code'), firstCode);
-    await user.type(screen.getByLabelText('Issue qty'), '7');
-    await user.type(screen.getByLabelText('Issued to'), 'Block-A slab');
-    await user.click(screen.getByRole('button', { name: 'Issue' }));
-    const log = await screen.findByRole('table', { name: 'Material issues log' });
-    expect(within(log).getByText('Block-A slab')).toBeInTheDocument();
-
-    // Drill into a material code to see its receipts/issues ledger.
-    await user.click(within(table).getByRole('button', { name: `Ledger for ${firstCode}` }));
-    const dialog = await screen.findByRole('dialog', { name: `Material ledger ${firstCode}` });
-    expect(within(dialog).getByRole('table', { name: 'Ledger movements' })).toBeInTheDocument();
-  });
 });

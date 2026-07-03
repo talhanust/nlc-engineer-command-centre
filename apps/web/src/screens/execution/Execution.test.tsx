@@ -38,8 +38,6 @@ describe('Phase 4 — execution', () => {
     await user.click(screen.getByRole('tab', { name: 'Schedule / WBS' }));
     const table = await screen.findByRole('table', { name: 'Schedule' });
     expect(within(table).getByText('Earthwork')).toBeInTheDocument();
-    expect(within(table).getByRole('columnheader', { name: 'Actual %' })).toBeInTheDocument();
-    expect(within(table).getByRole('columnheader', { name: 'Float' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Gantt chart' })).toBeInTheDocument();
   });
 
@@ -152,11 +150,8 @@ describe('Phase 4 — mapping', () => {
     const row = within(table).getByText('1-01').closest('tr')! as HTMLElement;
     const select = within(row).getByLabelText('WBS for 1-01') as HTMLSelectElement;
     await user.selectOptions(select, 'A-3000');
-    await waitFor(() => expect(select.value).toBe('A-3000'));
-    // the link column reflects a confirmed manual mapping
-    expect(within(row).getByText('Confirmed')).toBeInTheDocument();
-    // and the auto-map affordance is present for the remaining unmapped items
-    expect(screen.getByRole('button', { name: /Auto-map/ })).toBeInTheDocument();
+    // many-to-many: the link renders as a chip and the add-select resets
+    await waitFor(() => expect(within(row).getByText(/A-3000/)).toBeInTheDocument());
   });
 
   it('drives the mapping approval to locked', async () => {
@@ -168,23 +163,6 @@ describe('Phase 4 — mapping', () => {
     await user.selectOptions(roleSel, 'pd');
     await user.click(screen.getByRole('button', { name: 'Approve & lock (PD)' }));
     expect(await screen.findByText('Locked')).toBeInTheDocument();
-  });
-
-  it('reviews auto-map suggestions before confirming them', async () => {
-    const user = userEvent.setup();
-    renderAt('/node/proj-f14f15/mapping');
-    await screen.findByRole('table', { name: 'WBS mapping' });
-    const autoBtn = screen.getByRole('button', { name: /Auto-map/ });
-    expect(autoBtn).toBeEnabled();
-    await user.click(autoBtn);
-    // Review modal opens with the suggestions table
-    const dialog = await screen.findByRole('dialog', { name: 'Review auto-map' });
-    expect(within(dialog).getByRole('table', { name: 'Auto-map suggestions' })).toBeInTheDocument();
-    // Confirm the accepted set
-    await user.click(within(dialog).getByRole('button', { name: /Confirm \d+ mapping/ }));
-    // Back on the register, at least one confirmed link now exists
-    const table = await screen.findByRole('table', { name: 'WBS mapping' });
-    expect(within(table).getAllByText('Confirmed').length).toBeGreaterThan(0);
   });
 
   it('shows material recovery by contractor', async () => {

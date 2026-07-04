@@ -4,7 +4,7 @@ import { buildAging } from './aging';
 import { bgExpiryStatus } from './advances';
 
 export type AlertSeverity = 'critical' | 'warning';
-export interface Alert { id: string; severity: AlertSeverity; title: string; detail: string; sub: string }
+export interface Alert { id: string; severity: AlertSeverity; title: string; detail: string; sub: string; owner?: string }
 
 const pct = (n: number) => (Number.isFinite(n) ? `${Math.round(n * 100)}%` : '—');
 
@@ -74,7 +74,7 @@ export function mergeAlertStates(alerts: Alert[], states: AlertState[]): Triaged
   const byId = new Map(states.map((s) => [s.alertId, s]));
   return alerts.map((a) => {
     const s = byId.get(a.id);
-    return { ...a, owner: ALERT_OWNER[a.sub] ?? 'pm', status: s?.status ?? 'open', note: s?.note, updatedAt: s?.updatedAt };
+    return { ...a, owner: a.owner ?? ALERT_OWNER[a.sub] ?? 'pm', status: s?.status ?? 'open', note: s?.note, updatedAt: s?.updatedAt };
   });
 }
 
@@ -99,4 +99,24 @@ export function recoveryAlerts(issues: MaterialIssue[], machinery: MachineryUsag
     detail: `PKR ${Math.round(mach).toLocaleString('en-PK')} hire value outstanding — recover via RARs`, sub: 'rar',
   });
   return out;
+}
+
+
+/** Overdue command directives escalate into the alert queue (routed to the assignee role). */
+export function overdueDirectiveAlerts(
+  directives: Array<{ id: string; title: string; projectId?: string; nodeId: string; assigneeRole: string; assigneeNodeId: string; dueDate: string; status: string }>,
+  projectId: string,
+  today: string,
+): Alert[] {
+  return directives
+    .filter((d) => (d.projectId === projectId || d.assigneeNodeId === projectId)
+      && d.status !== 'complied' && d.status !== 'closed' && d.dueDate < today)
+    .map((d) => ({
+      id: `dov-${d.id}`,
+      severity: 'critical' as const,
+      title: `Directive overdue: ${d.title.slice(0, 60)}`,
+      detail: `due ${d.dueDate} — respond and mark complied in Command directives`,
+      sub: 'command',
+      owner: d.assigneeRole,
+    }));
 }

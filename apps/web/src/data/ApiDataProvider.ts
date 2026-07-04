@@ -4,7 +4,7 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
@@ -59,6 +59,9 @@ export class ApiDataProvider implements DataProvider {
   }
   async updateNodeLocation(nodeId: string, patch: { lat?: number; lng?: number; location?: string }): Promise<OrgNode> {
     return this.send<OrgNode>(`/api/nodes/${nodeId}/location`, 'PATCH', patch);
+  }
+  async setProjectStage(projectId: string, stage: ProjectStage, date?: string): Promise<Project> {
+    return this.send<Project>(`/api/projects/${projectId}/stage`, 'POST', { stage, date });
   }
   async archiveProject(projectId: string): Promise<void> {
     await this.send(`/api/projects/${projectId}/archive`, 'POST', {});

@@ -4,7 +4,7 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
@@ -44,14 +44,14 @@ const SEED: Seed[] = [
   { id: 'proj-khi-water', name: 'Karachi Water Supply K-IV', pdHqId: 'pd-sindh', client: 'SIDC', cv: '52800000000', billed: '24000000000', received: '21000000000', planned: 44, actual: 41 },
   { id: 'proj-gwadar', name: 'Gwadar Free Zone Works', pdHqId: 'pd-bln', client: 'GDA', cv: '7300000000', billed: '1900000000', received: '1200000000', planned: 20, actual: 11 },
   { id: 'proj-dha-ph8', name: 'DHA Phase-8 Road Network', pdHqId: 'pd-north', client: 'DHA Islamabad', cv: '15800000000', billed: '6200000000', received: '5100000000', planned: 46, actual: 42 },
-  { id: 'proj-i11-infra', name: 'I-11 Sector Infrastructure', pdHqId: 'pd-north', client: 'CDA', cv: '9450000000', billed: '4800000000', received: '4100000000', planned: 58, actual: 55 },
+  { id: 'proj-i11-infra', name: 'I-11 Sector Infrastructure', pdHqId: 'pd-north', client: 'CDA', cv: '9450000000', billed: '9450000000', received: '9450000000', planned: 100, actual: 100 },
   { id: 'proj-margalla-rd', name: 'Margalla Avenue Extension', pdHqId: 'pd-north', client: 'CDA', cv: '21300000000', billed: '8900000000', received: '7400000000', planned: 50, actual: 47 },
   { id: 'proj-c12-infra', name: 'C-12/C-13 Development', pdHqId: 'pd-centre', client: 'FGEHA', cv: '13700000000', billed: '5100000000', received: '4200000000', planned: 41, actual: 36 },
-  { id: 'proj-attock-byp', name: 'Attock Bypass', pdHqId: 'pd-centre', client: 'NHA', cv: '11200000000', billed: '7300000000', received: '6600000000', planned: 64, actual: 61 },
+  { id: 'proj-attock-byp', name: 'Attock Bypass', pdHqId: 'pd-centre', client: 'NHA', cv: '11200000000', billed: '10800000000', received: '9200000000', planned: 100, actual: 100 },
   { id: 'proj-chakwal-rd', name: 'Chakwal–Talagang Road', pdHqId: 'pd-centre', client: 'C&W Punjab', cv: '8900000000', billed: '2400000000', received: '1700000000', planned: 31, actual: 24 },
   { id: 'proj-d-i-khan', name: 'D.I. Khan Northern Bypass', pdHqId: 'pd-kpk', client: 'NHA', cv: '17600000000', billed: '9100000000', received: '7800000000', planned: 53, actual: 49 },
   { id: 'proj-hazara-exp', name: 'Hazara Expressway Link', pdHqId: 'pd-kpk', client: 'KPHA', cv: '38500000000', billed: '13200000000', received: '10800000000', planned: 38, actual: 30 },
-  { id: 'proj-thar-coal-rd', name: 'Thar Coalfield Access Roads', pdHqId: 'pd-sindh', client: 'SECMC', cv: '14300000000', billed: '8600000000', received: '7900000000', planned: 67, actual: 63 },
+  { id: 'proj-thar-coal-rd', name: 'Thar Coalfield Access Roads', pdHqId: 'pd-sindh', client: 'SECMC', cv: '14300000000', billed: '13900000000', received: '13100000000', planned: 100, actual: 100 },
   { id: 'proj-khi-northern', name: 'Karachi Northern Bypass', pdHqId: 'pd-sindh', client: 'NHA', cv: '26800000000', billed: '11400000000', received: '9600000000', planned: 45, actual: 40 },
   { id: 'proj-rcd-hwy', name: 'RCD Highway Reconstruction', pdHqId: 'pd-bln', client: 'NHA', cv: '33100000000', billed: '12000000000', received: '9500000000', planned: 36, actual: 28 },
   { id: 'proj-quetta-wss', name: 'Quetta Water Supply Scheme', pdHqId: 'pd-bln', client: 'PHED Bln', cv: '9700000000', billed: '3300000000', received: '2500000000', planned: 34, actual: 27 },
@@ -112,12 +112,21 @@ const DATES: Record<string, { start: string; finish: string }> = {
   'proj-rcd-hwy': { start: '2025-01-01', finish: '2028-06-30' },
   'proj-quetta-wss': { start: '2025-06-15', finish: '2027-12-31' },
 };
+const LIFECYCLE_SEED: Record<string, { stage: ProjectStage; tocDate?: string; financialCloseDate?: string }> = {
+  // TOC issued — in the Recovery section, receivable being collected.
+  'proj-attock-byp': { stage: 'physically_completed', tocDate: '2026-03-31' },
+  'proj-thar-coal-rd': { stage: 'physically_completed', tocDate: '2026-05-15' },
+  // Receivable collected + liabilities cleared — archived as closed.
+  'proj-i11-infra': { stage: 'financially_closed', tocDate: '2025-11-30', financialCloseDate: '2026-04-30' },
+};
+
 const PROJECTS: Project[] = SEED.map((s) => ({
   id: s.id, pdHqId: s.pdHqId, clientName: s.client,
   contractValue: s.cv, billedToDate: s.billed, receivedToDate: s.received,
   plannedPct: s.planned, actualPct: s.actual,
   commencementDate: DATES[s.id]?.start, completionDate: DATES[s.id]?.finish,
   lat: COORDS[s.id]?.lat, lng: COORDS[s.id]?.lng, location: COORDS[s.id]?.location,
+  ...LIFECYCLE_SEED[s.id],
 }));
 
 // Deterministic commercial seed for every project, including the flagship, so its
@@ -220,6 +229,19 @@ export class LocalDataProvider implements DataProvider {
     return node;
   }
 
+  async setProjectStage(projectId: string, stage: ProjectStage, date?: string): Promise<Project> {
+    const projects = this.readProjectsRaw();
+    const p = projects.find((x) => x.id === projectId);
+    if (!p) throw new Error('project not found');
+    p.stage = stage;
+    const d = date ?? new Date().toISOString().slice(0, 10);
+    if (stage === 'physically_completed') { p.tocDate = d; p.financialCloseDate = undefined; }
+    if (stage === 'financially_closed') { p.financialCloseDate = d; p.tocDate = p.tocDate ?? d; }
+    if (stage === 'ongoing') { p.tocDate = undefined; p.financialCloseDate = undefined; }
+    writeJson(projectsKey, projects);
+    audit(projectId, stage === 'physically_completed' ? 'toc' : stage === 'financially_closed' ? 'fin_close' : 'reopen', 'Project', projectId, d);
+    return JSON.parse(JSON.stringify(p)) as Project;
+  }
   async archiveProject(projectId: string): Promise<void> {
     const projects = this.readProjectsRaw();
     const p = projects.find((x) => x.id === projectId);
@@ -1822,7 +1844,7 @@ const projectsKey = 'nlc-ecc.projects';
 const seedVersionKey = 'nlc-ecc.seedVersion';
 // Bump when the bundled project roster / seed changes so existing cached stores
 // pick up newly-seeded projects and nodes without losing user-created data.
-const SEED_VERSION = '2026-07-04.v8-material-compositions';
+const SEED_VERSION = '2026-07-04.v9-lifecycle-stages';
 
 /** Merge any newly-seeded projects/nodes into an already-persisted store and
  *  backfill date/coordinate fields on seeded projects. Runs once per version. */
@@ -1844,6 +1866,13 @@ function reconcileSeed(): void {
         if (p.commencementDate == null && s.commencementDate) { p.commencementDate = s.commencementDate; changed = true; }
         if (p.completionDate == null && s.completionDate) { p.completionDate = s.completionDate; changed = true; }
         if (p.lat == null && s.lat != null) { p.lat = s.lat; p.lng = s.lng; p.location = p.location ?? s.location; changed = true; }
+        // lifecycle stages (v9): adopt the seeded stage + completed-project figures once
+        if (p.stage == null && s.stage) {
+          p.stage = s.stage; p.tocDate = s.tocDate; p.financialCloseDate = s.financialCloseDate;
+          p.plannedPct = s.plannedPct; p.actualPct = s.actualPct;
+          p.billedToDate = s.billedToDate; p.receivedToDate = s.receivedToDate;
+          changed = true;
+        }
       }
       // append projects that aren't present yet
       for (const p of PROJECTS) if (!ids.has(p.id)) { exP.push(p); changed = true; }

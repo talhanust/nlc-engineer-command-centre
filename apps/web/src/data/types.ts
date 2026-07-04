@@ -18,6 +18,11 @@ export interface OrgNode {
   location?: string;
 }
 
+/** Project lifecycle: Ongoing (TOC not received) → Physically Completed
+ * (TOC issued — enters the Recovery section) → Financially Closed (all
+ * payments received, liabilities cleared — archived as closed). */
+export type ProjectStage = 'ongoing' | 'physically_completed' | 'financially_closed';
+
 export interface Project {
   id: string;
   pdHqId: string;
@@ -31,6 +36,12 @@ export interface Project {
   plannedPct: number;
   actualPct: number;
   archived?: boolean;
+  /** Lifecycle stage (default: ongoing). */
+  stage?: ProjectStage;
+  /** Taking-Over Certificate date (set when physically completed). */
+  tocDate?: string;
+  /** Financial close date (set when receivable and liabilities are cleared). */
+  financialCloseDate?: string;
   /** Project identity / contract dates (captured at creation). */
   projectCode?: string;
   /** ISO yyyy-mm-dd. */
@@ -795,6 +806,8 @@ export interface DataProvider {
   /** Set an org node's (HQ / PD HQ) map location. */
   updateNodeLocation(nodeId: string, patch: { lat?: number; lng?: number; location?: string }): Promise<OrgNode>;
   archiveProject(projectId: string): Promise<void>;
+  /** Advance / revert the project lifecycle stage; date = TOC or financial-close date. */
+  setProjectStage(projectId: string, stage: ProjectStage, date?: string): Promise<Project>;
   restoreProject(projectId: string): Promise<void>;
   listArchivedProjects(): Promise<Project[]>;
   addPdHq(name: string): Promise<OrgNode>;

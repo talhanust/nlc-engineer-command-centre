@@ -3,7 +3,8 @@ import { useData } from '../../data/DataContext';
 import { useToast } from '../../components/Toast';
 import { formatMoney } from '../../domain/money';
 import { materialRecovery, issueValue } from '../../domain/materialrecovery';
-import type { MaterialIssue, Subcontractor } from '../../data/types';
+import { consumptionVariance, WASTAGE_TOLERANCE_PCT } from '../../domain/consumption';
+import type { MaterialIssue, Subcontractor, BoqItem, BoqMaterialLink, ProgressUpdate } from '../../data/types';
 
 /**
  * Material Issues register (prototype parity). NLC material issued to site or
@@ -16,6 +17,9 @@ export function MaterialIssuesTab({ projectId }: { projectId: string }) {
   const { toast } = useToast();
   const [issues, setIssues] = useState<MaterialIssue[]>([]);
   const [subs, setSubs] = useState<Subcontractor[]>([]);
+  const [boq, setBoq] = useState<BoqItem[]>([]);
+  const [matLinks, setMatLinks] = useState<BoqMaterialLink[]>([]);
+  const [progress, setProgress] = useState<ProgressUpdate[]>([]);
   const [code, setCode] = useState('');
   const [qty, setQty] = useState('');
   const [rate, setRate] = useState('');
@@ -23,13 +27,20 @@ export function MaterialIssuesTab({ projectId }: { projectId: string }) {
   const [contractorId, setContractorId] = useState('');
 
   async function load() {
-    const [i, s] = await Promise.all([provider.listMaterialIssues(projectId), provider.listSubcontractors(projectId)]);
-    setIssues(i); setSubs(s);
+    const [i, s, b, ml, pr] = await Promise.all([
+      provider.listMaterialIssues(projectId), provider.listSubcontractors(projectId),
+      provider.listBoq(projectId), provider.listBoqMaterial(projectId), provider.listProgress(projectId),
+    ]);
+    setIssues(i); setSubs(s); setBoq(b); setMatLinks(ml); setProgress(pr);
   }
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [provider, projectId]);
 
   const subName = useMemo(() => Object.fromEntries(subs.map((s) => [s.id, s.name])), [subs]);
   const recovery = useMemo(() => materialRecovery(issues), [issues]);
+  const consumption = useMemo(
+    () => consumptionVariance({ items: boq, matLinks, progress, issues }),
+    [boq, matLinks, progress, issues],
+  );
 
   async function add() {
     const q = Number(qty), r = Number(rate);
@@ -120,6 +131,34 @@ export function MaterialIssuesTab({ projectId }: { projectId: string }) {
                   <td className={`num${r.balance > 0 ? ' neg' : ''}`}>{formatMoney(r.balance)}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="section-head"><h3>Consumption variance — theoretical vs actual</h3>
+          <span className="muted small">theoretical = executed qty × composition coeff · wastage beyond ±{WASTAGE_TOLERANCE_PCT}% flagged</span>
+        </div>
+        {consumption.length === 0 ? (
+          <p className="muted small">Compose BOQ items with materials in Mapping to derive theoretical consumption.</p>
+        ) : (
+          <table className="data-table" aria-label="Consumption variance">
+            <thead><tr><th>Material</th><th>Consuming items</th><th className="num">Theoretical</th><th className="num">Issued</th><th className="num">Variance</th><th className="num">Wastage %</th></tr></thead>
+            <tbody>
+              {consumption.map((r) => {
+                const flag = r.wastagePct !== null && Math.abs(r.wastagePct) > WASTAGE_TOLERANCE_PCT;
+                return (
+                  <tr key={r.materialRef} className={flag ? 'row-flag' : ''}>
+                    <td className="mono small">{r.materialRef}</td>
+                    <td className="small">{r.items.join(', ') || '—'}</td>
+                    <td className="num">{r.theoreticalQty.toLocaleString('en-PK')}</td>
+                    <td className="num">{r.issuedQty.toLocaleString('en-PK')}</td>
+                    <td className={`num${r.varianceQty > 0 ? ' neg' : ''}`}>{r.varianceQty.toLocaleString('en-PK')}</td>
+                    <td className={`num${flag ? ' neg' : ''}`}>{r.wastagePct === null ? '—' : `${r.wastagePct}%${flag ? ' ⚠' : ''}`}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

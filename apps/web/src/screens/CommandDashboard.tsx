@@ -8,6 +8,8 @@ import { hrCostRollup } from '../domain/hrrollup';
 import { useDashPrefs, DASH_PREF_LABEL, type DashPrefs } from '../state/dashPrefs';
 import { nodeInScope } from '../domain/access';
 import { DirectivesPanel } from '../components/DirectivesPanel';
+import { StageStrip, LifecyclePanel, type StageFilter } from '../components/LifecyclePanel';
+import { projectStage } from '../domain/lifecycle';
 import { SectionDashboards } from './SectionDashboards';
 import { useRole } from '../state/Role';
 import { useData as useDataCtx } from '../data/DataContext';
@@ -43,6 +45,7 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
   const { role, user } = useRole();
   const [prefs, patchPrefs] = useDashPrefs(role);
   const [customizing, setCustomizing] = useState(false);
+  const [stageFilter, setStageFilter] = useState<StageFilter>('all');
   useEffect(() => {
     let a = true;
     provider.listAllHrUnits().then((u) => a && setHrUnits(u));
@@ -50,7 +53,9 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
   }, [provider]);
 
   // True re-aggregation: filter the project set, then roll up over it.
-  const filtered = applyFilter(projects, nodes, filter, rag);
+  const baseFiltered = applyFilter(projects, nodes, filter, rag);
+  // Lifecycle drill: All / Ongoing / Physically completed (Recovery) / Financially closed.
+  const filtered = stageFilter === 'all' ? baseFiltered : baseFiltered.filter((p) => projectStage(p) === stageFilter);
   const scopeIds = new Set(descendantProjectIds(nodes, nodeId));
   const scopeProjects = projects.filter((p) => scopeIds.has(p.id));
   const rollup = computeNodeRollup(nodes, filtered, nodeId, { rag });
@@ -138,7 +143,12 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
         />
       </div>
 
-      <CollapsibleCard id="dash-breakdown" title={`${node.name} — breakdown`} focusable dockable>
+      <div style={{ margin: '12px 0' }}>
+        <StageStrip projects={baseFiltered.filter((p) => nodeInScope(nodes, node.id, p.id))} value={stageFilter} onChange={setStageFilter} />
+        <LifecyclePanel nodes={nodes} projects={baseFiltered.filter((p) => nodeInScope(nodes, node.id, p.id))} stage={stageFilter} onChanged={() => refresh()} />
+      </div>
+
+      <CollapsibleCard id="dash-breakdown" title={`${node.name} — breakdown${stageFilter !== 'all' ? ' · ' + stageFilter.replace(/_/g, ' ') : ''}`} focusable dockable>
         <div style={{ display: 'flex', justifyContent: 'flex-end', position: 'relative' }}>
           <button className="btn-ghost btn-mini" aria-label="Customize dashboard" onClick={() => setCustomizing((c) => !c)}>⚙ Customize</button>
           {customizing && (

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { useToast } from '../../components/Toast';
 import { useRole } from '../../state/Role';
-import { commercialAlerts, mergeAlertStates, recoveryAlerts, ALERT_OWNER, type TriagedAlert } from '../../domain/alerts';
+import { commercialAlerts, mergeAlertStates, recoveryAlerts, overdueDirectiveAlerts, ALERT_OWNER, type TriagedAlert } from '../../domain/alerts';
 import { activityDerivedProgress, divergenceAlerts, unmappedBoqAlert } from '../../domain/derivedProgress';
 import { materialLeadPlan, leadTimeAlerts } from '../../domain/leadtime';
 import { ROLE_LABEL } from '../../domain/chains';
@@ -29,18 +29,18 @@ export function AlertCentre({ projectId }: { projectId: string }) {
   const [noteFor, setNoteFor] = useState<{ id: string; status: AlertStatus; note: string } | null>(null);
 
   async function load() {
-    const [ipcs, rars, epcs, dists, boq, subs, bgs, links, sched, progress, cfg, issues, machinery, states, matLinks, crvs] = await Promise.all([
+    const [ipcs, rars, epcs, dists, boq, subs, bgs, links, sched, progress, cfg, issues, machinery, states, matLinks, crvs, directives] = await Promise.all([
       provider.listIpcs(projectId), provider.listRars(projectId), provider.listEpcs(projectId),
       provider.listDistributions(projectId), provider.listBoq(projectId), provider.listSubcontractors(projectId),
       provider.listBankGuarantees(projectId), provider.listBoqWbs(projectId), provider.listSchedule(projectId),
       provider.listProgress(projectId), provider.getCommercialConfig(projectId),
       provider.listMaterialIssues(projectId), provider.listMachineryUsage(projectId), provider.listAlertStates(projectId),
-      provider.listBoqMaterial(projectId), provider.listCrvs(projectId),
+      provider.listBoqMaterial(projectId), provider.listCrvs(projectId), provider.listDirectives(),
     ] as [
       Promise<Ipc[]>, Promise<Rar[]>, Promise<Epc[]>, Promise<Distribution[]>, Promise<BoqItem[]>, Promise<Subcontractor[]>,
       Promise<BankGuarantee[]>, Promise<BoqWbsLink[]>, Promise<ScheduleActivity[]>, Promise<ProgressUpdate[]>,
       Promise<CommercialConfig>, Promise<MaterialIssue[]>, Promise<MachineryUsage[]>, Promise<AlertState[]>,
-      Promise<import('../../data/types').BoqMaterialLink[]>, Promise<import('../../data/types').Crv[]>,
+      Promise<import('../../data/types').BoqMaterialLink[]>, Promise<import('../../data/types').Crv[]>, Promise<import('../../data/types').Directive[]>,
     ]);
     const rows = activityDerivedProgress(sched, boq, links, progress, new Date().toISOString().slice(0, 10));
     const um = unmappedBoqAlert(boq, links);
@@ -50,6 +50,7 @@ export function AlertCentre({ projectId }: { projectId: string }) {
       ...(um ? [um] : []),
       ...recoveryAlerts(issues, machinery),
       ...leadTimeAlerts(materialLeadPlan({ items: boq, matLinks, wbsLinks: links, sched, progress, crvs, issues, asOf: new Date().toISOString().slice(0, 10) })),
+      ...overdueDirectiveAlerts(directives, projectId, new Date().toISOString().slice(0, 10)),
     ];
     setAlerts(mergeAlertStates(computed, states));
   }

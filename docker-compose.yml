@@ -1,0 +1,37 @@
+# Local full-stack dev ONLY (web + api + postgres). Production deploys to the
+# organization's own on-prem infrastructure, not from this file and not on GitHub.
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: nlc_ecc
+      POSTGRES_USER: nlc_app
+      POSTGRES_PASSWORD: change-me
+    ports: ["5432:5432"]
+    volumes:
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - nlc_pgdata:/var/lib/postgresql/data
+
+  api:
+    build: ./server
+    environment:
+      PORT: 3000
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: nlc_ecc
+      PGUSER: nlc_app
+      PGPASSWORD: change-me
+    ports: ["3000:3000"]
+    depends_on: [db]
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        VITE_DATA_MODE: api
+        VITE_API_BASE_URL: http://localhost:3000
+    ports: ["8080:80"]
+    depends_on: [api]
+
+volumes:
+  nlc_pgdata:

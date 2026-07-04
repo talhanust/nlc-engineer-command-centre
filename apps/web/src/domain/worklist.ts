@@ -1,4 +1,4 @@
-import type { Ipc, Rar, Demand, ProcPayment } from '../data/types';
+import type { Ipc, Rar, Demand, ProcPayment, Directive } from '../data/types';
 import { nextTransition } from './ipc';
 import { nextRarTransition } from './rar';
 import { pendingStage } from './chains';
@@ -14,7 +14,7 @@ export interface WorkItem {
   id: string;
   projectId: string;
   projectName: string;
-  kind: 'IPC' | 'RAR' | 'Demand' | 'Payment';
+  kind: 'IPC' | 'RAR' | 'Demand' | 'Payment' | 'Directive';
   ref: string;
   action: string;    // the pending step's label
   amount?: number;
@@ -60,4 +60,26 @@ export function projectWorklist(role: string, args: {
     });
   }
   return out;
+}
+
+
+/** Directives awaiting the acting role within scope — the "timely response" queue. */
+export function directiveWorklist(
+  role: string,
+  directives: Directive[],
+  inScope: (nodeId: string) => boolean,
+  nameOf: (id: string) => string,
+  today: string,
+): WorkItem[] {
+  return directives
+    .filter((d) => d.status !== 'closed' && d.status !== 'complied' && d.assigneeRole === role && inScope(d.assigneeNodeId))
+    .map((d) => ({
+      id: `wl-dir-${d.id}`,
+      projectId: d.projectId ?? d.nodeId,
+      projectName: nameOf(d.projectId ?? d.nodeId),
+      kind: 'Directive' as const,
+      ref: d.title.slice(0, 48),
+      action: d.dueDate < today ? `Respond — OVERDUE (due ${d.dueDate})` : `Respond by ${d.dueDate}`,
+      href: `/node/${d.nodeId}`,
+    }));
 }

@@ -1078,3 +1078,6 @@ code { font-family: var(--font-mono); font-size: .9em; }
 
 /* Subtab pending badges (prototype parity) */
 .subtab-badge { display: inline-block; margin-left: 6px; min-width: 16px; padding: 0 5px; border-radius: 8px; background: var(--signal); color: #fff; font-size: 10.5px; font-weight: 700; line-height: 16px; text-align: center; vertical-align: 1px; }
+
+/* Lifecycle stage strip */
+.kpi-active { border-color: var(--primary) !important; box-shadow: 0 0 0 1px var(--primary) inset; }

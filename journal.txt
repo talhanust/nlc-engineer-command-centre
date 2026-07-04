@@ -1,6 +1,32 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-07-04 — Project lifecycle (Ongoing → TOC/Recovery → Financially Closed); consumption variance; directive escalation
+- Project lifecycle stages (civil-works practice). ProjectStage = ongoing | physically_completed |
+  financially_closed with tocDate / financialCloseDate on Project; provider setProjectStage
+  (audits toc / fin_close / reopen; Api stub). domain/lifecycle.ts: stageTotals (ALL total PLUS a
+  separate total per stage — count, CV, billed, received, RECEIVABLE = billed − received),
+  receivable(), readyToClose(p, liabilities) — a project may financially close only when the
+  receivable is collected AND liabilities are zero.
+- Dashboard: new lifecycle STRIP — four clickable total cards (All / Ongoing / Physically
+  completed (Recovery) / Financially closed); clicking DRILLS the whole dashboard (breakdown,
+  KPIs, roll-up) to that stage. LifecyclePanel per stage: ongoing → "Issue TOC…" (gated at 100%
+  physical; moves the project into Recovery); physically_completed → the RECOVERY register (TOC
+  date, billed, received, receivable, liabilities, ready-✅ gate, "Mark financially closed"
+  disabled until receivable+liabilities are zero); financially_closed → the closed archive with
+  admin Reopen. Commander roles (PD/FM/admin) act; every transition audited.
+- Seed v9: Attock Bypass + Thar Coalfield staged physically_completed (100% physical, receivables
+  1.6bn / 0.8bn to recover, TOC dates) and I-11 financially_closed (received == billed == CV);
+  reconcileSeed backfills stages + completed figures into existing sessions once.
+- Consumption variance (professional improvement): domain/consumption.ts — theoretical = Σ
+  executed qty × composition coeff per material vs actually issued; wastage % flagged beyond ±5%.
+  Table added to Procurement → Material issues.
+- Directive escalation: overdue directives now raise CRITICAL alerts in the Alert centre, routed
+  to the assignee role (Alert gains optional owner override honoured by mergeAlertStates).
+- Tests: stage totals/gates/provider transitions + seeded stages, dashboard strip → Recovery drill
+  with disabled close gate, consumption wastage math, escalation routing. Legacy suites unaffected
+  by the re-staged seed projects. Web 387 (65 files); server 9; both builds green.
+
 2026-07-04 — Multi-material BOQ compositions; command directives; staff-section HQ dashboards
 - Multi-material composition (civil practice: concrete = cement + sand + crush gradations +
   admixture). Fixed the model: setBoqMaterial now upserts by (boqItemId, materialRef) — it

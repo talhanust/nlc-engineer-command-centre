@@ -4,7 +4,7 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
@@ -412,6 +412,15 @@ export class ApiDataProvider implements DataProvider {
   }
   async addHireUtilization(projectId: string, hireNo: string, entry: { dated: string; units: number }): Promise<MachineryHire> {
     return this.send<MachineryHire>(`/api/projects/${projectId}/hires/${hireNo}/utilization`, 'POST', entry);
+  }
+  async listMaterialMaster(projectId: string): Promise<MaterialMaster[]> {
+    return (await this.get<{ items: MaterialMaster[] }>(`/api/projects/${projectId}/material-master`)).items;
+  }
+  async upsertMaterialMaster(projectId: string, input: MaterialMaster): Promise<MaterialMaster[]> {
+    return (await this.send<{ items: MaterialMaster[] }>(`/api/projects/${projectId}/material-master`, 'POST', input)).items;
+  }
+  async deleteMaterialMaster(projectId: string, code: string): Promise<MaterialMaster[]> {
+    return (await this.send<{ items: MaterialMaster[] }>(`/api/projects/${projectId}/material-master/${encodeURIComponent(code)}/delete`, 'POST', {})).items;
   }
   async listDirectives(): Promise<Directive[]> {
     return (await this.get<{ items: Directive[] }>('/api/directives')).items;

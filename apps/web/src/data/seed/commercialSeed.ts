@@ -1,4 +1,4 @@
-import type { BoqItem, Distribution, ProgressUpdate, Ipc, IpcLine, Rar, RarLine, RarRecovery, Variation, BankGuarantee, Subcontractor, ScheduleActivity, Resource, OverheadLine, FinancialReceipt, FinancialPayment, FinancialLiability, Supplier, Demand, Salient, ProductionRun, MaterialIssue, MachineryUsage, BoqMaterialLink, InventoryItem, PolRecord, FixedAsset, Contract } from '../types';
+import type { BoqItem, Distribution, ProgressUpdate, Ipc, IpcLine, Rar, RarLine, RarRecovery, Variation, BankGuarantee, Subcontractor, ScheduleActivity, Resource, OverheadLine, FinancialReceipt, FinancialPayment, FinancialLiability, Supplier, Demand, Salient, ProductionRun, MaterialIssue, MachineryUsage, BoqMaterialLink, MaterialMaster, InventoryItem, PolRecord, FixedAsset, Contract } from '../types';
 import type { EscalationComponent } from '../../domain/escalation';
 import { DEFAULT_PBS_COMPONENTS } from '../../domain/escalation';
 import { computeNet } from '../../domain/ipc';
@@ -36,6 +36,7 @@ export interface GeneratedSeed {
   issues: MaterialIssue[];
   machinery: MachineryUsage[];
   matLinks: BoqMaterialLink[];
+  materialMaster: MaterialMaster[];
   inventory: InventoryItem[];
   pol: PolRecord[];
   fixedAssets: FixedAsset[];
@@ -329,6 +330,19 @@ function build(profile: SeedProfile): GeneratedSeed {
     }
   }
 
+  // --- Material master (controlled catalogue: code · unit · standard rate) --
+  const materialMaster: MaterialMaster[] = [
+    { code: 'CEM', name: 'Cement OPC 53-grade', unit: 'bag', standardRate: 1350, spec: 'PS-232 / ASTM C150', leadDays: 21 },
+    { code: 'SAND', name: 'Sand (Lawrencepur)', unit: 'cft', standardRate: 90, spec: 'FM 2.4–2.8', leadDays: 10 },
+    { code: 'CRUSH-10', name: 'Crush 10 mm (Margalla)', unit: 'cft', standardRate: 130, spec: 'ASTM C33', leadDays: 14 },
+    { code: 'CRUSH-20', name: 'Crush 20 mm (Margalla)', unit: 'cft', standardRate: 125, spec: 'ASTM C33', leadDays: 14 },
+    { code: 'ADMIX', name: 'Concrete admixture', unit: 'kg', standardRate: 480, spec: 'ASTM C494 Type-D', leadDays: 35 },
+    { code: 'BITUMEN', name: 'Bitumen 60/70', unit: 'ton', standardRate: 285000, spec: 'AASHTO M20', leadDays: 45 },
+    { code: 'AGG-ASPHALT', name: 'Asphalt aggregate', unit: 'cft', standardRate: 140, spec: 'Class A', leadDays: 14 },
+    { code: 'AGG-BASE', name: 'Aggregate base course', unit: 'cft', standardRate: 110, spec: 'Class A', leadDays: 14 },
+    { code: 'STEEL-60', name: 'Deformed steel Gr-60', unit: 'kg', standardRate: 265, spec: 'ASTM A615', leadDays: 30 },
+  ];
+
   // --- Inventory (plant / equipment / vehicles) ----------------------------
   const invPool: Array<[InventoryItem['kind'], string]> = [['plant', 'Asphalt batching plant'], ['plant', 'Concrete batching plant'], ['equipment', 'Excavator CAT 320'], ['equipment', 'Motor grader'], ['equipment', 'Vibratory roller'], ['vehicle', 'Dump truck (Hino)'], ['vehicle', 'Water bowser']];
   const statuses: InventoryItem['status'][] = ['operational', 'operational', 'idle', 'breakdown'];
@@ -352,7 +366,7 @@ function build(profile: SeedProfile): GeneratedSeed {
     { id: `fa-${pid}-3`, projectId: pid, category: 'Survey & IT', description: 'Survey instruments & site IT', value: round(profile.cv * 0.001), acquired: addMonths(profile.start, 1) },
   ];
 
-  return { boq, subs, distributions, progress, ipcs, rars, variations, bgs, escalation, schedule, resources, overheads, receipts, payments, liabilities, suppliers, demands, salients, production, issues, machinery, matLinks, inventory, pol, fixedAssets, contracts };
+  return { boq, subs, distributions, progress, ipcs, rars, variations, bgs, escalation, schedule, resources, overheads, receipts, payments, liabilities, suppliers, demands, salients, production, issues, machinery, matLinks, materialMaster, inventory, pol, fixedAssets, contracts };
 }
 
 const cache = new Map<string, GeneratedSeed>();

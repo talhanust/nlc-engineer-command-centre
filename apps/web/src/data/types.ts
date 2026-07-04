@@ -523,6 +523,17 @@ export interface AppUser {
   nodeId: string;  // org scope: this node and everything beneath it
 }
 
+/** Controlled material catalogue: code, unit, spec and standard rate. Feeds
+ * composition rate-analysis, issue-rate defaults and lead-time defaults. */
+export interface MaterialMaster {
+  code: string;          // canonical code (CEM, SAND, CRUSH-20 …)
+  name: string;
+  unit: string;          // bag, cft, kg, ton …
+  standardRate: number;  // PKR per unit
+  spec?: string;         // e.g. 'OPC 53-grade, PS-232'
+  leadDays?: number;
+}
+
 /** Command directive (instruction) lifecycle: issued by a commander at a node,
  * assigned to a role within a scope, acted upon and answered within time. */
 export type DirectiveStatus = 'issued' | 'acknowledged' | 'in_progress' | 'complied' | 'closed';
@@ -950,6 +961,9 @@ export interface DataProvider {
   // Audit
   listAudit(): Promise<AuditEntry[]>;
   /** Alert triage lifecycle (req 3i(2)): computed alerts carry stable ids; states persist triage. */
+  listMaterialMaster(projectId: string): Promise<MaterialMaster[]>;
+  upsertMaterialMaster(projectId: string, input: MaterialMaster): Promise<MaterialMaster[]>;
+  deleteMaterialMaster(projectId: string, code: string): Promise<MaterialMaster[]>;
   listDirectives(): Promise<Directive[]>;
   createDirective(input: Omit<Directive, 'id' | 'status' | 'responses' | 'createdAt' | 'updatedAt'>): Promise<Directive>;
   respondDirective(id: string, by: string, text: string, status?: DirectiveStatus): Promise<Directive[]>;

@@ -4,7 +4,7 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
@@ -1108,6 +1108,26 @@ export class LocalDataProvider implements DataProvider {
     return hire;
   }
 
+  async listMaterialMaster(projectId: string): Promise<MaterialMaster[]> {
+    return readJson(matMasterKey(projectId), () => gen(projectId)?.materialMaster ?? []);
+  }
+  async upsertMaterialMaster(projectId: string, input: MaterialMaster): Promise<MaterialMaster[]> {
+    const all = readJson<MaterialMaster[]>(matMasterKey(projectId), () => gen(projectId)?.materialMaster ?? []);
+    const code = sanitize(input.code.trim().toUpperCase());
+    const clean: MaterialMaster = { ...input, code, name: sanitize(input.name), unit: sanitize(input.unit), spec: input.spec ? sanitize(input.spec) : undefined };
+    const idx = all.findIndex((m) => m.code === code);
+    if (idx >= 0) all[idx] = clean;
+    else all.push(clean);
+    all.sort((a, b) => a.code.localeCompare(b.code));
+    writeJson(matMasterKey(projectId), all);
+    audit(projectId, 'upsert', 'MaterialMaster', code, `${clean.standardRate}/` + clean.unit);
+    return all;
+  }
+  async deleteMaterialMaster(projectId: string, code: string): Promise<MaterialMaster[]> {
+    const all = readJson<MaterialMaster[]>(matMasterKey(projectId), () => gen(projectId)?.materialMaster ?? []).filter((m) => m.code !== code);
+    writeJson(matMasterKey(projectId), all);
+    return all;
+  }
   async listDirectives(): Promise<Directive[]> {
     return readJson(DIRECTIVES_KEY, () => []);
   }
@@ -1922,6 +1942,7 @@ const machineryKey = (pid: string) => `nlc-ecc.machinery.${pid}`;
 const alertStateKey = (pid: string) => `nlc-ecc.alertstates.${pid}`;
 const USERS_KEY = 'nlc-ecc.users';
 const DIRECTIVES_KEY = 'nlc-ecc.directives';
+const matMasterKey = (pid: string) => `nlc-ecc.matmaster.${pid}`;
 const SEED_USERS: AppUser[] = [
   { id: 'u-admin', name: 'System Admin', role: 'admin', nodeId: 'hq-nlc' },
   { id: 'u-gm-mon', name: 'GM Monitoring (HQ)', role: 'fm', nodeId: 'hq-nlc' },

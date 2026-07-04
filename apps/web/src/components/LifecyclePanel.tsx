@@ -5,6 +5,7 @@ import { useRole } from '../state/Role';
 import { useToast } from './Toast';
 import { formatMoney } from '../domain/money';
 import { STAGE_LABEL, STAGES, projectStage, receivable, readyToClose, stageTotals } from '../domain/lifecycle';
+import { DEFAULT_COMMERCIAL_CONFIG } from '../domain/ipc';
 import type { OrgNode, Project, ProjectStage } from '../data/types';
 
 export type StageFilter = 'all' | ProjectStage;
@@ -48,6 +49,7 @@ export function LifecyclePanel({ nodes, projects, stage, onChanged }: {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [liab, setLiab] = useState<Record<string, number>>({});
+  const [retention, setRetention] = useState<Record<string, number>>({});
   const commander = role === 'admin' || role === 'pd' || role === 'fm';
   const nameOf = (id: string) => nodes.find((n) => n.id === id)?.name ?? id;
 
@@ -61,11 +63,16 @@ export function LifecyclePanel({ nodes, projects, stage, onChanged }: {
     if (stage !== 'physically_completed') return;
     void (async () => {
       const out: Record<string, number> = {};
+      const ret: Record<string, number> = {};
       for (const p of shown) {
-        const ls = await provider.listLiabilities(p.id);
+        const [ls, ipcs, cfg] = await Promise.all([
+          provider.listLiabilities(p.id), provider.listIpcs(p.id), provider.getCommercialConfig(p.id),
+        ]);
         out[p.id] = ls.reduce((s, l) => s + l.amount, 0);
+        const pct = (cfg.ipcRetentionPct ?? DEFAULT_COMMERCIAL_CONFIG.ipcRetentionPct) / 100;
+        ret[p.id] = ipcs.reduce((s, i) => s + i.gross, 0) * pct;
       }
-      if (a) setLiab(out);
+      if (a) { setLiab(out); setRetention(ret); }
     })();
     return () => { a = false; };
   }, [provider, shown, stage]);
@@ -108,26 +115,38 @@ export function LifecyclePanel({ nodes, projects, stage, onChanged }: {
   }
 
   if (stage === 'physically_completed') {
+    const dlpEnd = (toc?: string) => {
+      if (!toc) return null;
+      const d = new Date(toc);
+      d.setMonth(d.getMonth() + 12); // 12-month Defect Liability Period
+      return d.toISOString().slice(0, 10);
+    };
+    const today = new Date().toISOString().slice(0, 10);
     return (
       <div style={{ marginTop: 10 }}>
         <p className="muted small">
-          <strong>Recovery section</strong> — TOC issued; collect the receivable, release retention, clear liabilities. A project may financially close only when the receivable and liabilities are both zero.
+          <strong>Recovery section</strong> — TOC issued; collect the receivable, release retention (½ on TOC, ½ after the 12-month DLP), clear liabilities. A project may financially close only when the receivable and liabilities are both zero.
         </p>
         <table className="data-table" aria-label="Recovery section">
-          <thead><tr><th>Project</th><th>TOC date</th><th className="num">Billed</th><th className="num">Received</th><th className="num">Receivable</th><th className="num">Liabilities</th><th>Ready</th><th></th></tr></thead>
+          <thead><tr><th>Project</th><th>TOC date</th><th className="num">Receivable</th><th className="num">Liabilities</th><th className="num">Retention held</th><th className="num">Releasable now</th><th>2nd half after DLP</th><th>Ready</th><th></th></tr></thead>
           <tbody>
             {shown.map((p) => {
               const rec = receivable(p);
               const lb = liab[p.id] ?? 0;
               const ready = readyToClose(p, lb);
+              const held = retention[p.id] ?? 0;
+              const dlp = dlpEnd(p.tocDate);
+              const dlpPast = dlp !== null && dlp <= today;
+              const releasableNow = held * 0.5 + (dlpPast ? held * 0.5 : 0);
               return (
                 <tr key={p.id} className={rec > 0 || lb > 0 ? 'row-flag' : ''}>
                   <td className="row-link" onClick={() => navigate(`/node/${p.id}/financial`)}>{nameOf(p.id)}</td>
                   <td className="small">{p.tocDate ?? '—'}</td>
-                  <td className="num">{formatMoney(Number(p.billedToDate))}</td>
-                  <td className="num">{formatMoney(Number(p.receivedToDate))}</td>
                   <td className={`num${rec > 0 ? ' neg' : ''}`}>{formatMoney(rec)}</td>
                   <td className={`num${lb > 0 ? ' neg' : ''}`}>{formatMoney(lb)}</td>
+                  <td className="num">{formatMoney(held)}</td>
+                  <td className="num pos">{formatMoney(releasableNow)}</td>
+                  <td className="small">{dlp ? (dlpPast ? <span className="pos">DLP expired — release due</span> : `due ${dlp}`) : '—'}</td>
                   <td>{ready ? '✅' : <span className="muted small">recover first</span>}</td>
                   <td>{commander && (
                     <button className="btn btn-mini" aria-label={`Close ${p.id}`} disabled={!ready}

@@ -1,6 +1,26 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-07-04 — Material master + rate analysis; retention release in Recovery
+- Material master (controlled catalogue). New MaterialMaster type (code · name · unit · spec ·
+  standard rate · lead days) with provider list/upsert/delete (key nlc-ecc.matmaster.<pid>;
+  generator seeds a realistic catalogue — Cement OPC 53 PS-232, Lawrencepur sand, Margalla crush
+  10/20 mm, admixture ASTM C494, bitumen 60/70 AASHTO M20, aggregates, Gr-60 steel — with rates
+  and lead days; Api stubs). New Procurement sub-tab "Material master" (register + inline rate
+  edit). Compositions and issues now draw from it: the composition editor's material input offers
+  the catalogue via datalist; the Material-issues form DEFAULTS the issue rate from the master
+  when a known code is entered.
+- Rate analysis (estimator's build-up). domain/rateanalysis.ts: material cost per unit of a BOQ
+  item = Σ coeff × master rate; share of the BOQ rate; balance left for labour/plant/OH&P;
+  LOSS-RATE flag when material alone exceeds the rate; missing-master-rate list. Rendered as a
+  summary line under every composed item in the Mapping composition table.
+- Retention release in Recovery. The Recovery register now computes retention held per completed
+  project (Σ IPC gross × configured retention %) and applies the release rule — ½ releasable on
+  TOC, ½ after the 12-month Defect Liability Period — showing Releasable-now and the DLP due date
+  ("DLP expired — release due" once past).
+- Tests: master seed/upsert/delete, rate-analysis math incl. loss-rate + missing rates, master UI
+  add flow, Recovery retention columns. Web 392 (66 files); server 9; both builds green.
+
 2026-07-04 — Project lifecycle (Ongoing → TOC/Recovery → Financially Closed); consumption variance; directive escalation
 - Project lifecycle stages (civil-works practice). ProjectStage = ongoing | physically_completed |
   financially_closed with tocDate / financialCloseDate on Project; provider setProjectStage

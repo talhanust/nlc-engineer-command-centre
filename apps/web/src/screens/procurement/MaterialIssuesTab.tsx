@@ -4,7 +4,7 @@ import { useToast } from '../../components/Toast';
 import { formatMoney } from '../../domain/money';
 import { materialRecovery, issueValue } from '../../domain/materialrecovery';
 import { consumptionVariance, WASTAGE_TOLERANCE_PCT } from '../../domain/consumption';
-import type { MaterialIssue, Subcontractor, BoqItem, BoqMaterialLink, ProgressUpdate } from '../../data/types';
+import type { MaterialIssue, Subcontractor, BoqItem, BoqMaterialLink, ProgressUpdate, MaterialMaster } from '../../data/types';
 
 /**
  * Material Issues register (prototype parity). NLC material issued to site or
@@ -20,6 +20,7 @@ export function MaterialIssuesTab({ projectId }: { projectId: string }) {
   const [boq, setBoq] = useState<BoqItem[]>([]);
   const [matLinks, setMatLinks] = useState<BoqMaterialLink[]>([]);
   const [progress, setProgress] = useState<ProgressUpdate[]>([]);
+  const [master, setMaster] = useState<MaterialMaster[]>([]);
   const [code, setCode] = useState('');
   const [qty, setQty] = useState('');
   const [rate, setRate] = useState('');
@@ -27,11 +28,12 @@ export function MaterialIssuesTab({ projectId }: { projectId: string }) {
   const [contractorId, setContractorId] = useState('');
 
   async function load() {
-    const [i, s, b, ml, pr] = await Promise.all([
+    const [i, s, b, ml, pr, mm] = await Promise.all([
       provider.listMaterialIssues(projectId), provider.listSubcontractors(projectId),
       provider.listBoq(projectId), provider.listBoqMaterial(projectId), provider.listProgress(projectId),
+      provider.listMaterialMaster(projectId),
     ]);
-    setIssues(i); setSubs(s); setBoq(b); setMatLinks(ml); setProgress(pr);
+    setIssues(i); setSubs(s); setBoq(b); setMatLinks(ml); setProgress(pr); setMaster(mm);
   }
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [provider, projectId]);
 
@@ -69,7 +71,16 @@ export function MaterialIssuesTab({ projectId }: { projectId: string }) {
           <span className="muted small">issued value = qty × rate; contractor balances recover via RAR · issues reduce lead-time stock</span>
         </div>
         <div className="create-row">
-          <input aria-label="Issue material code" placeholder="Material code (e.g. CEM)" value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 150 }} />
+          <input aria-label="Issue material code" placeholder="Material code (e.g. CEM)" value={code} list="issue-master-codes"
+            onChange={(e) => {
+              const v = e.target.value;
+              setCode(v);
+              const m = master.find((x) => x.code === v.trim().toUpperCase());
+              if (m && !rate) setRate(String(m.standardRate)); // default the issue rate from the master
+            }} style={{ width: 150 }} />
+          <datalist id="issue-master-codes">
+            {master.map((m) => <option key={m.code} value={m.code}>{m.name} · {m.standardRate}/{m.unit}</option>)}
+          </datalist>
           <input aria-label="Issue qty" placeholder="Qty" value={qty} onChange={(e) => setQty(e.target.value)} style={{ width: 90 }} />
           <input aria-label="Issue rate" placeholder="Rate (opt.)" value={rate} onChange={(e) => setRate(e.target.value)} style={{ width: 100 }} />
           <input aria-label="Issued to" placeholder="Activity / WBS / location" value={issuedTo} onChange={(e) => setIssuedTo(e.target.value)} style={{ flex: 1, minWidth: 140 }} />

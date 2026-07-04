@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { materialCoverage, valueCoverage, activityCoverage, linksByItem, effectiveWeight, type Coverage } from '../../domain/mapping';
 import { suggestWbsLinks } from '../../domain/mappingSuggest';
+import { rateAnalysis } from '../../domain/rateanalysis';
 import { formatMoney } from '../../domain/money';
 import { materialRecovery, issueValue, totalBalanceToRecover } from '../../domain/materialrecovery';
 import { MappingWorkflowStrip } from '../../components/MappingWorkflowStrip';
-import type { BoqItem, ScheduleActivity, BoqWbsLink, BoqMaterialLink, MaterialIssue, Subcontractor } from '../../data/types';
+import type { BoqItem, ScheduleActivity, BoqWbsLink, BoqMaterialLink, MaterialIssue, Subcontractor, MaterialMaster } from '../../data/types';
 
 const SUB = ['wbs', 'material', 'recovery'] as const;
 type Sub = (typeof SUB)[number];
@@ -267,14 +268,15 @@ function MaterialMapping({ projectId }: { projectId: string }) {
   const { provider } = useData();
   const [items, setItems] = useState<BoqItem[]>([]);
   const [links, setLinks] = useState<BoqMaterialLink[]>([]);
+  const [master, setMaster] = useState<MaterialMaster[]>([]);
   const [search, setSearch] = useState('');
   const [onlyComposed, setOnlyComposed] = useState<'all' | 'composed' | 'uncomposed'>('all');
 
   useEffect(() => {
     let a = true;
-    Promise.all([provider.listBoq(projectId), provider.listBoqMaterial(projectId)]).then(([b, l]) => {
+    Promise.all([provider.listBoq(projectId), provider.listBoqMaterial(projectId), provider.listMaterialMaster(projectId)]).then(([b, l, mm]) => {
       if (!a) return;
-      setItems(b); setLinks(l);
+      setItems(b); setLinks(l); setMaster(mm);
     });
     return () => { a = false; };
   }, [provider, projectId]);
@@ -296,6 +298,7 @@ function MaterialMapping({ projectId }: { projectId: string }) {
   }
 
   const c = materialCoverage(items, links);
+  const analysis = useMemo(() => rateAnalysis(items, links, master), [items, links, master]);
   const rows = items.filter((it) => {
     const q = search.trim().toLowerCase();
     if (q && !`${it.code} ${it.description}`.toLowerCase().includes(q)) return false;
@@ -355,9 +358,18 @@ function MaterialMapping({ projectId }: { projectId: string }) {
                         </tbody>
                       </table>
                     )}
+                    {(() => { const ra = analysis.get(it.id); if (!ra) return null; return (
+                      <div className={`small${ra.lossRate ? ' neg' : ' muted'}`} style={{ marginTop: 4 }} aria-label={`Rate analysis ${it.code}`}>
+                        Material {formatMoney(ra.materialCostPerUnit)}/{it.unit}
+                        {ra.materialSharePct !== null ? ` (${ra.materialSharePct}% of rate ${formatMoney(it.rate)})` : ''}
+                        {' · '}balance for labour/plant/OH&P {formatMoney(ra.balancePerUnit)}
+                        {ra.lossRate ? ' ⚠ material alone exceeds the BOQ rate' : ''}
+                        {ra.missingRates.length > 0 ? ` · no master rate: ${ra.missingRates.join(', ')}` : ''}
+                      </div>
+                    ); })()}
                   </td>
                   <td>
-                    <AddMaterialRow itemCode={it.code} onAdd={(ref, coeff) => upsert(it, ref, coeff)} />
+                    <AddMaterialRow itemCode={it.code} onAdd={(ref, coeff) => upsert(it, ref, coeff)} master={master} />
                   </td>
                 </tr>
               );
@@ -369,12 +381,17 @@ function MaterialMapping({ projectId }: { projectId: string }) {
   );
 }
 
-function AddMaterialRow({ itemCode, onAdd }: { itemCode: string; onAdd: (ref: string, coeff: number) => void }) {
+function AddMaterialRow({ itemCode, onAdd, master }: { itemCode: string; onAdd: (ref: string, coeff: number) => void; master?: MaterialMaster[] }) {
   const [ref, setRef] = useState('');
   const [coeff, setCoeff] = useState('');
   return (
     <span style={{ display: 'inline-flex', gap: 4 }}>
-      <input className="note-input" aria-label={`Material for ${itemCode}`} placeholder="e.g. CEM" value={ref} onChange={(e) => setRef(e.target.value)} style={{ width: 90 }} />
+      <input className="note-input" aria-label={`Material for ${itemCode}`} placeholder="e.g. CEM" value={ref} onChange={(e) => setRef(e.target.value)} style={{ width: 90 }} list="material-master-codes" />
+      {master && (
+        <datalist id="material-master-codes">
+          {master.map((m) => <option key={m.code} value={m.code}>{m.name} · {m.standardRate}/{m.unit}</option>)}
+        </datalist>
+      )}
       <input className="qty-input" aria-label={`Coeff for ${itemCode}`} placeholder="coeff" value={coeff} onChange={(e) => setCoeff(e.target.value)} style={{ width: 64 }} />
       <button className="btn-ghost btn-mini" aria-label={`Add material to ${itemCode}`}
         onClick={() => { const c = Number(coeff); if (ref.trim() && c > 0) { onAdd(ref, c); setRef(''); setCoeff(''); } }}>＋</button>

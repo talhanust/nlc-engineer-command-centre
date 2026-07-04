@@ -7,6 +7,8 @@ import { healthScore, healthLabel } from '../domain/health';
 import { hrCostRollup } from '../domain/hrrollup';
 import { useDashPrefs, DASH_PREF_LABEL, type DashPrefs } from '../state/dashPrefs';
 import { nodeInScope } from '../domain/access';
+import { DirectivesPanel } from '../components/DirectivesPanel';
+import { SectionDashboards } from './SectionDashboards';
 import { useRole } from '../state/Role';
 import { useData as useDataCtx } from '../data/DataContext';
 import type { HrUnit } from '../data/types';
@@ -64,6 +66,7 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
   }
   if (!rollup) return <p>Node not found.</p>;
   const { totals, children, node } = rollup;
+  const underCommand = filtered.filter((p) => nodeInScope(nodes, node.id, p.id));
   const canAddProject = node.type === 'pd_hq' || node.type === 'hq_engrs' || node.type === 'hq';
 
   return (
@@ -206,6 +209,16 @@ export function CommandDashboard({ nodeId }: { nodeId: string }) {
           </tfoot>
         </table>
       </CollapsibleCard>
+
+      <CollapsibleCard id="dash-directives" title="Command directives" focusable dockable>
+        <DirectivesPanel node={node} nodes={nodes} projectIds={underCommand.map((p) => p.id)} />
+      </CollapsibleCard>
+
+      {node.type !== 'project' && (
+        <CollapsibleCard id="dash-sections" title="Staff sections — under-command drill-down" focusable dockable>
+          <SectionDashboards node={node} nodes={nodes} projects={underCommand} />
+        </CollapsibleCard>
+      )}
 
       {prefs.hrRollup && (
       <CollapsibleCard id="dash-hr-rollup" title="Manpower cost roll-up (monthly)" focusable dockable>

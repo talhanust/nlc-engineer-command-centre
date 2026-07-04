@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useData } from '../data/DataContext';
 import { useRole } from '../state/Role';
-import { projectWorklist, type WorkItem } from '../domain/worklist';
+import { projectWorklist, directiveWorklist, type WorkItem } from '../domain/worklist';
 import { nodeInScope } from '../domain/access';
 import { ROLE_LABEL } from '../domain/chains';
 import { formatMoney } from '../domain/money';
@@ -27,7 +27,14 @@ export function useWorklist(): { items: WorkItem[]; loading: boolean } {
       const projectName = nodes.find((n) => n.id === p.id)?.name ?? p.id;
       return projectWorklist(role, { projectId: p.id, projectName, ipcs, rars, demands, procPayments });
     }));
-    setItems(all.flat());
+    const directives = await provider.listDirectives();
+    const dirItems = directiveWorklist(
+      role, directives,
+      (nid) => nodeInScope(nodes, user?.nodeId ?? null, nid),
+      (id) => nodes.find((n) => n.id === id)?.name ?? id,
+      new Date().toISOString().slice(0, 10),
+    );
+    setItems([...dirItems, ...all.flat()]);
     setLoading(false);
   }, [provider, projects, nodes, role, user?.nodeId]);
 

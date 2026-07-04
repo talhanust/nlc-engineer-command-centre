@@ -16,6 +16,9 @@ beforeEach(() => localStorage.clear());
 async function open() {
   const user = userEvent.setup();
   renderAt('/node/proj-f14f15/procurement');
+  // Procurement now lands on its Dashboard (prototype parity); step into the inbox.
+  await screen.findByLabelText('Procurement KPIs');
+  await user.click(screen.getByRole('tab', { name: /Approval inbox/ }));
   await screen.findByRole('heading', { name: /Approval inbox/ });
   return user;
 }
@@ -23,7 +26,7 @@ async function open() {
 describe('Phase 6 — procurement', () => {
   it('opens the demand detail modal with items + history', async () => {
     const user = await open();
-    await user.click(screen.getByRole('tab', { name: 'Demands' }));
+    await user.click(screen.getByRole('tab', { name: /^Demands/ }));
     await user.click(await screen.findByRole('button', { name: 'Details for DMD-01' }));
     const dialog = await screen.findByRole('dialog', { name: 'Demand DMD-01 detail' });
     expect(within(dialog).getByRole('table', { name: 'Demand items' })).toBeInTheDocument();
@@ -71,7 +74,7 @@ describe('Phase 6 — procurement', () => {
   it('gates advancement by financial power', async () => {
     const user = await open();
     // Create a 5,000,000 demand (exceeds PM power of 1,000,000)
-    await user.click(screen.getByRole('tab', { name: 'Demands' }));
+    await user.click(screen.getByRole('tab', { name: /^Demands/ }));
     await user.type(screen.getByLabelText('Item description'), 'Big ticket');
     await user.type(screen.getByLabelText('Item qty'), '1000');
     await user.type(screen.getByLabelText('Item rate'), '5000');
@@ -79,7 +82,7 @@ describe('Phase 6 — procurement', () => {
     await user.click(screen.getByRole('button', { name: 'Raise demand' }));
     // Switch acting role to PM and open the inbox
     await user.selectOptions(screen.getByLabelText('Acting role'), 'pm');
-    await user.click(screen.getByRole('tab', { name: 'Approval inbox' }));
+    await user.click(screen.getByRole('tab', { name: /^Approval inbox/ }));
     const inbox = await screen.findByRole('table', { name: 'Approval inbox' });
     expect(within(inbox).getByText('exceeds power')).toBeInTheDocument();
   });

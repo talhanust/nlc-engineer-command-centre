@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { ROLE_LABEL, chainStages } from '../../domain/chains';
+import { useEffect, useState } from 'react';
+import { ROLE_LABEL, chainStages, pendingStage } from '../../domain/chains';
 import type { ProcChainType } from '../../data/types';
+import { useData } from '../../data/DataContext';
 import { DemandsTab } from './DemandsTab';
 import { InboxTab } from './InboxTab';
 import { PoCrvTab } from './PoCrvTab';
@@ -9,12 +10,14 @@ import { SuppliersHiresTab } from './SuppliersHiresTab';
 import { InventoryTab, PolTab, FixedAssetsTab, MaintenanceTab } from './AssetsTabs';
 import { MachineryTab } from './MachineryTab';
 import { LeadTimesTab } from './LeadTimesTab';
+import { MaterialIssuesTab } from './MaterialIssuesTab';
+import { ProcDashboard } from './ProcDashboard';
 
 const ROLES = ['pic', 'pm', 'pd', 'comd_engrs', 'dir_sp', 'dg', 'preaudit', 'fm', 'fh', 'manager_procurement'];
-const SUB = ['inbox', 'demands', 'pocrv', 'leadtimes', 'payments', 'vendors', 'inventory', 'machinery', 'pol', 'fixedassets', 'maintenance'] as const;
+const SUB = ['dashboard', 'inbox', 'demands', 'pocrv', 'leadtimes', 'payments', 'vendors', 'materials', 'inventory', 'machinery', 'pol', 'fixedassets', 'maintenance'] as const;
 type Sub = (typeof SUB)[number];
 const LABEL: Record<Sub, string> = {
-  inbox: 'Approval inbox', demands: 'Demands', pocrv: 'POs & CRVs', payments: 'Payments', vendors: 'Suppliers & hires',
+  dashboard: 'Dashboard', inbox: 'Approval inbox', demands: 'Demands', pocrv: 'POs & CRVs', payments: 'Payments', vendors: 'Suppliers & hires', materials: 'Material issues',
   inventory: 'Inventory', machinery: 'Machinery hire', pol: 'POL', fixedassets: 'Fixed assets', maintenance: 'Maintenance', leadtimes: 'Lead times',
 };
 
@@ -37,9 +40,25 @@ export function ChainProgress({ chainType, currentStage }: { chainType: ProcChai
 }
 
 export function ProcurementTab({ projectId }: { projectId: string }) {
-  const [sub, setSub] = useState<Sub>('inbox');
+  const [sub, setSub] = useState<Sub>('dashboard');
   // Local mode has no RBAC, so the acting role is chosen explicitly.
   const [role, setRole] = useState('pd');
+  const { provider } = useData();
+  // Pending-count badges (prototype parity): items still inside their chain.
+  const [badges, setBadges] = useState<Partial<Record<Sub, number>>>({});
+  useEffect(() => {
+    let a = true;
+    const load = async () => {
+      const [demands, payments] = await Promise.all([provider.listDemands(projectId), provider.listProcPayments(projectId)]);
+      if (!a) return;
+      const dPend = demands.filter((x) => pendingStage(x.chainType, x.currentStage)).length;
+      const pPend = payments.filter((x) => pendingStage(x.chainType, x.currentStage)).length;
+      setBadges({ inbox: dPend + pPend, demands: dPend, payments: pPend });
+    };
+    void load();
+    window.addEventListener('nlc:audit', load);
+    return () => { a = false; window.removeEventListener('nlc:audit', load); };
+  }, [provider, projectId]);
 
   return (
     <div>
@@ -56,7 +75,7 @@ export function ProcurementTab({ projectId }: { projectId: string }) {
       <div className="subtabs" role="tablist">
         {SUB.map((s) => (
           <button key={s} role="tab" aria-selected={sub === s} className={`subtab${sub === s ? ' active' : ''}`} onClick={() => setSub(s)}>
-            {LABEL[s]}
+            {LABEL[s]}{(badges[s] ?? 0) > 0 && <span className="subtab-badge" aria-label={`${badges[s]} pending`}>{badges[s]}</span>}
           </button>
         ))}
       </div>
@@ -68,6 +87,8 @@ export function ProcurementTab({ projectId }: { projectId: string }) {
       {sub === 'vendors' && <SuppliersHiresTab projectId={projectId} />}
       {sub === 'inventory' && <InventoryTab projectId={projectId} />}
       {sub === 'pol' && <PolTab projectId={projectId} />}
+      {sub === 'dashboard' && <ProcDashboard projectId={projectId} onNavigate={(s) => setSub(s as Sub)} />}
+      {sub === 'materials' && <MaterialIssuesTab projectId={projectId} />}
       {sub === 'machinery' && <MachineryTab projectId={projectId} />}
       {sub === 'leadtimes' && <LeadTimesTab projectId={projectId} />}
       {sub === 'fixedassets' && <FixedAssetsTab projectId={projectId} />}

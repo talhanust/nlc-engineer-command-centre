@@ -105,7 +105,10 @@ function WbsMapping({ projectId }: { projectId: string }) {
   const [items, setItems] = useState<BoqItem[]>([]);
   const [acts, setActs] = useState<ScheduleActivity[]>([]);
   const [links, setLinks] = useState<BoqWbsLink[]>([]);
-  const [onlyUnmapped, setOnlyUnmapped] = useState(false);
+  // Smart filtering (prototype parity): free-text search, bill filter, status pills.
+  const [search, setSearch] = useState('');
+  const [bill, setBill] = useState('all');
+  const [statusPill, setStatusPill] = useState<'all' | 'unmapped' | 'auto' | 'confirmed'>('all');
 
   useEffect(() => {
     let a = true;
@@ -149,7 +152,19 @@ function WbsMapping({ projectId }: { projectId: string }) {
     setLinks(await provider.listBoqWbs(projectId));
   }
 
-  const rows = onlyUnmapped ? vc.unmappedItems : items;
+  const bills = useMemo(() => [...new Set(items.map((i) => i.billNo))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), [items]);
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return items.filter((it) => {
+      if (bill !== 'all' && it.billNo !== bill) return false;
+      if (q && !`${it.code} ${it.description} ${it.billName} ${it.section}`.toLowerCase().includes(q)) return false;
+      const ls = byItem.get(it.id) ?? [];
+      if (statusPill === 'unmapped') return ls.length === 0;
+      if (statusPill === 'auto') return ls.some((l) => l.confidence === 'auto');
+      if (statusPill === 'confirmed') return ls.length > 0 && ls.every((l) => l.confidence === 'confirmed');
+      return true;
+    });
+  }, [items, search, bill, statusPill, byItem]);
 
   return (
     <div>
@@ -193,9 +208,21 @@ function WbsMapping({ projectId }: { projectId: string }) {
         <p className="muted">Import a BOQ first.</p>
       ) : (
         <>
-          <label className="small" style={{ display: 'inline-block', margin: '6px 0' }}>
-            <input type="checkbox" checked={onlyUnmapped} onChange={(e) => setOnlyUnmapped(e.target.checked)} /> Show unmapped only
-          </label>
+          <div className="filter-bar" role="group" aria-label="Mapping filters" style={{ margin: '8px 0' }}>
+            <input aria-label="Search BOQ items" placeholder="Search code / description…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ minWidth: 220 }} />
+            <select aria-label="Filter by bill" value={bill} onChange={(e) => setBill(e.target.value)}>
+              <option value="all">All bills</option>
+              {bills.map((b) => <option key={b} value={b}>Bill {b}</option>)}
+            </select>
+            {(['all', 'unmapped', 'auto', 'confirmed'] as const).map((p) => (
+              <button key={p} className={`btn-ghost btn-mini${statusPill === p ? ' active' : ''}`}
+                aria-pressed={statusPill === p} aria-label={`Show ${p}`}
+                onClick={() => setStatusPill(p)} style={statusPill === p ? { borderColor: 'var(--primary)', fontWeight: 600 } : undefined}>
+                {p === 'all' ? 'All' : p === 'unmapped' ? 'Unmapped' : p === 'auto' ? 'Auto (pending)' : 'Confirmed'}
+              </button>
+            ))}
+            <span className="muted small">{rows.length} of {items.length} items</span>
+          </div>
           <table className="data-table" aria-label="WBS mapping">
             <thead><tr><th>Code</th><th>Description</th><th>Mapped activities</th><th>Add activity</th></tr></thead>
             <tbody>
@@ -239,49 +266,98 @@ function WbsMapping({ projectId }: { projectId: string }) {
 function MaterialMapping({ projectId }: { projectId: string }) {
   const { provider } = useData();
   const [items, setItems] = useState<BoqItem[]>([]);
-  const [links, setLinks] = useState<Record<string, BoqMaterialLink>>({});
+  const [links, setLinks] = useState<BoqMaterialLink[]>([]);
+  const [search, setSearch] = useState('');
+  const [onlyComposed, setOnlyComposed] = useState<'all' | 'composed' | 'uncomposed'>('all');
 
   useEffect(() => {
     let a = true;
     Promise.all([provider.listBoq(projectId), provider.listBoqMaterial(projectId)]).then(([b, l]) => {
       if (!a) return;
-      setItems(b);
-      setLinks(Object.fromEntries(l.map((x) => [x.boqItemId, x])));
+      setItems(b); setLinks(l);
     });
     return () => { a = false; };
   }, [provider, projectId]);
 
-  async function setMaterial(item: BoqItem, materialRef: string, coeff: number) {
-    if (!materialRef.trim()) return;
-    const link: BoqMaterialLink = { boqItemId: item.id, projectId, materialRef: materialRef.trim(), coeff, confidence: 'confirmed' };
-    setLinks((prev) => ({ ...prev, [item.id]: link }));
-    await provider.setBoqMaterial(projectId, link);
+  const byItem = useMemo(() => {
+    const m = new Map<string, BoqMaterialLink[]>();
+    for (const l of links) { const arr = m.get(l.boqItemId) ?? []; arr.push(l); m.set(l.boqItemId, arr); }
+    return m;
+  }, [links]);
+
+  async function upsert(item: BoqItem, materialRef: string, coeff: number, leadDays?: number) {
+    const ref = materialRef.trim().toUpperCase();
+    if (!ref || coeff <= 0) return;
+    await provider.setBoqMaterial(projectId, { boqItemId: item.id, projectId, materialRef: ref, coeff, confidence: 'confirmed', leadDays });
+    setLinks(await provider.listBoqMaterial(projectId));
+  }
+  async function remove(item: BoqItem, materialRef: string) {
+    setLinks(await provider.removeBoqMaterial(projectId, item.id, materialRef));
   }
 
-  const c = materialCoverage(items, Object.values(links));
+  const c = materialCoverage(items, links);
+  const rows = items.filter((it) => {
+    const q = search.trim().toLowerCase();
+    if (q && !`${it.code} ${it.description}`.toLowerCase().includes(q)) return false;
+    const has = (byItem.get(it.id)?.length ?? 0) > 0;
+    if (onlyComposed === 'composed') return has;
+    if (onlyComposed === 'uncomposed') return !has;
+    return true;
+  });
+
   return (
     <div>
-      <div className="section-head"><h3>BOQ → Material mapping</h3></div>
+      <div className="section-head"><h3>BOQ → Material composition</h3>
+        <span className="muted small">a BOQ item consumes MANY materials (concrete = cement + sand + crush + admixture) — each with its consumption factor per unit of the item</span>
+      </div>
       <CoverageBar c={c} />
+      <div className="filter-bar" role="group" aria-label="Composition filters" style={{ margin: '8px 0' }}>
+        <input aria-label="Search composition items" placeholder="Search code / description…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ minWidth: 220 }} />
+        {(['all', 'composed', 'uncomposed'] as const).map((p) => (
+          <button key={p} className="btn-ghost btn-mini" aria-pressed={onlyComposed === p} onClick={() => setOnlyComposed(p)}
+            style={onlyComposed === p ? { borderColor: 'var(--primary)', fontWeight: 600 } : undefined}>
+            {p === 'all' ? 'All' : p === 'composed' ? 'Composed' : 'No composition'}
+          </button>
+        ))}
+      </div>
       {items.length === 0 ? (
         <p className="muted">Import a BOQ first.</p>
       ) : (
         <table className="data-table" aria-label="Material mapping">
-          <thead><tr><th>Code</th><th>Description</th><th>Material</th><th className="num">Coeff / unit</th></tr></thead>
+          <thead><tr><th>Code</th><th>Description</th><th className="num">Item qty</th><th>Composition (material · coeff/unit → derived qty)</th><th>Add material</th></tr></thead>
           <tbody>
-            {items.map((it) => {
-              const l = links[it.id];
+            {rows.map((it) => {
+              const comp = byItem.get(it.id) ?? [];
               return (
                 <tr key={it.id}>
                   <td>{it.code}</td>
                   <td>{it.description}</td>
+                  <td className="num">{it.qty.toLocaleString('en-PK')} {it.unit}</td>
                   <td>
-                    <input className="note-input" aria-label={`Material for ${it.code}`} defaultValue={l?.materialRef ?? ''} placeholder="e.g. Cement"
-                      onBlur={(e) => setMaterial(it, e.target.value, l?.coeff ?? 0)} />
+                    {comp.length === 0 ? <span className="muted small">No composition</span> : (
+                      <table className="data-table" aria-label={`Composition for ${it.code}`} style={{ margin: 0 }}>
+                        <tbody>
+                          {comp.map((l) => (
+                            <tr key={l.materialRef}>
+                              <td className="mono small" style={{ width: 110 }}>{l.materialRef}</td>
+                              <td className="num" style={{ width: 110 }}>
+                                <input className="qty-input" aria-label={`Coeff ${it.code} ${l.materialRef}`} defaultValue={l.coeff} style={{ width: 80 }}
+                                  onBlur={(e) => { const v = Number(e.target.value); if (v > 0 && v !== l.coeff) void upsert(it, l.materialRef, v, l.leadDays); }} />
+                              </td>
+                              <td className="num small muted" style={{ width: 150 }} title="Derived take-off = item qty × coeff">
+                                → {(it.qty * l.coeff).toLocaleString('en-PK', { maximumFractionDigits: 1 })}
+                              </td>
+                              <td style={{ width: 30 }}>
+                                <button className="link-btn" aria-label={`Remove ${l.materialRef} from ${it.code}`} onClick={() => remove(it, l.materialRef)}>×</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
                   </td>
-                  <td className="num">
-                    <input className="qty-input" aria-label={`Coeff for ${it.code}`} defaultValue={l?.coeff || ''} placeholder="0"
-                      onBlur={(e) => setMaterial(it, l?.materialRef ?? '', Number(e.target.value) || 0)} />
+                  <td>
+                    <AddMaterialRow itemCode={it.code} onAdd={(ref, coeff) => upsert(it, ref, coeff)} />
                   </td>
                 </tr>
               );
@@ -292,3 +368,17 @@ function MaterialMapping({ projectId }: { projectId: string }) {
     </div>
   );
 }
+
+function AddMaterialRow({ itemCode, onAdd }: { itemCode: string; onAdd: (ref: string, coeff: number) => void }) {
+  const [ref, setRef] = useState('');
+  const [coeff, setCoeff] = useState('');
+  return (
+    <span style={{ display: 'inline-flex', gap: 4 }}>
+      <input className="note-input" aria-label={`Material for ${itemCode}`} placeholder="e.g. CEM" value={ref} onChange={(e) => setRef(e.target.value)} style={{ width: 90 }} />
+      <input className="qty-input" aria-label={`Coeff for ${itemCode}`} placeholder="coeff" value={coeff} onChange={(e) => setCoeff(e.target.value)} style={{ width: 64 }} />
+      <button className="btn-ghost btn-mini" aria-label={`Add material to ${itemCode}`}
+        onClick={() => { const c = Number(coeff); if (ref.trim() && c > 0) { onAdd(ref, c); setRef(''); setCoeff(''); } }}>＋</button>
+    </span>
+  );
+}
+

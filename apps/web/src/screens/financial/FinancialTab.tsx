@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { useUiState } from '../../state/UiState';
+import { nodeOwnHrMonthly } from '../../domain/hrrollup';
+import { TIMELINE, CURRENT_IDX } from '../../domain/scurve';
 import { formatMoney, formatPct, toNum } from '../../domain/money';
-import type { MonthlySeriesPoint } from '../../data/types';
+import type { MonthlySeriesPoint, OverheadLine } from '../../data/types';
 import {
   monthlyCashFlow, forecastCashFlow, financialKpis, pnlSummary,
 } from '../../domain/finance';
@@ -18,10 +20,10 @@ import type {
   FinancialReceipt, FinancialPayment, FinancialLiability, PaymentCategory, Project,
 } from '../../data/types';
 
-const SUB = ['dashboard', 'receipts', 'payments', 'liabilities', 'cashflow', 'pnl'] as const;
+const SUB = ['dashboard', 'receipts', 'payments', 'liabilities', 'cashflow', 'pva', 'pnl'] as const;
 type Sub = (typeof SUB)[number];
 const LABEL: Record<Sub, string> = {
-  dashboard: 'Dashboard', receipts: 'Receipts', payments: 'Payments',
+  dashboard: 'Dashboard', receipts: 'Receipts', payments: 'Payments', pva: 'Planned vs Actual',
   liabilities: 'Liabilities', cashflow: 'Cash flow', pnl: 'P&L',
 };
 
@@ -64,6 +66,7 @@ export function FinancialTab({ projectId }: { projectId: string }) {
       {sub === 'payments' && <Payments projectId={projectId} b={b} onAdded={reload} />}
       {sub === 'liabilities' && <Liabilities projectId={projectId} b={b} onAdded={reload} />}
       {sub === 'cashflow' && <CashFlow b={b} />}
+      {sub === 'pva' && <PlannedVsActual projectId={projectId} b={b} />}
       {sub === 'pnl' && <Pnl b={b} />}
     </div>
   );
@@ -328,6 +331,65 @@ function Pnl({ b }: { b: Bundle }) {
         </table>
         <p className="muted small">Headline P&amp;L is accrual (billed vs cost); the monthly table is cash basis.</p>
       </div>
+    </div>
+  );
+}
+
+
+/**
+ * Planned vs Actual outflow by month (prototype parity, req 3e(3) spirit):
+ * planned = budgeted overhead lines + the auto-booked HR manpower cost;
+ * actual = recorded payments. Variance and cumulative variance expose
+ * months where spend runs ahead of or behind the plan.
+ */
+function PlannedVsActual({ projectId, b }: { projectId: string; b: Bundle }) {
+  const { provider } = useData();
+  const [overheads, setOverheads] = useState<OverheadLine[]>([]);
+  const [hrMonthly, setHrMonthly] = useState(0);
+  useEffect(() => {
+    let a = true;
+    void Promise.all([provider.listOverheads(projectId), provider.listHrUnits(projectId)]).then(([o, u]) => {
+      if (!a) return;
+      setOverheads(o);
+      setHrMonthly(nodeOwnHrMonthly(u, projectId));
+    });
+    return () => { a = false; };
+  }, [provider, projectId]);
+
+  const rows = TIMELINE.map((month, i) => {
+    const short = month; // TIMELINE labels are 'Mmm-YY'
+    const planned = overheads.filter((o) => o.month === short).reduce((s, o) => s + o.plannedCost, 0)
+      + hrMonthly; // HR establishment is a standing monthly cost
+    const actual = b.payments.filter((p) => p.month === short).reduce((s, p) => s + p.amount, 0);
+    return { month: short, planned, actual, variance: actual - planned, future: i > CURRENT_IDX };
+  });
+  let cum = 0;
+  const withCum = rows.map((r) => { if (!r.future) cum += r.variance; return { ...r, cumVariance: r.future ? null : cum }; });
+  const totP = rows.filter((r) => !r.future).reduce((s, r) => s + r.planned, 0);
+  const totA = rows.reduce((s, r) => s + r.actual, 0);
+
+  return (
+    <div>
+      <div className="section-head"><h3>Planned vs actual outflow</h3>
+        <span className="muted">To date: planned {formatMoney(totP)} · actual {formatMoney(totA)} · variance <span className={totA - totP > 0 ? 'neg' : 'pos'}>{formatMoney(totA - totP)}</span></span>
+      </div>
+      <table className="data-table" aria-label="Planned vs actual">
+        <thead><tr><th>Month</th><th className="num">Planned</th><th className="num">Actual</th><th className="num">Variance</th><th className="num">Cum. variance</th></tr></thead>
+        <tbody>
+          {withCum.map((r) => (
+            <tr key={r.month} className={r.future ? 'muted' : ''}>
+              <td>{r.month}{r.future ? ' ·' : ''}</td>
+              <td className="num">{formatMoney(r.planned)}</td>
+              <td className="num">{r.actual > 0 ? formatMoney(r.actual) : '—'}</td>
+              <td className={`num ${!r.future && r.variance > 0 ? 'neg' : ''}`}>{r.future ? '—' : formatMoney(r.variance)}</td>
+              <td className={`num ${r.cumVariance !== null && r.cumVariance > 0 ? 'neg' : ''}`}>{r.cumVariance === null ? '—' : formatMoney(r.cumVariance)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="muted small" style={{ marginTop: 8 }}>
+        Planned = budgeted overheads + auto-booked HR manpower ({formatMoney(hrMonthly)}/month). Actual = recorded payments. Positive variance (red) = spending ahead of plan. Future months shown dimmed.
+      </p>
     </div>
   );
 }

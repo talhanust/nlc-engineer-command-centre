@@ -4,7 +4,7 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
@@ -344,6 +344,9 @@ export class ApiDataProvider implements DataProvider {
   async setBoqMaterial(projectId: string, link: BoqMaterialLink): Promise<BoqMaterialLink> {
     return this.send<BoqMaterialLink>(`/api/projects/${projectId}/boq-material`, 'PUT', link);
   }
+  async removeBoqMaterial(projectId: string, boqItemId: string, materialRef: string): Promise<BoqMaterialLink[]> {
+    return (await this.send<{ items: BoqMaterialLink[] }>(`/api/projects/${projectId}/boq-material/remove`, 'POST', { boqItemId, materialRef })).items;
+  }
   async listReceipts(projectId: string): Promise<FinancialReceipt[]> {
     return (await this.get<{ items: FinancialReceipt[] }>(`/api/projects/${projectId}/receipts`)).items;
   }
@@ -406,6 +409,18 @@ export class ApiDataProvider implements DataProvider {
   }
   async addHireUtilization(projectId: string, hireNo: string, entry: { dated: string; units: number }): Promise<MachineryHire> {
     return this.send<MachineryHire>(`/api/projects/${projectId}/hires/${hireNo}/utilization`, 'POST', entry);
+  }
+  async listDirectives(): Promise<Directive[]> {
+    return (await this.get<{ items: Directive[] }>('/api/directives')).items;
+  }
+  async createDirective(input: Omit<Directive, 'id' | 'status' | 'responses' | 'createdAt' | 'updatedAt'>): Promise<Directive> {
+    return this.send<Directive>('/api/directives', 'POST', input);
+  }
+  async respondDirective(id: string, by: string, text: string, status?: DirectiveStatus): Promise<Directive[]> {
+    return (await this.send<{ items: Directive[] }>(`/api/directives/${id}/respond`, 'POST', { by, text, status })).items;
+  }
+  async setDirectiveStatus(id: string, status: DirectiveStatus, by: string): Promise<Directive[]> {
+    return (await this.send<{ items: Directive[] }>(`/api/directives/${id}/status`, 'POST', { status, by })).items;
   }
   async listUsers(): Promise<AppUser[]> {
     return (await this.get<{ items: AppUser[] }>('/api/users')).items;

@@ -4,7 +4,7 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
@@ -853,15 +853,22 @@ export class LocalDataProvider implements DataProvider {
     return all;
   }
   async listBoqMaterial(projectId: string): Promise<BoqMaterialLink[]> {
-    return readJson(matKey(projectId), () => []);
+    return readJson(matKey(projectId), () => gen(projectId)?.matLinks ?? []);
   }
   async setBoqMaterial(projectId: string, link: BoqMaterialLink): Promise<BoqMaterialLink> {
-    const all = readJson<BoqMaterialLink[]>(matKey(projectId), () => []);
-    const idx = all.findIndex((l) => l.boqItemId === link.boqItemId);
+    const all = readJson<BoqMaterialLink[]>(matKey(projectId), () => gen(projectId)?.matLinks ?? []);
+    // Composition: one BOQ item consumes MANY materials — upsert by (item, material).
+    const idx = all.findIndex((l) => l.boqItemId === link.boqItemId && l.materialRef === link.materialRef);
     if (idx >= 0) all[idx] = link;
     else all.push(link);
     writeJson(matKey(projectId), all);
     return link;
+  }
+  async removeBoqMaterial(projectId: string, boqItemId: string, materialRef: string): Promise<BoqMaterialLink[]> {
+    const all = readJson<BoqMaterialLink[]>(matKey(projectId), () => gen(projectId)?.matLinks ?? [])
+      .filter((l) => !(l.boqItemId === boqItemId && l.materialRef === materialRef));
+    writeJson(matKey(projectId), all);
+    return all;
   }
 
   // ---- Financial ----
@@ -1079,6 +1086,46 @@ export class LocalDataProvider implements DataProvider {
     return hire;
   }
 
+  async listDirectives(): Promise<Directive[]> {
+    return readJson(DIRECTIVES_KEY, () => []);
+  }
+  async createDirective(input: Omit<Directive, 'id' | 'status' | 'responses' | 'createdAt' | 'updatedAt'>): Promise<Directive> {
+    const all = readJson<Directive[]>(DIRECTIVES_KEY, () => []);
+    const now = new Date().toISOString();
+    const d: Directive = {
+      ...input, id: `dir-${Date.now().toString(36)}`,
+      title: sanitize(input.title), detail: sanitize(input.detail), issuedBy: sanitize(input.issuedBy),
+      status: 'issued', responses: [], createdAt: now, updatedAt: now,
+    };
+    all.unshift(d);
+    writeJson(DIRECTIVES_KEY, all);
+    audit(input.projectId ?? input.nodeId, 'issue', 'Directive', d.title.slice(0, 40), `to ${d.assigneeRole} by ${d.issuedBy}, due ${d.dueDate}`);
+    return d;
+  }
+  async respondDirective(id: string, by: string, text: string, status?: DirectiveStatus): Promise<Directive[]> {
+    const all = readJson<Directive[]>(DIRECTIVES_KEY, () => []);
+    const d = all.find((x) => x.id === id);
+    if (d) {
+      d.responses.push({ id: `dr-${Date.now().toString(36)}`, by: sanitize(by), at: new Date().toISOString(), text: sanitize(text) });
+      if (status) d.status = status;
+      else if (d.status === 'issued') d.status = 'acknowledged';
+      d.updatedAt = new Date().toISOString();
+      writeJson(DIRECTIVES_KEY, all);
+      audit(d.projectId ?? d.nodeId, 'respond', 'Directive', d.title.slice(0, 40), `${by}${status ? ` → ${status}` : ''}`);
+    }
+    return all;
+  }
+  async setDirectiveStatus(id: string, status: DirectiveStatus, by: string): Promise<Directive[]> {
+    const all = readJson<Directive[]>(DIRECTIVES_KEY, () => []);
+    const d = all.find((x) => x.id === id);
+    if (d) {
+      d.status = status;
+      d.updatedAt = new Date().toISOString();
+      writeJson(DIRECTIVES_KEY, all);
+      audit(d.projectId ?? d.nodeId, status, 'Directive', d.title.slice(0, 40), by);
+    }
+    return all;
+  }
   async listUsers(): Promise<AppUser[]> {
     return readJson(USERS_KEY, () => SEED_USERS);
   }
@@ -1775,7 +1822,7 @@ const projectsKey = 'nlc-ecc.projects';
 const seedVersionKey = 'nlc-ecc.seedVersion';
 // Bump when the bundled project roster / seed changes so existing cached stores
 // pick up newly-seeded projects and nodes without losing user-created data.
-const SEED_VERSION = '2026-06-23.v7-flagship-ipc-lines';
+const SEED_VERSION = '2026-07-04.v8-material-compositions';
 
 /** Merge any newly-seeded projects/nodes into an already-persisted store and
  *  backfill date/coordinate fields on seeded projects. Runs once per version. */
@@ -1821,7 +1868,7 @@ function reconcileSeed(): void {
         'boq', 'progress', 'ipcs', 'subs', 'rars', 'rarlinks', 'variations', 'contractsreg',
         'bankguarantees', 'dists', 'sched', 'escindices', 'epcs', 'resources', 'overheads',
         'receipts', 'payments', 'liabilities', 'suppliers', 'demands', 'salients',
-        'production', 'materialIssues', 'inventory', 'pol', 'fixedassets', 'advances',
+        'production', 'materialIssues', 'inventory', 'pol', 'fixedassets', 'advances', 'boqmat', 'machinery',
       ]) store.removeItem(`nlc-ecc.${k}.${F}`);
     } catch { /* ignore */ }
 
@@ -1845,6 +1892,7 @@ const issueKey = (pid: string) => `nlc-ecc.materialIssues.${pid}`;
 const machineryKey = (pid: string) => `nlc-ecc.machinery.${pid}`;
 const alertStateKey = (pid: string) => `nlc-ecc.alertstates.${pid}`;
 const USERS_KEY = 'nlc-ecc.users';
+const DIRECTIVES_KEY = 'nlc-ecc.directives';
 const SEED_USERS: AppUser[] = [
   { id: 'u-admin', name: 'System Admin', role: 'admin', nodeId: 'hq-nlc' },
   { id: 'u-gm-mon', name: 'GM Monitoring (HQ)', role: 'fm', nodeId: 'hq-nlc' },

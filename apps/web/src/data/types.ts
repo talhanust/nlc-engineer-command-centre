@@ -512,6 +512,33 @@ export interface AppUser {
   nodeId: string;  // org scope: this node and everything beneath it
 }
 
+/** Command directive (instruction) lifecycle: issued by a commander at a node,
+ * assigned to a role within a scope, acted upon and answered within time. */
+export type DirectiveStatus = 'issued' | 'acknowledged' | 'in_progress' | 'complied' | 'closed';
+export interface DirectiveResponse {
+  id: string;
+  by: string;       // acting role / user name
+  at: string;       // ISO
+  text: string;
+}
+export interface Directive {
+  id: string;
+  /** Org node whose commander issued it (scope of authority). */
+  nodeId: string;
+  /** Optional specific project it concerns. */
+  projectId?: string;
+  title: string;
+  detail: string;
+  issuedBy: string;      // name/role of the commander
+  assigneeRole: string;  // who must act
+  assigneeNodeId: string;// where (their scope)
+  dueDate: string;       // ISO date — overdue past this without compliance
+  status: DirectiveStatus;
+  responses: DirectiveResponse[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** Triage status of a computed alert (req 3i(2)): flag → acknowledge → resolve, or mute with reason. */
 export type AlertStatus = 'open' | 'ack' | 'resolved' | 'muted';
 export interface AlertState {
@@ -858,6 +885,8 @@ export interface DataProvider {
   /** Upsert keyed by (boqItemId, activityId) — a BOQ item may map to many activities and vice versa. */
   setBoqWbs(projectId: string, link: BoqWbsLink): Promise<BoqWbsLink>;
   removeBoqWbs(projectId: string, boqItemId: string, activityId: string): Promise<BoqWbsLink[]>;
+  /** A BOQ item is a material COMPOSITION (e.g. concrete = cement + sand + crush + admixture): upsert keyed by (boqItemId, materialRef). */
+  removeBoqMaterial(projectId: string, boqItemId: string, materialRef: string): Promise<BoqMaterialLink[]>;
   listBoqMaterial(projectId: string): Promise<BoqMaterialLink[]>;
   setBoqMaterial(projectId: string, link: BoqMaterialLink): Promise<BoqMaterialLink>;
   // Financial
@@ -908,6 +937,10 @@ export interface DataProvider {
   // Audit
   listAudit(): Promise<AuditEntry[]>;
   /** Alert triage lifecycle (req 3i(2)): computed alerts carry stable ids; states persist triage. */
+  listDirectives(): Promise<Directive[]>;
+  createDirective(input: Omit<Directive, 'id' | 'status' | 'responses' | 'createdAt' | 'updatedAt'>): Promise<Directive>;
+  respondDirective(id: string, by: string, text: string, status?: DirectiveStatus): Promise<Directive[]>;
+  setDirectiveStatus(id: string, status: DirectiveStatus, by: string): Promise<Directive[]>;
   listUsers(): Promise<AppUser[]>;
   upsertUser(input: Omit<AppUser, 'id'> & { id?: string }): Promise<AppUser[]>;
   deleteUser(id: string): Promise<AppUser[]>;

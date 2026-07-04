@@ -1,6 +1,60 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-07-04 — Multi-material BOQ compositions; command directives; staff-section HQ dashboards
+- Multi-material composition (civil practice: concrete = cement + sand + crush gradations +
+  admixture). Fixed the model: setBoqMaterial now upserts by (boqItemId, materialRef) — it
+  previously REPLACED by item, silently limiting every BOQ item to ONE material; added
+  removeBoqMaterial (types + Local + Api). The Mapping "BOQ → Material composition" page is now a
+  composition editor: per item, multiple material rows with editable coeff, the DERIVED TAKE-OFF
+  (item qty × coeff) per material, remove ×, an add-material row, plus search and
+  All/Composed/No-composition pills. The generator seeds realistic compositions (concrete-class →
+  CEM 7.2/SAND 16/CRUSH-10 9/CRUSH-20 18/ADMIX 1.1 with lead days; surfacing → BITUMEN/AGG-ASPHALT;
+  base → AGG-BASE); seed v8 clears stale flagship boqmat/machinery caches. Downstream flows
+  unchanged and now composition-aware for free: lead-time planner aggregates per material across
+  items, procurement dashboard, issues/recovery, RAR netting.
+- Command directives (issue → act → respond). New Directive model (title, detail, issuedBy,
+  assignee role + scope node, optional project, due date, status issued → acknowledged →
+  in_progress → complied → closed, response thread) with provider
+  list/create/respond/setStatus (global key nlc-ecc.directives; Api stubs; every step audited).
+  DirectivesPanel card on the command dashboard: commanders (PD/FM/admin) issue instructions
+  scoped to any node/project under them; assignees respond (auto-acknowledge), mark complied,
+  issuer closes; OVERDUE rows alarm (⛔ + count pill). Pending directives flow into the assignee's
+  My-Approvals worklist + bell via directiveWorklist (overdue flagged in the action) — the
+  "timely response" enforcement.
+- Staff-section dashboards at HQ levels. New SectionDashboards card (non-project nodes):
+  Monitoring / Planning / Procurement / Finance / CONTRACTS sections, each rolling its OWN domain
+  across every under-command project, PD-wise → project-wise with a PD filter and per-row alarms,
+  every row deep-linking to the screen where the section acts. Contracts Sec shows CAs count,
+  contractors, CA value, RAR billed and TO-RECOVER (material+machinery) with unrecovered alarms;
+  Procurement Sec: demands/pending-in-chain/committed/paid; Finance Sec: receipts/payments/net/
+  liabilities; Planning Sec: planned/actual/slippage + diverging-activity count; Monitoring Sec:
+  health score components. Command Section = the dashboard itself + directives register.
+- Fixed a TDZ bug (underCommand read `node` before destructuring). Tests: composition upsert/
+  remove + seeded concrete recipe + editor add-material; directive lifecycle + worklist routing +
+  dashboard issue flow; contracts/finance section render with PD filter. Web 381 (64 files);
+  server 9; both builds green.
+
+2026-07-04 — Prototype-parity gap closure: procurement dashboard + material issues, mapping smart filters, financial Planned-vs-Actual
+- Audited the Unified Control prototype (v1.43, 27k lines) tab-by-tab against the app: Execution
+  already exceeds it (schedule, look-ahead, S-curve, progress, period-map, overheads, production,
+  resources); Store/Plant/Equipment live under Procurement by design. Four genuine gaps closed:
+- Procurement Dashboard (new default sub): committed → incurred → paid pipeline KPIs — pending
+  approvals, demands raised, committed (POs), paid to suppliers, MATERIAL TO RECOVER, MACHINERY TO
+  RECOVER, lead-times at risk — every card click-drills into its sub-tab.
+- Material Issues register (screens/procurement/MaterialIssuesTab.tsx): issue material to site or
+  a contractor (code, qty, rate, issued-to), edit recovered-to-date, per-contractor recovery
+  summary. Contractor issues feed RAR material recovery; consumption reduces lead-time stock.
+- Pending-count subtab badges on Procurement (inbox = demands+payments in chain; per-tab counts),
+  refreshed live on 'nlc:audit'.
+- Mapping smart filtering (prototype parity + modern-app ask): free-text search across
+  code/description/bill/section, bill dropdown, and status pills All / Unmapped / Auto (pending) /
+  Confirmed with an N-of-M count — replaces the lone unmapped checkbox.
+- Financial "Planned vs Actual" sub: monthly planned outflow (budgeted overheads + auto-booked HR
+  manpower) vs actual payments, variance + cumulative variance, future months dimmed.
+- Legacy procurement tests updated for the new default sub and badge-suffixed tab names. Web 373
+  (63 files); server 9; typecheck clean; both builds green.
+
 2026-07-03 — Unified approver work-list with bell notification; BOQ references on payments
 - Unified work-list (closes the last 3h(4) partial). New domain/worklist.ts projectWorklist():
   every record whose NEXT approval step belongs to the acting role, across modules — IPCs (status

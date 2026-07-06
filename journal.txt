@@ -1,6 +1,46 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-07-04 — Lock enforcement (BOQ/mapping) + distribution-freeze enforcement at award (spec §3, §4)
+- Baseline lock now ENFORCES. BoqRegister: the baseline lock banner drives a baselineLocked flag
+  (kept separate from the legacy workflow-strip lock; effective locked = either), disabling the
+  BOQ Import button with a "raise a variation order" hint. MappingTab threads a mapLocked flag
+  into WbsMapping + MaterialMapping: every mutator (setBoqWbs link add/remove, weight, confirm,
+  accept-all, composition upsert/remove) early-returns when locked, and the Add-material row is
+  replaced by a "locked" marker.
+- Distribution freeze (spec §4). New domain/distributionFreeze.ts: itemFreezes(items, contracts,
+  dists) computes, per BOQ item, the quantity frozen by AWARDED contracts (awarded/in_progress/
+  completed/closed) with remaining distributable qty and holding contractors; distributionChange
+  Blocked(next, prev, freeze) returns null or a reason — blocks reducing/reassigning a frozen
+  allocation and over-allocating an item beyond what awarded contracts left. Enforced inside
+  LocalDataProvider.setDistribution (throws on a blocked change); provider.listItemFreezes()
+  exposes the frozen map (+ interface + Api stub).
+- DistributionsTab surfaces it: a "🔒 N frozen · M left" line per affected item, and update()
+  now try/catches the setter — a blocked change reverts the optimistic edit and toasts the reason.
+- Tests: freeze math (only awarded contractors freeze; remainder awardable; over-allocation
+  blocked), provider setDistribution throwing on a frozen reduction, and a lock-enforcement UI
+  test (locking the BOQ disables Import). Full suite 442 (76 files); server 9; both builds green;
+  whole-project typecheck clean.
+
+2026-07-04 — Baseline lock ladders: BOQ / Schedule / Mapping validate→lock + Comd-Engrs revision (spec §3)
+- baselineLockChain(kind) + baselineRevisionChain(kind) on the engine. BOQ: Planning Engr → DPM →
+  SPM validate → Manager Plans (HQ PD) LOCKS. Schedule: DPM → SPM → SM/Manager Plans locks.
+  Mapping: Planning Engr + Procurement Mgr + DPM + SPM validate → SM Procurement reviews →
+  SM/Manager Plans locks. Revision (any register): SPM requests → SM Plans reviews → COMD ENGRS
+  authorises.
+- BaselineLock state (per project × kind: open→locking→locked→revising, chain, lockedBy/At,
+  revisionNo) with provider get/submit/act/return/requestRevision (key nlc-ecc.baselinelocks.
+  <pid>; a locking chain that completes sets locked; a revising chain that completes re-locks and
+  BUMPS revisionNo; audited; Api stubs).
+- components/BaselineLockBanner.tsx atop the BOQ (BoqRegister), Schedule (ExecutionTab schedule
+  sub) and Mapping (MappingTab) tabs: shows state (Draft / Locking / Locked · rev N by … /
+  Revision in progress), Submit-for-lock (SQS/Planning Engr/SPM/admin), Request-revision after
+  lock (SPM/admin), and the shared act/return/resubmit controls gated to the current appointment;
+  exposes onChange(locked) so hosts can disable editing next.
+- Tests: three ladder shapes + revision-to-Comd; provider submit→lock→revision→re-lock bumping
+  revisionNo, return holding 'locking'; pure-engine mapping approval; UI banner submit flow. Full
+  unsharded suite 438 (75 files); server 9; both builds green; whole-project typecheck clean.
+
 2026-07-04 — Supplier-bill chains: central (CFO) & local (PD), generated from CRVs (spec §6)
 - supplierBillChain(kind) on the engine: Procurement Engineer generates → SPM verifies → SM
   Procurement (HQ PD) reviews → PRE-AUDIT audits → SM Finance (HQ PD) processes → DPD recommends

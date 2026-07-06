@@ -244,3 +244,19 @@ export function baselineRevisionChain(kind: BaselineKind): ApptChainStep[] {
   void kind;
   return base;
 }
+
+
+/**
+ * Machinery inter-project transfer ladder (spec §6): SM Procurement (HQ PD)
+ * moves integral plant between projects — locked and booked to the receiving
+ * project, technically justified against BOQ quantities. Approval runs DPD →
+ * PD → SM Procurement (HQ Engrs).
+ */
+export function machineryTransferChain(): ApptChainStep[] {
+  return [
+    { appointmentId: 'sm_proc_pd', action: 'recommend', label: 'SM Procurement (HQ PD) initiates transfer' },
+    { appointmentId: 'dpd', action: 'recommend', label: 'DPD recommends' },
+    { appointmentId: 'pd', action: 'recommend', label: 'Projects Director recommends' },
+    { appointmentId: 'sm_proc_engrs', action: 'approve', label: 'SM Procurement (HQ Engrs) approves transfer' },
+  ];
+}

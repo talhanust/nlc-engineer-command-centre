@@ -1,0 +1,156 @@
+import { contractApprover } from './appointments';
+
+/**
+ * Appointment chain engine (Requirements v2 §4, §9 A2/A4/A5):
+ *  - every step is a NAMED APPOINTMENT that formally acts in-app (A2 —
+ *    intermediates like DPD / Dy Comd are real steps, not visibility);
+ *  - any step may RETURN FOR CORRECTION with remarks (A5) — the file goes back
+ *    to the originator and, on resubmission, the chain restarts from step one
+ *    (so a revised contract value RE-ROUTES to the new competent authority, A4);
+ *  - the full history (who, what, when, remarks) is preserved on the state.
+ * Pure and serializable — persisted on the owning record.
+ */
+
+export type ChainAction = 'validate' | 'recommend' | 'review' | 'audit' | 'endorse' | 'approve';
+
+export interface ApptChainStep {
+  appointmentId: string;
+  action: ChainAction;
+  label: string;
+}
+
+export interface ApptChainEvent {
+  stepIndex: number;
+  appointmentId: string;
+  kind: 'acted' | 'returned' | 'resubmitted';
+  by: string;
+  at: string;
+  remarks?: string;
+}
+
+export interface ApptChainState {
+  steps: ApptChainStep[];
+  currentIndex: number;
+  status: 'in_progress' | 'returned' | 'approved';
+  history: ApptChainEvent[];
+}
+
+export function newChain(steps: ApptChainStep[]): ApptChainState {
+  return { steps, currentIndex: 0, status: 'in_progress', history: [] };
+}
+
+export function currentStep(state: ApptChainState): ApptChainStep | null {
+  return state.status === 'in_progress' ? state.steps[state.currentIndex] ?? null : null;
+}
+
+/** The current-step appointment acts; the last step's act approves the file. */
+export function act(state: ApptChainState, by: string, remarks?: string): ApptChainState {
+  const step = currentStep(state);
+  if (!step) return state;
+  const history = [...state.history, {
+    stepIndex: state.currentIndex, appointmentId: step.appointmentId,
+    kind: 'acted' as const, by, at: new Date().toISOString(), remarks,
+  }];
+  const last = state.currentIndex >= state.steps.length - 1;
+  return { ...state, history, currentIndex: last ? state.currentIndex : state.currentIndex + 1, status: last ? 'approved' : 'in_progress' };
+}
+
+/** Any current step may return the file for correction with remarks (A5). */
+export function returnForCorrection(state: ApptChainState, by: string, remarks: string): ApptChainState {
+  const step = currentStep(state);
+  if (!step) return state;
+  return {
+    ...state,
+    status: 'returned',
+    history: [...state.history, {
+      stepIndex: state.currentIndex, appointmentId: step.appointmentId,
+      kind: 'returned' as const, by, at: new Date().toISOString(), remarks,
+    }],
+  };
+}
+
+/** Resubmission after correction: the chain restarts; steps may be REBUILT
+ * (e.g. a revised value routes to a different competent authority, A4). */
+export function resubmit(state: ApptChainState, by: string, newSteps?: ApptChainStep[]): ApptChainState {
+  if (state.status !== 'returned') return state;
+  return {
+    steps: newSteps ?? state.steps,
+    currentIndex: 0,
+    status: 'in_progress',
+    history: [...state.history, {
+      stepIndex: -1, appointmentId: 'originator', kind: 'resubmitted' as const, by, at: new Date().toISOString(),
+    }],
+  };
+}
+
+/**
+ * Contract approval ladder (spec §4): project validation → HQ PD review →
+ * competent authority by type & value (labour 15/30 Mn, sublet 150/300 Mn),
+ * with every intermediate acting formally through the proper channel.
+ */
+export function contractApprovalChain(kind: 'labour' | 'sublet', value: number): ApptChainStep[] {
+  const steps: ApptChainStep[] = [
+    { appointmentId: 'dpm', action: 'validate', label: 'DPM validates' },
+    { appointmentId: 'spm', action: 'validate', label: 'SPM validates' },
+    { appointmentId: 'sm_contracts_pd', action: 'review', label: 'SM/Manager Contracts (HQ PD) reviews' },
+    { appointmentId: 'dpd', action: 'recommend', label: 'DPD recommends' },
+  ];
+  const authority = contractApprover(kind, value);
+  if (authority === 'pd') {
+    steps.push({ appointmentId: 'pd', action: 'approve', label: 'Projects Director approves' });
+    return steps;
+  }
+  steps.push({ appointmentId: 'pd', action: 'recommend', label: 'Projects Director recommends' });
+  steps.push({ appointmentId: 'sm_contracts_engrs', action: 'review', label: 'SM Contracts (HQ Engrs) reviews' });
+  steps.push({ appointmentId: 'dy_comd_engrs', action: 'recommend', label: 'Dy Comd Engrs recommends' });
+  if (authority === 'comd_engrs') {
+    steps.push({ appointmentId: 'comd_engrs', action: 'approve', label: 'Comd Engineers approves' });
+    return steps;
+  }
+  steps.push({ appointmentId: 'comd_engrs', action: 'endorse', label: 'Comd Engineers endorses' });
+  steps.push({ appointmentId: 'dir_ops', action: 'review', label: 'Dir Ops (HQ NLC) reviews' });
+  steps.push({ appointmentId: 'coo_ops', action: 'recommend', label: 'COO Ops recommends' });
+  steps.push({ appointmentId: 'dg', action: 'approve', label: 'DG NLC approves' });
+  return steps;
+}
+
+
+/**
+ * RAR approval ladder (spec §5, A7 — EPC subcontractors byte-identical):
+ * project scrutiny → HQ PD review → PRE-AUDIT → command approval → payment.
+ */
+export function rarApprovalChain(): ApptChainStep[] {
+  return [
+    { appointmentId: 'contract_engr', action: 'review', label: 'Contract Engineer reviews' },
+    { appointmentId: 'dpm', action: 'endorse', label: 'DPM endorses' },
+    { appointmentId: 'spm', action: 'endorse', label: 'SPM endorses' },
+    { appointmentId: 'sm_contracts_pd', action: 'review', label: 'Manager Contracts (HQ PD) reviews' },
+    { appointmentId: 'pre_audit', action: 'audit', label: 'Pre-Audit audits' },
+    { appointmentId: 'dpd', action: 'recommend', label: 'DPD recommends' },
+    { appointmentId: 'pd', action: 'approve', label: 'Projects Director approves' },
+    { appointmentId: 'sm_fin_pd', action: 'approve', label: 'SM/Manager Finance pays & issues cheque' },
+  ];
+}
+
+
+/**
+ * Project HR authorisation ladder (spec §2 step 4, §9 A3):
+ * PD recommends → SM HR (HQ Engrs) reviews → then by DELEGATION:
+ *   grades 1–16                  → Comd Engineers APPROVES (ends);
+ *   grade 17+ or the overall TOHR → Comd Engrs endorses → Dir HR reviews → DG NLC approves.
+ */
+export function hrApprovalChain(scope: { maxGrade: number } | { kind: 'tohr' }): ApptChainStep[] {
+  const steps: ApptChainStep[] = [
+    { appointmentId: 'pd', action: 'recommend', label: 'Projects Director recommends' },
+    { appointmentId: 'sm_hr_engrs', action: 'review', label: 'SM HR (HQ Engrs) reviews' },
+  ];
+  const toDg = 'kind' in scope ? true : scope.maxGrade >= 17;
+  if (!toDg) {
+    steps.push({ appointmentId: 'comd_engrs', action: 'approve', label: 'Comd Engineers approves (delegated, Gr 1–16)' });
+    return steps;
+  }
+  steps.push({ appointmentId: 'comd_engrs', action: 'endorse', label: 'Comd Engineers endorses' });
+  steps.push({ appointmentId: 'dir_hr', action: 'review', label: 'Dir HR (HQ NLC) reviews' });
+  steps.push({ appointmentId: 'dg', action: 'approve', label: 'DG NLC approves' });
+  return steps;
+}

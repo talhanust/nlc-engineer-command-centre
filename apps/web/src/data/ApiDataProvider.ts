@@ -4,7 +4,7 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry, SupplierBill,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
@@ -464,6 +464,24 @@ export class ApiDataProvider implements DataProvider {
   }
   async acknowledgeMarkInput(id: string, by: string): Promise<MarkInput[]> {
     return (await this.send<{ items: MarkInput[] }>(`/api/mark-inputs/${id}/ack`, 'POST', { by })).items;
+  }
+  async listSupplierBills(projectId: string): Promise<SupplierBill[]> {
+    return (await this.get<{ items: SupplierBill[] }>(`/api/projects/${projectId}/supplier-bills`)).items;
+  }
+  async generateSupplierBillFromCrvs(projectId: string, poIds: string[], by: string): Promise<SupplierBill> {
+    return this.send<SupplierBill>(`/api/projects/${projectId}/supplier-bills/generate`, 'POST', { poIds, by });
+  }
+  async submitSupplierBill(projectId: string, id: string, by: string): Promise<SupplierBill> {
+    return this.send<SupplierBill>(`/api/projects/${projectId}/supplier-bills/${id}/submit`, 'POST', { by });
+  }
+  async actOnSupplierBill(projectId: string, id: string, by: string, remarks?: string): Promise<SupplierBill> {
+    return this.send<SupplierBill>(`/api/projects/${projectId}/supplier-bills/${id}/act`, 'POST', { by, remarks });
+  }
+  async returnSupplierBill(projectId: string, id: string, by: string, remarks: string): Promise<SupplierBill> {
+    return this.send<SupplierBill>(`/api/projects/${projectId}/supplier-bills/${id}/return`, 'POST', { by, remarks });
+  }
+  async resubmitSupplierBill(projectId: string, id: string, by: string): Promise<SupplierBill> {
+    return this.send<SupplierBill>(`/api/projects/${projectId}/supplier-bills/${id}/resubmit`, 'POST', { by });
   }
   async listDlpDefects(projectId: string): Promise<DlpDefect[]> {
     return (await this.get<{ items: DlpDefect[] }>(`/api/projects/${projectId}/dlp-defects`)).items;

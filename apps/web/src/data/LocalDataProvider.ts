@@ -4,14 +4,14 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry, SupplierBill, SupplierBillLine,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
 import { itemAmount } from '../domain/boq';
 import { APPOINTMENTS, legacyRoleFor } from '../domain/appointments';
 import { DEFAULT_MIX_DESIGNS, type MixDesign } from '../domain/mixdesigns';
-import { newChain, act, returnForCorrection, resubmit, contractApprovalChain, rarApprovalChain, hrApprovalChain } from '../domain/apptchain';
+import { newChain, act, returnForCorrection, resubmit, contractApprovalChain, rarApprovalChain, hrApprovalChain, supplierBillChain, isCentralMaterial } from '../domain/apptchain';
 import { applyAction, computeNet, IPC_PIPELINE, DEFAULT_COMMERCIAL_CONFIG, DEFAULT_CONTRACT_RETENTION_PCT } from '../domain/ipc';
 import { DEFAULT_PBS_COMPONENTS, type EscalationComponent } from '../domain/escalation';
 import { applyVoAction, applyVariationToBoq, variationLinesAmount, dominantVariationType } from '../domain/variations';
@@ -1256,6 +1256,69 @@ export class LocalDataProvider implements DataProvider {
     }
     return all;
   }
+  async listSupplierBills(projectId: string): Promise<SupplierBill[]> {
+    return readJson(billKey(projectId), () => []);
+  }
+  async generateSupplierBillFromCrvs(projectId: string, poIds: string[], _by: string): Promise<SupplierBill> {
+    // Bill-from-CRV (spec §6): sum received qtys across the POs' CRVs, priced at master rates.
+    const [pos, crvs, master] = await Promise.all([
+      this.listPurchaseOrders(projectId), this.listCrvs(projectId), this.listMaterialMaster(projectId),
+    ]);
+    const rateOf = new Map(master.map((m) => [m.code, m.standardRate]));
+    const poSet = new Set(poIds);
+    const selectedPos = pos.filter((p) => poSet.has(p.id));
+    const supplierId = selectedPos[0]?.supplierId ?? '';
+    const relevantCrvs = crvs.filter((c) => poSet.has(c.poId));
+    const agg = new Map<string, { qty: number; crvId: string }>();
+    for (const c of relevantCrvs) {
+      for (const line of c.received) {
+        const cur = agg.get(line.code) ?? { qty: 0, crvId: c.id };
+        cur.qty += line.qtyReceived;
+        agg.set(line.code, cur);
+      }
+    }
+    const lines: SupplierBillLine[] = [...agg.entries()].map(([materialCode, v]) => {
+      const rate = rateOf.get(materialCode) ?? 0;
+      return { crvId: v.crvId, materialCode, qty: +v.qty.toFixed(2), rate, amount: +(v.qty * rate).toFixed(2) };
+    });
+    const amount = +lines.reduce((sum, l) => sum + l.amount, 0).toFixed(2);
+    const kind: 'central' | 'local' = lines.some((l) => isCentralMaterial(l.materialCode)) ? 'central' : 'local';
+    const all = readJson<SupplierBill[]>(billKey(projectId), () => []);
+    const bill: SupplierBill = {
+      id: `bill-${projectId}-${all.length + 1}`, projectId,
+      billNo: `SB-${String(all.length + 1).padStart(2, '0')}`, supplierId,
+      poIds: [...poSet], lines, amount, kind, status: 'draft', createdAt: new Date().toISOString(),
+    };
+    all.unshift(bill);
+    writeJson(billKey(projectId), all);
+    audit(projectId, 'generate', 'Supplier bill', bill.billNo, `${kind} · ${Math.round(amount)}`);
+    return bill;
+  }
+  private mutateBill(projectId: string, id: string, fn: (b: SupplierBill) => SupplierBill, action: string, by: string): SupplierBill {
+    const all = readJson<SupplierBill[]>(billKey(projectId), () => []);
+    const idx = all.findIndex((b) => b.id === id);
+    if (idx < 0) throw new Error('supplier bill not found');
+    all[idx] = fn(all[idx]);
+    writeJson(billKey(projectId), all);
+    audit(projectId, action, 'Supplier bill', all[idx].billNo, by);
+    return JSON.parse(JSON.stringify(all[idx])) as SupplierBill;
+  }
+  async submitSupplierBill(projectId: string, id: string, by: string): Promise<SupplierBill> {
+    return this.mutateBill(projectId, id, (b) => ({ ...b, status: 'in_chain', chain: newChain(supplierBillChain(b.kind)) }), 'submit_approval', by);
+  }
+  async actOnSupplierBill(projectId: string, id: string, by: string, remarks?: string): Promise<SupplierBill> {
+    return this.mutateBill(projectId, id, (b) => {
+      if (!b.chain) return b;
+      const chain = act(b.chain, by, remarks);
+      return { ...b, chain, status: chain.status === 'approved' ? 'paid' : b.status };
+    }, 'chain_act', by);
+  }
+  async returnSupplierBill(projectId: string, id: string, by: string, remarks: string): Promise<SupplierBill> {
+    return this.mutateBill(projectId, id, (b) => (b.chain ? { ...b, chain: returnForCorrection(b.chain, by, remarks) } : b), 'chain_return', by);
+  }
+  async resubmitSupplierBill(projectId: string, id: string, by: string): Promise<SupplierBill> {
+    return this.mutateBill(projectId, id, (b) => (b.chain ? { ...b, chain: resubmit(b.chain, by, supplierBillChain(b.kind)) } : b), 'chain_resubmit', by);
+  }
   async listDlpDefects(projectId: string): Promise<DlpDefect[]> {
     return readJson(dlpKey(projectId), () => DLP_SEED[projectId] ?? []);
   }
@@ -2119,6 +2182,7 @@ const supplierKey = (pid: string) => `nlc-ecc.suppliers.${pid}`;
 const demandKey = (pid: string) => `nlc-ecc.demands.${pid}`;
 const poKey = (pid: string) => `nlc-ecc.pos.${pid}`;
 const crvKey = (pid: string) => `nlc-ecc.crvs.${pid}`;
+const billKey = (pid: string) => `nlc-ecc.supplierbills.${pid}`;
 const ppayKey = (pid: string) => `nlc-ecc.ppays.${pid}`;
 const hireKey = (pid: string) => `nlc-ecc.hires.${pid}`;
 const prodKey = (pid: string) => `nlc-ecc.production.${pid}`;

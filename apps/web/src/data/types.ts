@@ -584,6 +584,29 @@ export interface DlpDefect {
   rectifiedDate?: string;
 }
 
+/** Supplier bill generated from CRVs against POs (spec §6). Its material
+ * class (central: Cement/Steel/Bitumen → CFO; local → PD) routes the ladder. */
+export interface SupplierBillLine {
+  crvId: string;
+  materialCode: string;
+  qty: number;
+  rate: number;
+  amount: number;
+}
+export interface SupplierBill {
+  id: string;
+  projectId: string;
+  billNo: string;
+  supplierId: string;
+  poIds: string[];
+  lines: SupplierBillLine[];
+  amount: number;
+  kind: 'central' | 'local';
+  status: 'draft' | 'in_chain' | 'paid';
+  chain?: import('../domain/apptchain').ApptChainState;
+  createdAt: string;
+}
+
 /** Controlled material catalogue: code, unit, spec and standard rate. Feeds
  * composition rate-analysis, issue-rate defaults and lead-time defaults. */
 export interface MaterialMaster {
@@ -1041,6 +1064,12 @@ export interface DataProvider {
   listMarkInputs(): Promise<MarkInput[]>;
   createMarkInput(input: Omit<MarkInput, 'id' | 'status' | 'at'>): Promise<MarkInput>;
   acknowledgeMarkInput(id: string, by: string): Promise<MarkInput[]>;
+  listSupplierBills(projectId: string): Promise<SupplierBill[]>;
+  generateSupplierBillFromCrvs(projectId: string, poIds: string[], by: string): Promise<SupplierBill>;
+  submitSupplierBill(projectId: string, id: string, by: string): Promise<SupplierBill>;
+  actOnSupplierBill(projectId: string, id: string, by: string, remarks?: string): Promise<SupplierBill>;
+  returnSupplierBill(projectId: string, id: string, by: string, remarks: string): Promise<SupplierBill>;
+  resubmitSupplierBill(projectId: string, id: string, by: string): Promise<SupplierBill>;
   listDlpDefects(projectId: string): Promise<DlpDefect[]>;
   createDlpDefect(projectId: string, input: Omit<DlpDefect, 'id' | 'projectId' | 'status'>): Promise<DlpDefect>;
   setDlpDefectStatus(projectId: string, id: string, status: DlpDefect['status']): Promise<DlpDefect[]>;

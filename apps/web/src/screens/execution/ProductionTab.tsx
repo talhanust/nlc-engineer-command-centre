@@ -6,6 +6,7 @@ import { useData } from '../../data/DataContext';
 import { reconcileMaterials } from '../../domain/material';
 import { ChartCard, chartPalette } from '../../components/chartUtils';
 import type { ProductionRun, MaterialIssue, Crv } from '../../data/types';
+import { PlantProductionPanel } from './PlantProductionPanel';
 
 export function ProductionTab({ projectId }: { projectId: string }) {
   const { provider } = useData();
@@ -52,7 +53,8 @@ export function ProductionTab({ projectId }: { projectId: string }) {
 
   return (
     <div>
-      <div className="section-head"><h3>Production runs</h3><span className="muted">{runs.length} runs</span></div>
+      <PlantProductionPanel projectId={projectId} />
+      <div className="section-head" style={{ marginTop: 16 }}><h3>Production runs</h3><span className="muted">{runs.length} runs</span></div>
       <div className="card create-row">
         <input aria-label="Run date" type="date" value={pDate} onChange={(e) => setPDate(e.target.value)} />
         <input aria-label="Product" placeholder="Product" value={product} onChange={(e) => setProduct(e.target.value)} />

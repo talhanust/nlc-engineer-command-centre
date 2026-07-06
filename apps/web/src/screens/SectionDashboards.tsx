@@ -17,10 +17,10 @@ import type { OrgNode, Project } from '../data/types';
  * section is the main dashboard itself plus the directives register.
  */
 
-type Section = 'monitoring' | 'planning' | 'procurement' | 'finance' | 'contracts';
+type Section = 'monitoring' | 'planning' | 'procurement' | 'finance' | 'contracts' | 'recovery' | 'hr';
 const SECTIONS: Array<[Section, string]> = [
   ['monitoring', 'Monitoring Sec'], ['planning', 'Planning Sec'], ['procurement', 'Procurement Sec'],
-  ['finance', 'Finance Sec'], ['contracts', 'Contracts Sec'],
+  ['finance', 'Finance Sec'], ['contracts', 'Contracts Sec'], ['recovery', 'Recovery Sec'], ['hr', 'HR Sec'],
 ];
 
 interface Row {
@@ -38,6 +38,7 @@ export function SectionDashboards({ nodes, projects }: { node?: OrgNode; nodes: 
   const [section, setSection] = useState<Section>('contracts');
   const [rows, setRows] = useState<Row[]>([]);
   const [pdFilter, setPdFilter] = useState('all');
+  const [alarmsOnly, setAlarmsOnly] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const nameOf = useMemo(() => Object.fromEntries(nodes.map((n) => [n.id, n.name])), [nodes]);
@@ -120,6 +121,38 @@ export function SectionDashboards({ nodes, projects }: { node?: OrgNode; nodes: 
             cells: { 'Planned': formatPct(p.plannedPct), 'Actual': formatPct(p.actualPct), 'Slippage': formatPct(slippage), 'Diverging': diverging },
             alarms, href: `/node/${p.id}/execution`,
           });
+        } else if (section === 'recovery') {
+          // Recovery Sec: physically-completed projects — receivable + DLP position
+          const st = p.stage ?? 'ongoing';
+          if (st !== 'physically_completed') continue;
+          const [defects] = await Promise.all([provider.listDlpDefects(p.id)]);
+          const billed = Number(p.billedToDate), received = Number(p.receivedToDate);
+          const receivable = billed - received;
+          const openDefects = defects.filter((d) => d.status === 'open').length;
+          const pct = billed > 0 ? Math.round((received / billed) * 100) : 100;
+          const alarms: string[] = [];
+          if (receivable > 0) alarms.push(`${formatMoney(receivable)} receivable`);
+          if (openDefects > 0) alarms.push(`${openDefects} open defect${openDefects === 1 ? '' : 's'}`);
+          out.push({
+            ...base,
+            cells: { 'Collected': `${pct}%`, 'Receivable': formatMoney(receivable), 'DLP defects': openDefects, 'TOC': p.tocDate ?? '—' },
+            alarms, href: `/node/${p.id}`,
+          });
+        } else if (section === 'hr') {
+          // HR Sec: authorisation status + key-appointment deployment
+          const proposals = await provider.listHrProposals(p.id);
+          const approved = proposals.filter((h) => h.status === 'approved');
+          const inChain = proposals.filter((h) => h.status === 'in_chain').length;
+          const seats = approved.reduce((sum, h) => sum + h.entries.reduce((a, e) => a + e.auth, 0), 0);
+          const hrOpen = p.hrApproved === false;
+          const alarms: string[] = [];
+          if (hrOpen) alarms.push('HR not yet approved');
+          if (inChain > 0) alarms.push(`${inChain} proposal${inChain === 1 ? '' : 's'} in chain`);
+          out.push({
+            ...base,
+            cells: { 'HR status': hrOpen ? 'pending' : 'approved', 'Key appts': seats, 'In chain': inChain, 'Proposals': proposals.length },
+            alarms, href: `/node/${p.id}`,
+          });
         } else {
           // monitoring — stage-aware: completed projects report the recovery position
           const st = p.stage ?? 'ongoing';
@@ -150,7 +183,8 @@ export function SectionDashboards({ nodes, projects }: { node?: OrgNode; nodes: 
   }, [provider, projects, section, nameOf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pds = useMemo(() => [...new Set(rows.map((r) => r.pdName))].sort(), [rows]);
-  const visible = pdFilter === 'all' ? rows : rows.filter((r) => r.pdName === pdFilter);
+  const byPd = pdFilter === 'all' ? rows : rows.filter((r) => r.pdName === pdFilter);
+  const visible = alarmsOnly ? byPd.filter((r) => r.alarms.length > 0) : byPd;
   const columns = visible[0] ? Object.keys(visible[0].cells) : [];
   const alarmCount = rows.filter((r) => r.alarms.length > 0).length;
 
@@ -167,12 +201,15 @@ export function SectionDashboards({ nodes, projects }: { node?: OrgNode; nodes: 
           <option value="all">All PDs</option>
           {pds.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
+        <label className="small" style={{ marginLeft: 4 }}>
+          <input type="checkbox" checked={alarmsOnly} onChange={(e) => setAlarmsOnly(e.target.checked)} aria-label="Alarms only" /> Alarms only
+        </label>
         {alarmCount > 0 && <span className="muted small">⚠ {alarmCount} project{alarmCount === 1 ? '' : 's'} with alarms</span>}
       </div>
 
       {loading ? <p className="muted small">Compiling section roll-up…</p> : (
         <table className="data-table" aria-label={`${section} section`}>
-          <thead><tr><th>PD</th><th>Project</th>{columns.map((c) => <th key={c} className={c === 'Contractors' ? '' : 'num'}>{c}</th>)}<th>Alarms</th></tr></thead>
+          <thead><tr><th>PD</th><th>Project</th>{columns.map((c) => <th key={c} className={c === 'Contractors' ? '' : 'num'}>{c}</th>)}<th>Alarms</th><th></th></tr></thead>
           <tbody>
             {visible.map((r) => (
               <tr key={r.projectId} className={`row-link${r.alarms.length ? ' row-flag' : ''}`} onClick={() => navigate(r.href)}>
@@ -180,6 +217,7 @@ export function SectionDashboards({ nodes, projects }: { node?: OrgNode; nodes: 
                 <td>{r.projectName}</td>
                 {columns.map((c) => <td key={c} className={c === 'Contractors' ? 'small' : 'num'}>{r.cells[c]}</td>)}
                 <td className="small">{r.alarms.length ? r.alarms.map((a) => <span key={a} className="neg" style={{ display: 'block' }}>⚠ {a}</span>) : <span className="muted">—</span>}</td>
+                <td><button className="link-btn small" aria-label={`Map ${r.projectName}`} onClick={(e) => { e.stopPropagation(); navigate(`/node/${r.projectId}`); }}>Open ↗</button></td>
               </tr>
             ))}
           </tbody>

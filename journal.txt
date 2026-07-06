@@ -1,6 +1,57 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-07-04 — Recovery + HR staff-section dashboards; per-section alarms-only filter
+- SectionDashboards gained two sections (now seven): RECOVERY SEC rolls up physically-completed
+  projects — % collected, receivable (billed−received), open DLP defects, TOC date — alarming on
+  outstanding receivable and open defects; HR SEC rolls up authorisation status per project — HR
+  pending/approved, key-appointment seats (Σ auth across approved proposals), proposals in chain,
+  total proposals — alarming when HR isn't yet approved or proposals sit in the ladder. Both
+  deep-link to the project screen.
+- Every section dashboard now has an "Alarms only" filter (focus on exceptions — matches the
+  no-noise requirement) and an "Open ↗" per-row action to jump to the project node. Recovery Sec
+  only lists physically_completed projects; the others are unchanged.
+- Tests: all seven section buttons present; Recovery Sec lists the completed project with its
+  receivable/DLP columns; HR Sec shows authorisation status; Alarms-only narrows the table to
+  flagged rows only. Suite 455 (79 files, shard 293+162); server 9; both builds green; whole-
+  project typecheck clean.
+
+2026-07-04 — Plant production runs consuming mix designs (spec §6)
+- ProductionRun extended with plant-production fields (mixDesignId, plantAssetId, constituent
+  consumption[], destination self|contractor, contractorId) alongside the existing free-form
+  fields. Provider recordPlantRun() looks up the mix design, computes constituent consumption via
+  runConsumption(design, outputQty), and writes a run tagged to the plant; plantMaterialBalance()
+  aggregates consumption per constituent across a plant's runs. Audited; Api stubs.
+- screens/execution/PlantProductionPanel.tsx on the Production & materials sub-tab: only shows
+  when a batching/asphalt plant is BOOKED to the project (ties into the machinery-transfer asset
+  model). Pick plant + mix-design grade + output qty + destination (self-execution, or contractor
+  with a recovery target for the RAR), live "will consume" preview, a per-plant material-
+  consumption table, and the plant-runs log showing grade, output, destination and constituents.
+- Tests: consumption math (C30 cement 8.4×50=420, balance accrual 840 over two runs), contractor-
+  recovery destination (AC-WEARING bitumen 0.045×100=4.5), unknown-design rejection, and a full
+  UI flow — transfer BP-30 in, then record a C20 run through the form. Suite 451 (78 files, shard
+  293+158); server 9; both builds green; whole-project typecheck clean.
+
+2026-07-04 — Machinery inter-project transfer with lock + booking (spec §6)
+- machineryTransferChain() on the engine: SM Procurement (HQ PD) initiates → DPD recommends → PD
+  recommends → SM Procurement (HQ Engrs) approves. New integral-asset model: MachineryAsset
+  (code, description, category plant/equipment/vehicle/batching_plant/asphalt_plant, current
+  ProjectId booking, locked flag) and MachineryTransfer (asset, from/to project, technical
+  justification, chain, status in_chain→approved/returned). Seeded a global asset pool
+  (EXC-320 & RLR-12T booked to the flagship, AP-120 to Attock, BP-30 & GRD-14 in HQ pool).
+- Provider (global keys nlc-ecc.machineryassets / .machinerytransfers): initiateMachineryTransfer
+  LOCKS the asset (rejects if already in flight); actOnMachineryTransfer walks the ladder and on
+  final approval BOOKS the asset to the receiving project and unlocks; returnMachineryTransfer
+  releases the lock without booking (asset stays put). All audited; Api stubs.
+- New Procurement → "Machinery transfer" tab: integral machinery booked here, a pool picker of
+  transferable assets (not booked here, not locked) with a mandatory technical justification vs
+  BOQ quantities (SM Proc PD / admin only), and the transfers register with the shared chain
+  controls. Asset shows "transfer in flight" while locked.
+- Tests: ladder shape + pure-engine approval; provider lock-on-initiate, second-transfer
+  rejection, book-on-approval, return-releases-lock; UI tab with booked asset + initiate control
+  under the SM Proc PD login. Full suite 447 (77 files); server 9; both builds green; whole-
+  project typecheck clean.
+
 2026-07-04 — Lock enforcement (BOQ/mapping) + distribution-freeze enforcement at award (spec §3, §4)
 - Baseline lock now ENFORCES. BoqRegister: the baseline lock banner drives a baselineLocked flag
   (kept separate from the legacy workflow-strip lock; effective locked = either), disabling the

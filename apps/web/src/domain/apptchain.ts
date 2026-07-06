@@ -154,3 +154,43 @@ export function hrApprovalChain(scope: { maxGrade: number } | { kind: 'tohr' }):
   steps.push({ appointmentId: 'dg', action: 'approve', label: 'DG NLC approves' });
   return steps;
 }
+
+
+/** Central materials procured for a project — the CFO-terminating supplier-bill
+ * chain applies (spec §6). Others are LOCAL (PD-terminating). */
+export const CENTRAL_MATERIALS = ['CEM', 'STEEL-60', 'BITUMEN'];
+
+export function isCentralMaterial(code: string): boolean {
+  return CENTRAL_MATERIALS.includes(code.trim().toUpperCase());
+}
+
+/**
+ * Supplier-bill approval ladder (spec §6). Generated from CRVs against POs:
+ * Procurement Engineer generates → SPM verifies → SM Procurement (HQ PD)
+ * reviews → PRE-AUDIT audits → then by material class:
+ *   LOCAL   → SM Finance (HQ PD) processes → DPD → PD approves → SM Finance pays;
+ *   CENTRAL → SM Finance (HQ PD) processes → DPD → PD → Comd Engrs (via Dir Sp
+ *             review) → CFO pays (through Dy Comd, Comd, Dir Sp per §6).
+ */
+export function supplierBillChain(kind: 'central' | 'local'): ApptChainStep[] {
+  const steps: ApptChainStep[] = [
+    { appointmentId: 'proc_engr', action: 'recommend', label: 'Procurement Engineer generates bill' },
+    { appointmentId: 'spm', action: 'validate', label: 'SPM verifies bill' },
+    { appointmentId: 'sm_proc_pd', action: 'review', label: 'SM Procurement (HQ PD) reviews' },
+    { appointmentId: 'pre_audit', action: 'audit', label: 'Pre-Audit audits' },
+    { appointmentId: 'sm_fin_pd', action: 'review', label: 'SM/Manager Finance (HQ PD) processes' },
+    { appointmentId: 'dpd', action: 'recommend', label: 'DPD recommends' },
+  ];
+  if (kind === 'local') {
+    steps.push({ appointmentId: 'pd', action: 'approve', label: 'Projects Director approves' });
+    steps.push({ appointmentId: 'sm_fin_pd', action: 'approve', label: 'SM/Manager Finance pays' });
+    return steps;
+  }
+  steps.push({ appointmentId: 'pd', action: 'recommend', label: 'Projects Director recommends' });
+  steps.push({ appointmentId: 'sm_proc_engrs', action: 'review', label: 'SM Procurement (HQ Engrs) reviews' });
+  steps.push({ appointmentId: 'dy_comd_engrs', action: 'recommend', label: 'Dy Comd Engrs recommends' });
+  steps.push({ appointmentId: 'comd_engrs', action: 'endorse', label: 'Comd Engineers endorses' });
+  steps.push({ appointmentId: 'dir_sp', action: 'review', label: 'Dir Sp (HQ NLC) reviews' });
+  steps.push({ appointmentId: 'cfo', action: 'approve', label: 'CFO pays' });
+  return steps;
+}

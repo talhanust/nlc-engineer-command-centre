@@ -14,6 +14,8 @@ import { BoqWorkflowStrip } from '../../components/BoqWorkflowStrip';
 const num = (n: number) => n.toLocaleString('en-PK');
 const money = (n: number) => (n > 0 ? formatMoney(n) : '—');
 
+import { BaselineLockBanner } from '../../components/BaselineLockBanner';
+
 export function BoqRegister({ projectId }: { projectId: string }) {
   const { provider } = useData();
   const [items, setItems] = useState<BoqItem[]>([]);
@@ -21,7 +23,9 @@ export function BoqRegister({ projectId }: { projectId: string }) {
   const [progress, setProgress] = useState<ProgressUpdate[]>([]);
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
   const [importing, setImporting] = useState(false);
-  const [locked, setLocked] = useState(false);
+  const [baselineLocked, setBaselineLocked] = useState(false);
+  const [workflowLocked, setWorkflowLocked] = useState(false);
+  const locked = baselineLocked || workflowLocked;
   const [search, setSearch] = useState('');
   const [bill, setBill] = useState('all');
   const [status, setStatus] = useState('all');
@@ -46,7 +50,8 @@ export function BoqRegister({ projectId }: { projectId: string }) {
 
   return (
     <div>
-      <BoqWorkflowStrip projectId={projectId} onChange={setLocked} />
+      <BaselineLockBanner projectId={projectId} kind="boq" onChange={setBaselineLocked} />
+      <BoqWorkflowStrip projectId={projectId} onChange={setWorkflowLocked} />
       <div className="section-head">
         <div>
           <h3>Bill of Quantities</h3>

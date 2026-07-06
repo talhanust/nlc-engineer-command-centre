@@ -3,6 +3,7 @@ import { useData } from '../../data/DataContext';
 import { materialCoverage, valueCoverage, activityCoverage, linksByItem, effectiveWeight, type Coverage } from '../../domain/mapping';
 import { suggestWbsLinks } from '../../domain/mappingSuggest';
 import { rateAnalysis } from '../../domain/rateanalysis';
+import { BaselineLockBanner } from '../../components/BaselineLockBanner';
 import { formatMoney } from '../../domain/money';
 import { materialRecovery, issueValue, totalBalanceToRecover } from '../../domain/materialrecovery';
 import { MappingWorkflowStrip } from '../../components/MappingWorkflowStrip';
@@ -13,16 +14,18 @@ type Sub = (typeof SUB)[number];
 
 export function MappingTab({ projectId }: { projectId: string }) {
   const [sub, setSub] = useState<Sub>('wbs');
+  const [mapLocked, setMapLocked] = useState(false);
   return (
     <div>
+      <BaselineLockBanner projectId={projectId} kind="mapping" onChange={setMapLocked} />
       <MappingWorkflowStrip projectId={projectId} />
       <div className="subtabs" role="tablist">
         <button role="tab" aria-selected={sub === 'wbs'} className={`subtab${sub === 'wbs' ? ' active' : ''}`} onClick={() => setSub('wbs')}>BOQ → WBS</button>
         <button role="tab" aria-selected={sub === 'material'} className={`subtab${sub === 'material' ? ' active' : ''}`} onClick={() => setSub('material')}>BOQ → Material</button>
         <button role="tab" aria-selected={sub === 'recovery'} className={`subtab${sub === 'recovery' ? ' active' : ''}`} onClick={() => setSub('recovery')}>Material recovery</button>
       </div>
-      {sub === 'wbs' && <WbsMapping projectId={projectId} />}
-      {sub === 'material' && <MaterialMapping projectId={projectId} />}
+      {sub === 'wbs' && <WbsMapping projectId={projectId} locked={mapLocked} />}
+      {sub === 'material' && <MaterialMapping projectId={projectId} locked={mapLocked} />}
       {sub === 'recovery' && <MaterialRecovery projectId={projectId} />}
     </div>
   );
@@ -101,7 +104,7 @@ function CoverageBar({ c }: { c: Coverage }) {
   );
 }
 
-function WbsMapping({ projectId }: { projectId: string }) {
+function WbsMapping({ projectId, locked }: { projectId: string; locked?: boolean }) {
   const { provider } = useData();
   const [items, setItems] = useState<BoqItem[]>([]);
   const [acts, setActs] = useState<ScheduleActivity[]>([]);
@@ -130,15 +133,18 @@ function WbsMapping({ projectId }: { projectId: string }) {
   const itemOf = useMemo(() => Object.fromEntries(items.map((i) => [i.id, i])), [items]);
 
   async function addLink(item: BoqItem, activityId: string) {
+    if (locked) return;
     if (!activityId || byItem.get(item.id)?.some((l) => l.activityId === activityId)) return;
     const link: BoqWbsLink = { boqItemId: item.id, projectId, activityId, confidence: 'confirmed' };
     await provider.setBoqWbs(projectId, link);
     setLinks(await provider.listBoqWbs(projectId));
   }
   async function removeLink(l: BoqWbsLink) {
+    if (locked) return;
     setLinks(await provider.removeBoqWbs(projectId, l.boqItemId, l.activityId));
   }
   async function setWeight(l: BoqWbsLink, v: string) {
+    if (locked) return;
     const w = Math.max(0, Math.min(100, Number(v) || 0)) / 100;
     await provider.setBoqWbs(projectId, { ...l, weight: w });
     setLinks(await provider.listBoqWbs(projectId));
@@ -264,7 +270,7 @@ function WbsMapping({ projectId }: { projectId: string }) {
   );
 }
 
-function MaterialMapping({ projectId }: { projectId: string }) {
+function MaterialMapping({ projectId, locked }: { projectId: string; locked?: boolean }) {
   const { provider } = useData();
   const [items, setItems] = useState<BoqItem[]>([]);
   const [links, setLinks] = useState<BoqMaterialLink[]>([]);
@@ -288,12 +294,14 @@ function MaterialMapping({ projectId }: { projectId: string }) {
   }, [links]);
 
   async function upsert(item: BoqItem, materialRef: string, coeff: number, leadDays?: number) {
+    if (locked) return;
     const ref = materialRef.trim().toUpperCase();
     if (!ref || coeff <= 0) return;
     await provider.setBoqMaterial(projectId, { boqItemId: item.id, projectId, materialRef: ref, coeff, confidence: 'confirmed', leadDays });
     setLinks(await provider.listBoqMaterial(projectId));
   }
   async function remove(item: BoqItem, materialRef: string) {
+    if (locked) return;
     setLinks(await provider.removeBoqMaterial(projectId, item.id, materialRef));
   }
 
@@ -369,7 +377,8 @@ function MaterialMapping({ projectId }: { projectId: string }) {
                     ); })()}
                   </td>
                   <td>
-                    <AddMaterialRow itemCode={it.code} onAdd={(ref, coeff) => upsert(it, ref, coeff)} master={master} />
+                    {!locked && <AddMaterialRow itemCode={it.code} onAdd={(ref, coeff) => upsert(it, ref, coeff)} master={master} />}
+                    {locked && <span className="muted small">locked</span>}
                   </td>
                 </tr>
               );

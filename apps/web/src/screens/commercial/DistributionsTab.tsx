@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
+import { useToast } from '../../components/Toast';
 import { formatMoney } from '../../domain/money';
 import { DistributionDonut } from '../../components/CategoryCharts';
 import { downloadWorkbook } from '../../components/xlsxExport';
 import type { BoqItem, Distribution, DistributionMode, Subcontractor } from '../../data/types';
+import type { ItemFreeze } from '../../domain/distributionFreeze';
 
 export function DistributionsTab({ projectId }: { projectId: string }) {
   const { provider } = useData();
+  const { toast } = useToast();
+  const [freezes, setFreezes] = useState<Record<string, ItemFreeze>>({});
   const [items, setItems] = useState<BoqItem[]>([]);
   const [subs, setSubs] = useState<Subcontractor[]>([]);
   const [dists, setDists] = useState<Record<string, Distribution>>({});
@@ -28,12 +32,26 @@ export function DistributionsTab({ projectId }: { projectId: string }) {
     };
   }, [provider, projectId]);
 
+  useEffect(() => {
+    let alive = true;
+    void provider.listItemFreezes(projectId).then((fs) => {
+      if (alive) setFreezes(Object.fromEntries(fs.map((f) => [f.boqItemId, f])));
+    });
+    return () => { alive = false; };
+  }, [provider, projectId]);
+
   async function update(item: BoqItem, patch: Partial<Distribution>) {
     const current: Distribution =
       dists[item.id] ?? { boqItemId: item.id, projectId, mode: 'unassigned', allocatedQty: 0 };
     const next: Distribution = { ...current, ...patch };
     setDists((prev) => ({ ...prev, [item.id]: next }));
-    await provider.setDistribution(projectId, next);
+    try {
+      await provider.setDistribution(projectId, next);
+    } catch (e) {
+      // Distribution freeze (spec §4): revert and explain.
+      setDists((prev) => ({ ...prev, [item.id]: current }));
+      toast({ message: (e as Error).message, kind: 'error' });
+    }
   }
 
   const coverage = useMemo(() => {
@@ -92,7 +110,13 @@ export function DistributionsTab({ projectId }: { projectId: string }) {
                 <tr key={it.id}>
                   <td>{it.code}</td>
                   <td>{it.description}</td>
-                  <td className="num">{it.qty.toLocaleString('en-PK')}</td>
+                  <td className="num">{it.qty.toLocaleString('en-PK')}
+                    {freezes[it.id] && freezes[it.id].frozenQty > 0 && (
+                      <div className="muted small" title="Quantity frozen under awarded contracts — remainder is distributable">
+                        🔒 {freezes[it.id].frozenQty.toLocaleString('en-PK')} frozen · {freezes[it.id].remainingQty.toLocaleString('en-PK')} left
+                      </div>
+                    )}
+                  </td>
                   <td>
                     <select
                       aria-label={`Mode for ${it.code}`}

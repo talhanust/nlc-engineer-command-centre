@@ -6,6 +6,7 @@ import { lookahead, type LookaheadStatus } from '../../domain/lookahead';
 import { ProductionTab } from './ProductionTab';
 import { BaselineImport } from '../../components/BaselineImport';
 import { ScheduleWorkflowStrip } from '../../components/ScheduleWorkflowStrip';
+import { BaselineLockBanner } from '../../components/BaselineLockBanner';
 import { PeriodMappingTab } from './PeriodMappingTab';
 import { OverheadsTab } from './OverheadsTab';
 import { ProgressTab } from './ProgressTab';
@@ -28,7 +29,7 @@ export function ExecutionTab({ projectId }: { projectId: string }) {
           </button>
         ))}
       </div>
-      {sub === 'schedule' && <Schedule projectId={projectId} />}
+      {sub === 'schedule' && <><BaselineLockBanner projectId={projectId} kind="schedule" /><Schedule projectId={projectId} /></>}
       {sub === 'lookahead' && <Lookahead projectId={projectId} />}
       {sub === 'scurve' && <SCurve projectId={projectId} />}
       {sub === 'periodmap' && <PeriodMappingTab projectId={projectId} />}

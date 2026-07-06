@@ -20,7 +20,7 @@ describe('shell & branding', () => {
   it('shows the NLC global brand in the header', async () => {
     renderAt('/');
     expect(await screen.findByText('NATIONAL LOGISTIC CORPORATION')).toBeInTheDocument();
-    expect(screen.getByText(/Command Centre/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Command Centre/).length).toBeGreaterThan(0);
   });
 
   it('does not use FGEHA as global branding', async () => {

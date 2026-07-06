@@ -1081,3 +1081,14 @@ code { font-family: var(--font-mono); font-size: .9em; }
 
 /* Lifecycle stage strip */
 .kpi-active { border-color: var(--primary) !important; box-shadow: 0 0 0 1px var(--primary) inset; }
+
+/* Command brief print layout */
+.print-only { display: none; }
+@media print {
+  .print-only { display: block; }
+  .brief-head { text-align: center; margin-bottom: 12px; }
+  .brief-rule { border-top: 2px solid #000; margin: 6px 0; }
+  .btn, .btn-mini, .btn-ghost, .link-btn, .bell-badge, .role-switch, .icon-btn { display: none !important; }
+  .kpi-card { border: 1px solid #ccc !important; }
+  .collapsible-card[data-collapsed='true'] .card-body { display: block !important; }
+}

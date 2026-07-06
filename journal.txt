@@ -1,6 +1,190 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-07-04 — Supplier-bill chains: central (CFO) & local (PD), generated from CRVs (spec §6)
+- supplierBillChain(kind) on the engine: Procurement Engineer generates → SPM verifies → SM
+  Procurement (HQ PD) reviews → PRE-AUDIT audits → SM Finance (HQ PD) processes → DPD recommends
+  → then LOCAL: PD approves → SM Finance pays; CENTRAL: PD recommends → SM Proc (HQ Engrs) → Dy
+  Comd → Comd Engrs endorses → Dir Sp reviews → CFO pays. CENTRAL_MATERIALS = Cement/Steel/
+  Bitumen; isCentralMaterial() drives the routing.
+- SupplierBill entity (billNo, supplierId, poIds, priced lines, amount, kind central|local,
+  status draft→in_chain→paid, chain). Provider generateSupplierBillFromCrvs() sums CRV received
+  qtys across the selected POs' CRVs and prices them at MATERIAL MASTER rates (bill-from-CRV,
+  spec §6), classifies central-vs-local from the lines, then submit/act/return/resubmit on the
+  shared engine — final act pays. Per-project key nlc-ecc.supplierbills.<pid>; audited; Api stubs.
+- New Procurement → "Supplier bills" tab: Procurement Engineer picks POs-with-CRVs and generates;
+  the register shows class (central → "→ CFO" hint), amount, chain position, and the shared
+  Submit/act/return/resubmit controls gated to the current appointment holder.
+- Reinforced the gate discipline from the CI fix: caught a repeat unused-import (waitFor) via the
+  WHOLE-PROJECT typecheck before packaging. Full unsharded suite 430 (74 files); server 9; both
+  builds green.
+
+2026-07-04 — CI fix: unused import in HrLadderGenesis.test.tsx (tsc --noEmit is whole-project)
+- CI Web job failed typecheck: HrLadderGenesis.test.tsx imported waitFor unused (TS6133). Root
+  cause: this session's suite outgrew the 175 s tool window so I'd been gating via SHARDED test
+  runs, and I added that test file without re-running the WHOLE-PROJECT `tsc --noEmit` (which,
+  unlike the sharded vitest runs, compiles every file including tests). Removed the unused import.
+- Re-verified the way CI does: `npm run typecheck` 0 errors across the whole project; full
+  UNSHARDED `npm run test` completed 424 passing (the earlier need to shard was tool-window
+  timing, not a suite failure); both builds green; server 9. GATE DISCIPLINE going forward: after
+  any file add/change, always run the full `run typecheck` (never rely on sharded test runs to
+  catch type errors — they don't compile unreferenced files the same way).
+
+2026-07-04 — HR authorisation ladder with grade delegation (A3) + project-genesis staff gate
+- hrApprovalChain(scope) on the chain engine (spec §2 step 4, §9 A3): PD recommends → SM HR
+  (HQ Engrs) reviews → then by DELEGATION — grades 1–16 terminate at COMD ENGRS (approve);
+  grade 17+ and the overall TOHR continue Comd endorses → Dir HR reviews → DG NLC approves.
+- HrProposal entity (kind key_appointments|tohr, entries title/grade/auth, chain, status
+  draft→in_chain→approved) with provider create/submit/act/return/resubmit (per-project key
+  nlc-ecc.hrproposals.<pid>; submission computes the ladder from the MAX GRADE in the proposal;
+  audited; Api stubs). Final act flips the PROJECT's new hrApproved flag — spec §2 step 5.
+- Genesis gate: createProject now sets hrApproved: false (legacy/seeded projects stay undefined =
+  open). ProjectView LOCKS an unapproved project for signed-in PROJECT-LEVEL appointments
+  ("Project not yet opened" notice); HQ appointments and dev mode see it normally and get the new
+  HR AUTHORISATION card on the Executive tab: Manager HR (HQ PD) drafts entries (title, grade,
+  auth, TOHR toggle) with a live routing hint ("routes to DG NLC / Comd Engineers (delegated)"),
+  submits, and the proposal walks the ladder via the shared ApptChainControls.
+- Tests: delegation routing (16 vs 17 vs TOHR), genesis walk — Gr-18 proposal builds the 5-step
+  DG ladder, hrApproved stays false through Dir HR and flips ONLY on DG's act; Gr-12 proposal
+  approves in three acts under delegation; UI lock as Site Engineer on a fresh project. Sharded
+  suite: 293 + 131 = 424 (73 files); server 9; both builds green.
+
+2026-07-04 — RAR appointment ladder with PRE-AUDIT on the chain engine; shared chain controls
+- rarApprovalChain() (spec §5, A7 — EPC byte-identical): Contract Engineer reviews → DPM endorses
+  → SPM endorses → Manager Contracts (HQ PD) reviews → PRE-AUDIT AUDITS → DPD recommends → PD
+  approves → SM/Manager Finance pays & issues cheque. Rar gains chain?: ApptChainState; provider
+  submitRarApproval / actOnRar / returnRar / resubmitRar (final act lands the RAR at PAID —
+  transitionRar carries no side-effects so the coupling is safe; all audited; Api stubs).
+- components/ApptChainControls.tsx: ChainStatus ("with <appointment> · step k/n" / returned-with-
+  remarks / chain complete) + ChainControls (act button labelled by step action incl. "Audit ✓",
+  Return… modal with mandatory remarks, Resubmit for originator appointments; buttons render only
+  for the signed-in holder of the current appointment, admin may act any step). ContractsRegister
+  REFACTORED onto the shared components (bespoke ChainCell/ChainActions deleted); RarRegister
+  wired: Submit (chain) on draft RARs, chain status beside the legacy pill, legacy quick-advance
+  retained for un-chained RARs until migration completes; row updates patch local state.
+- Tests: ladder shape (Pre-Audit at step 5, Finance last), provider walk — 8 acts land PAID and
+  status stays draft until Finance acts; Pre-Audit return ("machinery recovery missing") +
+  resubmission restart; pure-engine approval; UI submit → "with Contract Engineer · step 1/8".
+  Sharded suite: 293 + 127 = 420 (72 files); server 9; both builds green.
+
+2026-07-04 — Appointment chain engine + contract approval ladder (spec §4, A2/A4/A5)
+- domain/apptchain.ts: the generic appointment chain engine. Serializable ApptChainState
+  (steps · currentIndex · status in_progress/returned/approved · full event history). Every step
+  is a NAMED APPOINTMENT that formally acts (A2); act() advances and the last step's act
+  approves; returnForCorrection(by, remarks) sends the file back (A5); resubmit() restarts the
+  chain and may REBUILD the steps — so a revised contract value re-routes to the new competent
+  authority (A4). contractApprovalChain(kind, value) encodes spec §4 verbatim: DPM validate →
+  SPM validate → SM Contracts (HQ PD) review → DPD recommend → then by band: PD approves (labour
+  ≤15 Mn / sublet ≤150 Mn); or PD recommends → SM Contracts (HQ Engrs) → Dy Comd → Comd Engrs
+  approves (15–30 / 150–300 Mn); or Comd endorses → Dir Ops reviews → COO Ops recommends → DG
+  approves (above).
+- Contract carries chain?: ApptChainState. Provider: submitContractApproval (derives labour/
+  sublet from the CONTRACTOR's kind, builds the value-routed ladder), actOnContract (final act
+  flips draft → AWARDED — the §4 freeze point), returnContract (remarks required), resubmit
+  Contract (ladder rebuilt at the CURRENT value). All audited; Api endpoints stubbed.
+- FIXED a latent defect the spec exposed: createContract hard-coded status 'awarded' — contracts
+  were never draftable. Now DRAFT unless an awardDate is passed (the register's direct-award form
+  passes today's date, so legacy behaviour is preserved).
+- ContractsRegister UI: chain cell ("with <appointment> · step k/n", returned-with-remarks in
+  red, chain complete), Submit-for-approval on drafts, act button labelled by the step's action,
+  Return… modal (remarks mandatory), Resubmit for originators — action buttons appear only for
+  the signed-in holder of the CURRENT appointment (admin may act any step).
+- Tests: ladder routing across all three bands for both types; act-to-approval history;
+  return → resubmit at 16 Mn re-routing from PD to Comd band; provider round-trip incl. the
+  kind-from-contractor derivation and award-on-final-act; full UI walk (submit → DPM validates →
+  SPM returns with remarks) across real appointment logins. Suite runs SHARDED (>175 s window):
+  domain/data/screens/components 293 + root tsx 122 = 415 (71 files); server 9; builds green.
+
+2026-07-04 — Clarifications A1–A9 implemented: per-appointment logins, Mark-Input with acknowledgement, mix-design library
+- Spec updated: docs/REQUIREMENTS_V2_ORG_WORKFLOWS.md §9 now records all nine ANSWERS
+  (individual logins for all; intermediates formally act; HR delegation by grade — Gr 17+ & TOHR
+  → DG, Gr 1–16 → Comd Engrs; ceilings per contract w/ variations re-routing at revised value;
+  Pre-Audit HQ PD only + return-for-correction everywhere; mix-design library; EPC identical
+  chain; legacy mapping CONFIRMED; Mark-Input requires acknowledgement). §2 HR ladder carries the
+  grade delegation.
+- Individual logins (A1): AppUser gains appointmentId; SEED_USERS now seeds ONE LOGIN PER
+  APPOINTMENT from the catalogue (project staff scoped to the flagship, PD staff to PD North,
+  HQ staff to their HQs) with acting roles via new legacyRoleFor() (spm/dpm→pm, sqs→qs,
+  finance+pre_audit+cfo→fm, contracts→manager_contracts, command tier→admin, staff default by
+  level). Role state + header switcher carry appointmentId through sign-in.
+- Mark-Input (A9): new MarkInput model (fromUser/appointment, toAppointmentId, node/project,
+  text, sent→acknowledged w/ ackBy/ackAt) with provider list/create/acknowledge (global key
+  nlc-ecc.markinputs; audited; second ack is a no-op). MarkInputPanel: compose to your IMMEDIATE
+  SUPERIOR computed from properChannel(appointment) — placeholder names the superior — plus
+  "Awaiting your acknowledgement" queue (if you hold the recipient appointment) and "Your inputs"
+  with ack status. Wired as a dashboard card AND onto the project Executive tab (project staff
+  are the primary senders). Pending acknowledgements flow into the superior's work-list/bell via
+  inputAckWorklist (new WorkItem kind 'Input').
+- Mix-design library (A6): domain/mixdesigns.ts — C15/C20/C30 + AC-BASE/AC-WEARING with
+  constituent coefficients over material-master codes, runConsumption(design, qty) →
+  per-material demand; provider listMixDesigns/upsertMixDesign (per-project key, DEFAULT
+  fallback; Api stubs). Plant-production wiring is the next phase.
+- Fixed a JSX fragment-nesting bug inserting the panel into ProjectView's executive tab. NOTE:
+  the full suite now exceeds the 175 s tool window — run it in shards (src/domain src/data
+  src/screens · root *.test.tsx · src/components). Web 410 (70 files) all green across shards;
+  server 9; both builds green.
+
+2026-07-04 — Requirements v2 continuation package: polished org/workflow spec + appointment catalogue
+- The user supplied the full organisational requirements: four command levels (~40 appointments
+  incl. Pre-Audit, Dir Sp, CFO, Dir LAR), project genesis (creation authorisation → salients →
+  HR approval ladder to DG NLC → visibility gates), baseline validate→lock→authorised-revision
+  ladders for BOQ/XER/mapping, value-routed contract approvals (labour 15/30 Mn, sublet
+  150/300 Mn → PD/Comd Engrs/DG), IPC/RAR flows with Pre-Audit and cheque booking, central-vs-
+  local procurement chains topping at Dir Sp/CFO, machinery transfer/hire, plant mix designs,
+  overhead sub-head bookings, and per-section dashboards (incl. Recovery + HR) at every HQ level
+  with Mark-Input upward and directives downward.
+- Delivered docs/REQUIREMENTS_V2_ORG_WORKFLOWS.md: the POLISHED SPEC with logical enhancements
+  (return-for-correction loops, freeze enforcement, lock banners), a 24-row GAP MATRIX against
+  the app as built, a 7-phase implementation plan, and 9 blocking clarification questions
+  (appointment granularity, proper-channel semantics, DG HR delegation, ceiling scope, Pre-Audit
+  loops, mix-design library, EPC parity, legacy-role migration, Mark-Input semantics). This file
+  + journal is the continuation package for any new session.
+- Shipped Phase-1 foundation risk-free: domain/appointments.ts — the appointment catalogue as
+  data (id/title/level/reportsTo/section for all four levels), properChannel() walking the
+  reporting line, CONTRACT_CEILINGS + contractApprover(kind, value) implementing the 15/30 &
+  150/300 Mn routing, and LEGACY_ROLE_MAP as the interim bridge. Unreferenced by UI yet — zero
+  behavioural change. Tests: level/reporting integrity, SQS→DG channel walk, value routing.
+  Web 404 (69 files); server 9; both builds green.
+
+2026-07-04 — Stage-aware analytics; monthly command brief print upgrade
+- Stage-aware analytics. portfolioEvm now scores ONGOING works only — physically-completed and
+  closed projects sit at 100/100 and were flattering portfolio SPI/PV/EV; they're excluded at the
+  domain level so every EVM consumer inherits the correction. The dashboard breakdown's Score
+  column is stage-aware: ongoing → composite health score as before; physically_completed →
+  "recv N%" pill (received/billed — the recovery position, which is the only health that matters
+  after TOC); financially_closed → "closed" pill. The Monitoring Sec staff dashboard applies the
+  same rule, alarming "N% receivable outstanding" for completed projects instead of meaningless
+  schedule health.
+- Monthly command brief. The dashboard's print flow is now a formal brief: a print-only header
+  block — "MONTHLY COMMAND BRIEF — <NODE>", ECC byline, as-at date, prepared-for (signed-in user),
+  projects-under-command count, rule lines — plus print CSS that hides all interactive chrome
+  (buttons, bell, switchers) and forces collapsed cards open, so one Ctrl+P from any HQ/PD node
+  yields the complete brief: lifecycle totals, breakdown, directives, staff sections, manpower
+  roll-up. Button renamed "Print command brief".
+- Branding test made robust to the new print-only header (getAllByText). Web 401 (68 files);
+  server 9; both builds green.
+
+2026-07-04 — DLP defect register + final-bill reconciliation (the work between TOC and close)
+- DLP defects. New DlpDefect model (raised date, description, location, severity minor/major,
+  status open/rectified + rectifiedDate) with provider list/create/setStatus (key
+  nlc-ecc.dlpdefects.<pid>; every raise/rectify/reopen audited; Api stubs). Seed: Attock carries
+  one OPEN major defect (shoulder erosion RD 4+300) and one rectified; Thar is clear — both
+  states demo out of the box.
+- Close gate extended. readyToClose(p, liabilities, openDefects) — a project may financially
+  close only when receivable, liabilities AND open DLP defects are ALL zero. The Recovery
+  register gained a "DLP defects" column (open count in red / "all rectified" / "none"), the
+  Ready cell explains "defects open", and the close button tooltip states the full rule.
+- Recovery detail modal (click the defects cell): the DLP DEFECT REGISTER (raise with
+  location + severity, mark rectified, reopen) and the FINAL-BILL RECONCILIATION — new
+  domain/finalbill.ts compares AUTHORISED quantities (BOQ + approved variation deltas via
+  approvedVariationQtyByItem) against quantities CLAIMED through IPC lines, per item, with
+  variance qty/value, over-claim flags, and totals (over-claimed items/value, unclaimed balance,
+  clean verdict) — the QS check before closure, sorted worst-first.
+- Tests: defect lifecycle incl. seeded register, close gate blocked by an open defect, recon math
+  with VO-adjusted authorised qty + over/under totals + clean case, and the full UI flow (count →
+  modal → rectify → row unblocks). One test-isolation fix: restore the real KV store after
+  provider tests swap in a memory store. Web 397 (67 files); server 9; both builds green.
+
 2026-07-04 — Material master + rate analysis; retention release in Recovery
 - Material master (controlled catalogue). New MaterialMaster type (code · name · unit · spec ·
   standard rate · lead days) with provider list/upsert/delete (key nlc-ecc.matmaster.<pid>;

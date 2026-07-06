@@ -194,3 +194,53 @@ export function supplierBillChain(kind: 'central' | 'local'): ApptChainStep[] {
   steps.push({ appointmentId: 'cfo', action: 'approve', label: 'CFO pays' });
   return steps;
 }
+
+
+/**
+ * Baseline lock ladders (spec §3): a register (BOQ / Schedule / Mapping) is
+ * imported, VALIDATED by the project team, then LOCKED at HQ PD. After lock it
+ * is editable only through the authorised revision route below.
+ */
+export type BaselineKind = 'boq' | 'schedule' | 'mapping';
+
+export const BASELINE_LABEL: Record<BaselineKind, string> = {
+  boq: 'BOQ', schedule: 'Schedule (XER)', mapping: 'Mapping (BOQ↔WBS / BOQ↔Material)',
+};
+
+export function baselineLockChain(kind: BaselineKind): ApptChainStep[] {
+  if (kind === 'boq') {
+    return [
+      { appointmentId: 'planning_engr', action: 'validate', label: 'Planning Engineer validates' },
+      { appointmentId: 'dpm', action: 'validate', label: 'DPM validates' },
+      { appointmentId: 'spm', action: 'validate', label: 'SPM validates' },
+      { appointmentId: 'sm_plans_pd', action: 'approve', label: 'Manager Plans (HQ PD) locks' },
+    ];
+  }
+  if (kind === 'schedule') {
+    return [
+      { appointmentId: 'dpm', action: 'validate', label: 'DPM validates' },
+      { appointmentId: 'spm', action: 'validate', label: 'SPM validates' },
+      { appointmentId: 'sm_plans_pd', action: 'approve', label: 'SM/Manager Plans (HQ PD) locks' },
+    ];
+  }
+  // mapping: SQS maps → PE + Proc Mgr + DPM + SPM validate → SM Proc reviews → SM Plans locks
+  return [
+    { appointmentId: 'planning_engr', action: 'validate', label: 'Planning Engineer validates' },
+    { appointmentId: 'proc_engr', action: 'validate', label: 'Procurement Manager validates' },
+    { appointmentId: 'dpm', action: 'validate', label: 'DPM validates' },
+    { appointmentId: 'spm', action: 'validate', label: 'SPM validates' },
+    { appointmentId: 'sm_proc_pd', action: 'review', label: 'SM Procurement (HQ PD) reviews' },
+    { appointmentId: 'sm_plans_pd', action: 'approve', label: 'SM/Manager Plans (HQ PD) locks' },
+  ];
+}
+
+/** Revision after lock needs Comd Engrs authorisation (spec §3). */
+export function baselineRevisionChain(kind: BaselineKind): ApptChainStep[] {
+  const base: ApptChainStep[] = [
+    { appointmentId: 'spm', action: 'recommend', label: 'SPM requests revision' },
+    { appointmentId: 'sm_plans_pd', action: 'review', label: 'SM/Manager Plans (HQ PD) reviews' },
+    { appointmentId: 'comd_engrs', action: 'approve', label: 'Comd Engineers authorises revision' },
+  ];
+  void kind;
+  return base;
+}

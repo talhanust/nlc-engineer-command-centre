@@ -4,11 +4,12 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry, SupplierBill,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry, SupplierBill, BaselineLock,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
 import type { MixDesign } from '../domain/mixdesigns';
+import type { BaselineKind } from '../domain/apptchain';
 import type { BoqWorkflowState } from '../domain/boqworkflow';
 import type { BaselineWorkflowState } from '../domain/schedulebaseline';
 import type { EscalationComponent } from '../domain/escalation';
@@ -289,6 +290,9 @@ export class ApiDataProvider implements DataProvider {
   async listDistributions(projectId: string): Promise<Distribution[]> {
     return (await this.get<{ items: Distribution[] }>(`/api/projects/${projectId}/distributions`)).items;
   }
+  async listItemFreezes(projectId: string): Promise<Array<import('../domain/distributionFreeze').ItemFreeze>> {
+    return (await this.get<{ items: Array<import('../domain/distributionFreeze').ItemFreeze> }>(`/api/projects/${projectId}/item-freezes`)).items;
+  }
   async setDistribution(projectId: string, dist: Distribution): Promise<Distribution> {
     return this.send<Distribution>(`/api/projects/${projectId}/distributions`, 'PUT', dist);
   }
@@ -464,6 +468,21 @@ export class ApiDataProvider implements DataProvider {
   }
   async acknowledgeMarkInput(id: string, by: string): Promise<MarkInput[]> {
     return (await this.send<{ items: MarkInput[] }>(`/api/mark-inputs/${id}/ack`, 'POST', { by })).items;
+  }
+  async getBaselineLock(projectId: string, kind: BaselineKind): Promise<BaselineLock> {
+    return this.get<BaselineLock>(`/api/projects/${projectId}/baseline/${kind}`);
+  }
+  async submitBaselineLock(projectId: string, kind: BaselineKind, by: string): Promise<BaselineLock> {
+    return this.send<BaselineLock>(`/api/projects/${projectId}/baseline/${kind}/submit`, 'POST', { by });
+  }
+  async actOnBaselineLock(projectId: string, kind: BaselineKind, by: string, remarks?: string): Promise<BaselineLock> {
+    return this.send<BaselineLock>(`/api/projects/${projectId}/baseline/${kind}/act`, 'POST', { by, remarks });
+  }
+  async returnBaselineLock(projectId: string, kind: BaselineKind, by: string, remarks: string): Promise<BaselineLock> {
+    return this.send<BaselineLock>(`/api/projects/${projectId}/baseline/${kind}/return`, 'POST', { by, remarks });
+  }
+  async requestBaselineRevision(projectId: string, kind: BaselineKind, by: string): Promise<BaselineLock> {
+    return this.send<BaselineLock>(`/api/projects/${projectId}/baseline/${kind}/revision`, 'POST', { by });
   }
   async listSupplierBills(projectId: string): Promise<SupplierBill[]> {
     return (await this.get<{ items: SupplierBill[] }>(`/api/projects/${projectId}/supplier-bills`)).items;

@@ -584,6 +584,18 @@ export interface DlpDefect {
   rectifiedDate?: string;
 }
 
+/** Baseline lock state for a register (spec §3): validate→lock, then
+ * revision only via Comd Engrs authorisation. */
+export interface BaselineLock {
+  projectId: string;
+  kind: import('../domain/apptchain').BaselineKind;
+  status: 'open' | 'locking' | 'locked' | 'revising';
+  chain?: import('../domain/apptchain').ApptChainState;
+  lockedBy?: string;
+  lockedAt?: string;
+  revisionNo: number;
+}
+
 /** Supplier bill generated from CRVs against POs (spec §6). Its material
  * class (central: Cement/Steel/Bitumen → CFO; local → PD) routes the ladder. */
 export interface SupplierBillLine {
@@ -972,6 +984,8 @@ export interface DataProvider {
   setBankGuaranteeStatus(projectId: string, id: string, status: BankGuarantee['status']): Promise<BankGuarantee[]>;
   listDistributions(projectId: string): Promise<Distribution[]>;
   setDistribution(projectId: string, dist: Distribution): Promise<Distribution>;
+  /** Per-item frozen quantity from awarded contracts (spec §4). */
+  listItemFreezes(projectId: string): Promise<Array<import('../domain/distributionFreeze').ItemFreeze>>;
   // Execution & baselines
   listSchedule(projectId: string): Promise<ScheduleActivity[]>;
   replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>): Promise<ScheduleActivity[]>;
@@ -1064,6 +1078,11 @@ export interface DataProvider {
   listMarkInputs(): Promise<MarkInput[]>;
   createMarkInput(input: Omit<MarkInput, 'id' | 'status' | 'at'>): Promise<MarkInput>;
   acknowledgeMarkInput(id: string, by: string): Promise<MarkInput[]>;
+  getBaselineLock(projectId: string, kind: import('../domain/apptchain').BaselineKind): Promise<BaselineLock>;
+  submitBaselineLock(projectId: string, kind: import('../domain/apptchain').BaselineKind, by: string): Promise<BaselineLock>;
+  actOnBaselineLock(projectId: string, kind: import('../domain/apptchain').BaselineKind, by: string, remarks?: string): Promise<BaselineLock>;
+  returnBaselineLock(projectId: string, kind: import('../domain/apptchain').BaselineKind, by: string, remarks: string): Promise<BaselineLock>;
+  requestBaselineRevision(projectId: string, kind: import('../domain/apptchain').BaselineKind, by: string): Promise<BaselineLock>;
   listSupplierBills(projectId: string): Promise<SupplierBill[]>;
   generateSupplierBillFromCrvs(projectId: string, poIds: string[], by: string): Promise<SupplierBill>;
   submitSupplierBill(projectId: string, id: string, by: string): Promise<SupplierBill>;

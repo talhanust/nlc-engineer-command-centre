@@ -4,14 +4,15 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry, SupplierBill, SupplierBillLine,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry, SupplierBill, SupplierBillLine, BaselineLock,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
 import { itemAmount } from '../domain/boq';
 import { APPOINTMENTS, legacyRoleFor } from '../domain/appointments';
 import { DEFAULT_MIX_DESIGNS, type MixDesign } from '../domain/mixdesigns';
-import { newChain, act, returnForCorrection, resubmit, contractApprovalChain, rarApprovalChain, hrApprovalChain, supplierBillChain, isCentralMaterial } from '../domain/apptchain';
+import { newChain, act, returnForCorrection, resubmit, contractApprovalChain, rarApprovalChain, hrApprovalChain, supplierBillChain, isCentralMaterial, baselineLockChain, baselineRevisionChain, type BaselineKind } from '../domain/apptchain';
+import { itemFreezes, distributionChangeBlocked } from '../domain/distributionFreeze';
 import { applyAction, computeNet, IPC_PIPELINE, DEFAULT_COMMERCIAL_CONFIG, DEFAULT_CONTRACT_RETENTION_PCT } from '../domain/ipc';
 import { DEFAULT_PBS_COMPONENTS, type EscalationComponent } from '../domain/escalation';
 import { applyVoAction, applyVariationToBoq, variationLinesAmount, dominantVariationType } from '../domain/variations';
@@ -797,11 +798,21 @@ export class LocalDataProvider implements DataProvider {
   }
   async setDistribution(projectId: string, dist: Distribution): Promise<Distribution> {
     const all = readJson<Distribution[]>(distKey(projectId), () => []);
+    const prev = all.find((d) => d.boqItemId === dist.boqItemId);
+    // Distribution freeze (spec §4): block changes to quantity locked by an awarded contract.
+    const [items, contracts] = await Promise.all([this.listBoq(projectId), this.listContracts(projectId)]);
+    const freeze = itemFreezes(items, contracts, all).get(dist.boqItemId);
+    const blocked = distributionChangeBlocked(dist, prev, freeze);
+    if (blocked) throw new Error(blocked);
     const idx = all.findIndex((d) => d.boqItemId === dist.boqItemId);
     if (idx >= 0) all[idx] = dist;
     else all.push(dist);
     writeJson(distKey(projectId), all);
     return dist;
+  }
+  async listItemFreezes(projectId: string): Promise<Array<import('../domain/distributionFreeze').ItemFreeze>> {
+    const [items, contracts, dists] = await Promise.all([this.listBoq(projectId), this.listContracts(projectId), this.listDistributions(projectId)]);
+    return [...itemFreezes(items, contracts, dists).values()].filter((f) => f.frozenQty > 0);
   }
 
   // ---- Execution & baselines ----
@@ -1255,6 +1266,50 @@ export class LocalDataProvider implements DataProvider {
       audit(m.projectId ?? m.nodeId, 'acknowledge', 'Input', m.id, by);
     }
     return all;
+  }
+  async getBaselineLock(projectId: string, kind: BaselineKind): Promise<BaselineLock> {
+    const all = readJson<Record<string, BaselineLock>>(baselineKey(projectId), () => ({}));
+    return all[kind] ?? { projectId, kind, status: 'open', revisionNo: 0 };
+  }
+  private writeBaseline(projectId: string, lock: BaselineLock): BaselineLock {
+    const all = readJson<Record<string, BaselineLock>>(baselineKey(projectId), () => ({}));
+    all[lock.kind] = lock;
+    writeJson(baselineKey(projectId), all);
+    return JSON.parse(JSON.stringify(lock)) as BaselineLock;
+  }
+  async submitBaselineLock(projectId: string, kind: BaselineKind, by: string): Promise<BaselineLock> {
+    const cur = await this.getBaselineLock(projectId, kind);
+    if (cur.status === 'locked') return cur;
+    audit(projectId, 'submit_lock', 'Baseline', kind, by);
+    return this.writeBaseline(projectId, { ...cur, status: 'locking', chain: newChain(baselineLockChain(kind)) });
+  }
+  async actOnBaselineLock(projectId: string, kind: BaselineKind, by: string, remarks?: string): Promise<BaselineLock> {
+    const cur = await this.getBaselineLock(projectId, kind);
+    if (!cur.chain) return cur;
+    const chain = act(cur.chain, by, remarks);
+    audit(projectId, 'lock_act', 'Baseline', kind, by);
+    if (chain.status === 'approved') {
+      const revising = cur.status === 'revising';
+      return this.writeBaseline(projectId, {
+        ...cur, chain, status: 'locked', lockedBy: by, lockedAt: new Date().toISOString(),
+        revisionNo: revising ? cur.revisionNo + 1 : cur.revisionNo,
+      });
+    }
+    return this.writeBaseline(projectId, { ...cur, chain });
+  }
+  async returnBaselineLock(projectId: string, kind: BaselineKind, by: string, remarks: string): Promise<BaselineLock> {
+    const cur = await this.getBaselineLock(projectId, kind);
+    if (!cur.chain) return cur;
+    audit(projectId, 'lock_return', 'Baseline', kind, by);
+    return this.writeBaseline(projectId, { ...cur, chain: returnForCorrection(cur.chain, by, remarks) });
+  }
+  async requestBaselineRevision(projectId: string, kind: BaselineKind, by: string): Promise<BaselineLock> {
+    const cur = await this.getBaselineLock(projectId, kind);
+    if (cur.status !== 'locked') return cur;
+    audit(projectId, 'revision_request', 'Baseline', kind, by);
+    // Revision runs its own Comd-Engrs ladder; on approval the register unlocks for editing,
+    // then must be re-locked (status returns to 'revising' → lock ladder bumps revisionNo).
+    return this.writeBaseline(projectId, { ...cur, status: 'revising', chain: newChain(baselineRevisionChain(kind)) });
   }
   async listSupplierBills(projectId: string): Promise<SupplierBill[]> {
     return readJson(billKey(projectId), () => []);
@@ -2183,6 +2238,7 @@ const demandKey = (pid: string) => `nlc-ecc.demands.${pid}`;
 const poKey = (pid: string) => `nlc-ecc.pos.${pid}`;
 const crvKey = (pid: string) => `nlc-ecc.crvs.${pid}`;
 const billKey = (pid: string) => `nlc-ecc.supplierbills.${pid}`;
+const baselineKey = (pid: string) => `nlc-ecc.baselinelocks.${pid}`;
 const ppayKey = (pid: string) => `nlc-ecc.ppays.${pid}`;
 const hireKey = (pid: string) => `nlc-ecc.hires.${pid}`;
 const prodKey = (pid: string) => `nlc-ecc.production.${pid}`;

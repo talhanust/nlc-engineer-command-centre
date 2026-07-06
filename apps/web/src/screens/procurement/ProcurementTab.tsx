@@ -13,12 +13,13 @@ import { LeadTimesTab } from './LeadTimesTab';
 import { MaterialIssuesTab } from './MaterialIssuesTab';
 import { ProcDashboard } from './ProcDashboard';
 import { MaterialMasterTab } from './MaterialMasterTab';
+import { SupplierBillsTab } from './SupplierBillsTab';
 
 const ROLES = ['pic', 'pm', 'pd', 'comd_engrs', 'dir_sp', 'dg', 'preaudit', 'fm', 'fh', 'manager_procurement'];
-const SUB = ['dashboard', 'inbox', 'demands', 'pocrv', 'leadtimes', 'payments', 'vendors', 'materials', 'matmaster', 'inventory', 'machinery', 'pol', 'fixedassets', 'maintenance'] as const;
+const SUB = ['dashboard', 'inbox', 'demands', 'pocrv', 'leadtimes', 'payments', 'vendors', 'materials', 'bills', 'matmaster', 'inventory', 'machinery', 'pol', 'fixedassets', 'maintenance'] as const;
 type Sub = (typeof SUB)[number];
 const LABEL: Record<Sub, string> = {
-  dashboard: 'Dashboard', inbox: 'Approval inbox', demands: 'Demands', pocrv: 'POs & CRVs', payments: 'Payments', vendors: 'Suppliers & hires', materials: 'Material issues', matmaster: 'Material master',
+  dashboard: 'Dashboard', inbox: 'Approval inbox', demands: 'Demands', pocrv: 'POs & CRVs', payments: 'Payments', vendors: 'Suppliers & hires', materials: 'Material issues', bills: 'Supplier bills', matmaster: 'Material master',
   inventory: 'Inventory', machinery: 'Machinery hire', pol: 'POL', fixedassets: 'Fixed assets', maintenance: 'Maintenance', leadtimes: 'Lead times',
 };
 
@@ -90,6 +91,7 @@ export function ProcurementTab({ projectId }: { projectId: string }) {
       {sub === 'pol' && <PolTab projectId={projectId} />}
       {sub === 'dashboard' && <ProcDashboard projectId={projectId} onNavigate={(s) => setSub(s as Sub)} />}
       {sub === 'materials' && <MaterialIssuesTab projectId={projectId} />}
+      {sub === 'bills' && <SupplierBillsTab projectId={projectId} />}
       {sub === 'matmaster' && <MaterialMasterTab projectId={projectId} />}
       {sub === 'machinery' && <MachineryTab projectId={projectId} />}
       {sub === 'leadtimes' && <LeadTimesTab projectId={projectId} />}

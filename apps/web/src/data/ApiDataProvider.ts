@@ -4,7 +4,7 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry, SupplierBill, BaselineLock,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry, SupplierBill, BaselineLock, MachineryAsset, MachineryTransfer,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
@@ -469,6 +469,21 @@ export class ApiDataProvider implements DataProvider {
   async acknowledgeMarkInput(id: string, by: string): Promise<MarkInput[]> {
     return (await this.send<{ items: MarkInput[] }>(`/api/mark-inputs/${id}/ack`, 'POST', { by })).items;
   }
+  async listMachineryAssets(): Promise<MachineryAsset[]> {
+    return (await this.get<{ items: MachineryAsset[] }>('/api/machinery/assets')).items;
+  }
+  async listMachineryTransfers(): Promise<MachineryTransfer[]> {
+    return (await this.get<{ items: MachineryTransfer[] }>('/api/machinery/transfers')).items;
+  }
+  async initiateMachineryTransfer(input: { assetId: string; toProjectId: string; justification: string; by: string }): Promise<MachineryTransfer> {
+    return this.send<MachineryTransfer>('/api/machinery/transfers', 'POST', input);
+  }
+  async actOnMachineryTransfer(id: string, by: string, remarks?: string): Promise<MachineryTransfer> {
+    return this.send<MachineryTransfer>(`/api/machinery/transfers/${id}/act`, 'POST', { by, remarks });
+  }
+  async returnMachineryTransfer(id: string, by: string, remarks: string): Promise<MachineryTransfer> {
+    return this.send<MachineryTransfer>(`/api/machinery/transfers/${id}/return`, 'POST', { by, remarks });
+  }
   async getBaselineLock(projectId: string, kind: BaselineKind): Promise<BaselineLock> {
     return this.get<BaselineLock>(`/api/projects/${projectId}/baseline/${kind}`);
   }
@@ -693,6 +708,12 @@ export class ApiDataProvider implements DataProvider {
   }
   async createProductionRun(projectId: string, input: Omit<ProductionRun, 'id' | 'projectId'>): Promise<ProductionRun> {
     return this.send<ProductionRun>(`/api/projects/${projectId}/production`, 'POST', input);
+  }
+  async recordPlantRun(projectId: string, input: { dated: string; mixDesignId: string; plantAssetId: string; outputQty: number; destination: 'self' | 'contractor'; contractorId?: string }): Promise<ProductionRun> {
+    return this.send<ProductionRun>(`/api/projects/${projectId}/plant-runs`, 'POST', input);
+  }
+  async plantMaterialBalance(projectId: string, plantAssetId: string): Promise<Array<{ materialCode: string; consumed: number }>> {
+    return (await this.get<{ items: Array<{ materialCode: string; consumed: number }> }>(`/api/projects/${projectId}/plant-balance/${plantAssetId}`)).items;
   }
   async listMaterialIssues(projectId: string): Promise<MaterialIssue[]> {
     return (await this.get<{ items: MaterialIssue[] }>(`/api/projects/${projectId}/material-issues`)).items;

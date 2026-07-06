@@ -584,6 +584,31 @@ export interface DlpDefect {
   rectifiedDate?: string;
 }
 
+/** Integral machinery asset (spec §6): a plant/equipment item owned by NLC,
+ * booked to at most one project at a time. Transfers between projects run an
+ * approval ladder and lock the asset while in flight. */
+export interface MachineryAsset {
+  id: string;
+  code: string;              // reg no / plant code
+  description: string;
+  category: 'plant' | 'equipment' | 'vehicle' | 'batching_plant' | 'asphalt_plant';
+  currentProjectId?: string; // booking; undefined = in HQ pool
+  locked: boolean;           // true while a transfer is in flight
+}
+
+/** A machinery transfer between projects (spec §6). */
+export interface MachineryTransfer {
+  id: string;
+  assetId: string;
+  fromProjectId?: string;
+  toProjectId: string;
+  justification: string;     // technical justification vs BOQ quantities
+  status: 'in_chain' | 'approved' | 'returned';
+  chain: import('../domain/apptchain').ApptChainState;
+  createdBy: string;
+  createdAt: string;
+}
+
 /** Baseline lock state for a register (spec §3): validate→lock, then
  * revision only via Comd Engrs authorisation. */
 export interface BaselineLock {
@@ -678,6 +703,10 @@ export interface AuditEntry {
 }
 
 // ---- Production & materials ----
+export interface ProductionRunConsumption {
+  materialCode: string;
+  qty: number;             // constituent qty consumed = coeff × output
+}
 export interface ProductionRun {
   id: string;
   projectId: string;
@@ -686,6 +715,13 @@ export interface ProductionRun {
   unit: string;
   plannedQty: number;
   actualQty: number;
+  /** Plant production (spec §6): a run tied to a mix design consumes its
+   * constituents and is destined for self-execution or contractor recovery. */
+  mixDesignId?: string;
+  plantAssetId?: string;
+  consumption?: ProductionRunConsumption[];
+  destination?: 'self' | 'contractor';
+  contractorId?: string;   // when destination = contractor (recovery via RAR)
 }
 
 export interface MaterialIssue {
@@ -1037,6 +1073,10 @@ export interface DataProvider {
   // Production & materials
   listProductionRuns(projectId: string): Promise<ProductionRun[]>;
   createProductionRun(projectId: string, input: Omit<ProductionRun, 'id' | 'projectId'>): Promise<ProductionRun>;
+  /** Record a plant production run from a mix design; computes + returns constituent consumption. */
+  recordPlantRun(projectId: string, input: { dated: string; mixDesignId: string; plantAssetId: string; outputQty: number; destination: 'self' | 'contractor'; contractorId?: string }): Promise<ProductionRun>;
+  /** Plant material balance: issued-in vs consumed by runs, per constituent. */
+  plantMaterialBalance(projectId: string, plantAssetId: string): Promise<Array<{ materialCode: string; consumed: number }>>;
   listMaterialIssues(projectId: string): Promise<MaterialIssue[]>;
   createMaterialIssue(projectId: string, input: Omit<MaterialIssue, 'id' | 'projectId'>): Promise<MaterialIssue>;
   setMaterialRecovered(projectId: string, id: string, recovered: number): Promise<MaterialIssue[]>;
@@ -1078,6 +1118,11 @@ export interface DataProvider {
   listMarkInputs(): Promise<MarkInput[]>;
   createMarkInput(input: Omit<MarkInput, 'id' | 'status' | 'at'>): Promise<MarkInput>;
   acknowledgeMarkInput(id: string, by: string): Promise<MarkInput[]>;
+  listMachineryAssets(): Promise<MachineryAsset[]>;
+  listMachineryTransfers(): Promise<MachineryTransfer[]>;
+  initiateMachineryTransfer(input: { assetId: string; toProjectId: string; justification: string; by: string }): Promise<MachineryTransfer>;
+  actOnMachineryTransfer(id: string, by: string, remarks?: string): Promise<MachineryTransfer>;
+  returnMachineryTransfer(id: string, by: string, remarks: string): Promise<MachineryTransfer>;
   getBaselineLock(projectId: string, kind: import('../domain/apptchain').BaselineKind): Promise<BaselineLock>;
   submitBaselineLock(projectId: string, kind: import('../domain/apptchain').BaselineKind, by: string): Promise<BaselineLock>;
   actOnBaselineLock(projectId: string, kind: import('../domain/apptchain').BaselineKind, by: string, remarks?: string): Promise<BaselineLock>;

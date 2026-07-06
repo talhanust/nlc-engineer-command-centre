@@ -4,14 +4,14 @@ import {
   ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
-  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry, SupplierBill, SupplierBillLine, BaselineLock,
+  ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry, SupplierBill, SupplierBillLine, BaselineLock, MachineryAsset, MachineryTransfer,
   ProductionRun, MaterialIssue, MachineryUsage, Salient, ProjectPhoto, Attachment, Allocation, ContractApproval, OverheadLine,
   InventoryItem, PolRecord, FixedAsset, MaintenanceRequest, HrPosting, HrUnit, HrPerson, HrRequisition, HrCredential, HrTransfer, HrEstablishmentVersion, ProgressUpdate,
 } from './types';
 import { itemAmount } from '../domain/boq';
 import { APPOINTMENTS, legacyRoleFor } from '../domain/appointments';
-import { DEFAULT_MIX_DESIGNS, type MixDesign } from '../domain/mixdesigns';
-import { newChain, act, returnForCorrection, resubmit, contractApprovalChain, rarApprovalChain, hrApprovalChain, supplierBillChain, isCentralMaterial, baselineLockChain, baselineRevisionChain, type BaselineKind } from '../domain/apptchain';
+import { DEFAULT_MIX_DESIGNS, type MixDesign, runConsumption } from '../domain/mixdesigns';
+import { newChain, act, returnForCorrection, resubmit, contractApprovalChain, rarApprovalChain, hrApprovalChain, supplierBillChain, isCentralMaterial, baselineLockChain, baselineRevisionChain, machineryTransferChain, type BaselineKind } from '../domain/apptchain';
 import { itemFreezes, distributionChangeBlocked } from '../domain/distributionFreeze';
 import { applyAction, computeNet, IPC_PIPELINE, DEFAULT_COMMERCIAL_CONFIG, DEFAULT_CONTRACT_RETENTION_PCT } from '../domain/ipc';
 import { DEFAULT_PBS_COMPONENTS, type EscalationComponent } from '../domain/escalation';
@@ -1267,6 +1267,62 @@ export class LocalDataProvider implements DataProvider {
     }
     return all;
   }
+  async listMachineryAssets(): Promise<MachineryAsset[]> {
+    return readJson(machAssetsKey, () => SEED_MACHINERY_ASSETS);
+  }
+  async listMachineryTransfers(): Promise<MachineryTransfer[]> {
+    return readJson(machTransfersKey, () => []);
+  }
+  async initiateMachineryTransfer(input: { assetId: string; toProjectId: string; justification: string; by: string }): Promise<MachineryTransfer> {
+    const assets = readJson<MachineryAsset[]>(machAssetsKey, () => SEED_MACHINERY_ASSETS);
+    const asset = assets.find((a) => a.id === input.assetId);
+    if (!asset) throw new Error('machinery asset not found');
+    if (asset.locked) throw new Error('asset already has a transfer in flight');
+    // Lock the asset while the transfer is in flight.
+    asset.locked = true;
+    writeJson(machAssetsKey, assets);
+    const transfers = readJson<MachineryTransfer[]>(machTransfersKey, () => []);
+    const t: MachineryTransfer = {
+      id: `mt-${Date.now().toString(36)}`, assetId: input.assetId,
+      fromProjectId: asset.currentProjectId, toProjectId: input.toProjectId,
+      justification: sanitize(input.justification), status: 'in_chain',
+      chain: newChain(machineryTransferChain()), createdBy: sanitize(input.by), createdAt: new Date().toISOString(),
+    };
+    transfers.unshift(t);
+    writeJson(machTransfersKey, transfers);
+    audit(input.toProjectId, 'transfer_init', 'Machinery', asset.code, `${asset.currentProjectId ?? 'HQ pool'} → ${input.toProjectId}`);
+    return t;
+  }
+  private mutateTransfer(id: string, fn: (t: MachineryTransfer) => MachineryTransfer, action: string, by: string): MachineryTransfer {
+    const transfers = readJson<MachineryTransfer[]>(machTransfersKey, () => []);
+    const idx = transfers.findIndex((t) => t.id === id);
+    if (idx < 0) throw new Error('transfer not found');
+    transfers[idx] = fn(transfers[idx]);
+    writeJson(machTransfersKey, transfers);
+    audit(transfers[idx].toProjectId, action, 'Machinery transfer', id, by);
+    return JSON.parse(JSON.stringify(transfers[idx])) as MachineryTransfer;
+  }
+  async actOnMachineryTransfer(id: string, by: string, remarks?: string): Promise<MachineryTransfer> {
+    const out = this.mutateTransfer(id, (t) => {
+      const chain = act(t.chain, by, remarks);
+      return { ...t, chain, status: chain.status === 'approved' ? 'approved' : t.status };
+    }, 'chain_act', by);
+    if (out.status === 'approved') {
+      // Book the asset to the receiving project and unlock (spec §6).
+      const assets = readJson<MachineryAsset[]>(machAssetsKey, () => SEED_MACHINERY_ASSETS);
+      const asset = assets.find((a) => a.id === out.assetId);
+      if (asset) { asset.currentProjectId = out.toProjectId; asset.locked = false; writeJson(machAssetsKey, assets); }
+    }
+    return out;
+  }
+  async returnMachineryTransfer(id: string, by: string, remarks: string): Promise<MachineryTransfer> {
+    const out = this.mutateTransfer(id, (t) => ({ ...t, chain: returnForCorrection(t.chain, by, remarks), status: 'returned' }), 'chain_return', by);
+    // A returned transfer releases the lock so the asset stays usable where it is.
+    const assets = readJson<MachineryAsset[]>(machAssetsKey, () => SEED_MACHINERY_ASSETS);
+    const asset = assets.find((a) => a.id === out.assetId);
+    if (asset) { asset.locked = false; writeJson(machAssetsKey, assets); }
+    return out;
+  }
   async getBaselineLock(projectId: string, kind: BaselineKind): Promise<BaselineLock> {
     const all = readJson<Record<string, BaselineLock>>(baselineKey(projectId), () => ({}));
     return all[kind] ?? { projectId, kind, status: 'open', revisionNo: 0 };
@@ -1566,6 +1622,33 @@ export class LocalDataProvider implements DataProvider {
     all.sort((a, b) => a.dated.localeCompare(b.dated));
     writeJson(prodKey(projectId), all);
     return run;
+  }
+  async recordPlantRun(projectId: string, input: { dated: string; mixDesignId: string; plantAssetId: string; outputQty: number; destination: 'self' | 'contractor'; contractorId?: string }): Promise<ProductionRun> {
+    const designs = await this.listMixDesigns(projectId);
+    const design = designs.find((d) => d.id === input.mixDesignId);
+    if (!design) throw new Error('mix design not found');
+    const consumptionMap = runConsumption(design, input.outputQty);
+    const consumption = [...consumptionMap.entries()].map(([materialCode, qty]) => ({ materialCode, qty }));
+    const all = readJson<ProductionRun[]>(prodKey(projectId), () => []);
+    const run: ProductionRun = {
+      id: `pr-${projectId}-${all.length + 1}`, projectId, dated: input.dated,
+      product: design.name, unit: design.outputUnit, plannedQty: input.outputQty, actualQty: input.outputQty,
+      mixDesignId: design.id, plantAssetId: input.plantAssetId, consumption,
+      destination: input.destination, contractorId: input.destination === 'contractor' ? input.contractorId : undefined,
+    };
+    all.unshift(run);
+    writeJson(prodKey(projectId), all);
+    audit(projectId, 'plant_run', 'Production', run.id, `${design.id} × ${input.outputQty}${design.outputUnit} → ${input.destination}`);
+    return run;
+  }
+  async plantMaterialBalance(projectId: string, plantAssetId: string): Promise<Array<{ materialCode: string; consumed: number }>> {
+    const runs = readJson<ProductionRun[]>(prodKey(projectId), () => []);
+    const acc = new Map<string, number>();
+    for (const r of runs) {
+      if (r.plantAssetId !== plantAssetId || !r.consumption) continue;
+      for (const c of r.consumption) acc.set(c.materialCode, (acc.get(c.materialCode) ?? 0) + c.qty);
+    }
+    return [...acc.entries()].map(([materialCode, consumed]) => ({ materialCode, consumed: +consumed.toFixed(2) }));
   }
   async listMaterialIssues(projectId: string): Promise<MaterialIssue[]> {
     return readJson(issueKey(projectId), () => ((gen(projectId)?.issues ?? SEED_ISSUES)));
@@ -2239,6 +2322,15 @@ const poKey = (pid: string) => `nlc-ecc.pos.${pid}`;
 const crvKey = (pid: string) => `nlc-ecc.crvs.${pid}`;
 const billKey = (pid: string) => `nlc-ecc.supplierbills.${pid}`;
 const baselineKey = (pid: string) => `nlc-ecc.baselinelocks.${pid}`;
+const machAssetsKey = 'nlc-ecc.machineryassets';
+const machTransfersKey = 'nlc-ecc.machinerytransfers';
+const SEED_MACHINERY_ASSETS: MachineryAsset[] = [
+  { id: 'ma-exc-320', code: 'EXC-320', description: 'Excavator CAT 320', category: 'plant', currentProjectId: 'proj-f14f15', locked: false },
+  { id: 'ma-rlr-12t', code: 'RLR-12T', description: '12T vibratory roller', category: 'plant', currentProjectId: 'proj-f14f15', locked: false },
+  { id: 'ma-bp-30', code: 'BP-30', description: 'Batching plant 30 m³/hr', category: 'batching_plant', currentProjectId: undefined, locked: false },
+  { id: 'ma-ap-120', code: 'AP-120', description: 'Asphalt plant 120 t/hr', category: 'asphalt_plant', currentProjectId: 'proj-attock-byp', locked: false },
+  { id: 'ma-grd-14', code: 'GRD-14', description: 'Motor grader 14ft', category: 'plant', currentProjectId: undefined, locked: false },
+];
 const ppayKey = (pid: string) => `nlc-ecc.ppays.${pid}`;
 const hireKey = (pid: string) => `nlc-ecc.hires.${pid}`;
 const prodKey = (pid: string) => `nlc-ecc.production.${pid}`;

@@ -139,7 +139,7 @@ export interface Subcontractor {
   name: string;
   trade: string;
   // Profile (optional; populated in the Contractor profiles screen)
-  kind?: 'labor' | 'sublet';
+  kind?: 'labor' | 'sublet' | 'epc';
   owner?: string;
   cnic?: string;
   pecCategory?: string; // e.g. C-A, C-1 … C-6

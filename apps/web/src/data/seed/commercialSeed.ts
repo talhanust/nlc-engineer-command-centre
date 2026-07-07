@@ -304,6 +304,9 @@ function build(profile: SeedProfile): GeneratedSeed {
   const machinery: MachineryUsage[] = [
     { id: `mu-${pid}-1`, projectId: pid, dated: addMonths(profile.start, 5), machineryCode: 'EXC-320', description: 'Excavator CAT 320 (hire)', hours: round(420 * scale), rate: 6500, contractorId: subs[2]?.id, recovered: round(420 * scale * 6500 * 0.35) },
     { id: `mu-${pid}-2`, projectId: pid, dated: addMonths(profile.start, 7), machineryCode: 'RLR-12T', description: '12T vibratory roller (hire)', hours: round(260 * scale), rate: 4200, contractorId: subs[3]?.id, recovered: 0 },
+    // Overhead-class running (booked to Overheads, not direct cost — spec §6):
+    { id: `mu-${pid}-3`, projectId: pid, dated: addMonths(profile.start, 6), machineryCode: 'VEH-PK01', description: 'Project pickup (light vehicle)', hours: round(900 * scale), rate: 350, recovered: 0 },
+    { id: `mu-${pid}-4`, projectId: pid, dated: addMonths(profile.start, 6), machineryCode: 'GEN-100', description: '100 kVA site generator', hours: round(1200 * scale), rate: 220, recovered: 0 },
   ];
 
   // --- Material compositions (BOQ item = MANY materials, per civil practice) --

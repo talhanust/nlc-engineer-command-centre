@@ -1,6 +1,47 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-07-07 — CA/BOQ/VO model made coherent: BOQ Value revises with approved VOs; phantom VO explained
+- User's two correct objections: (1) "I didn't add a VO — why did it show revised?" The seed
+  generator creates three variations per project incl. VO-01 status 'approved' (amount cv×0.009 ≈
+  191.7 Mn on Margalla) — so the 21,491.7 Mn was award 21,300 + seeded approved VO, never
+  user-added. (2) "If a VO is approved the BOQ Value must also revise." Correct — an approved
+  variation revises the bill of quantities, so BOQ Value and Contract Value are the SAME quantity.
+- domain/variations.ts: revisedBoqItems(boq, variations) applies every APPROVED variation to the
+  BOQ — line-based VOs edit/add/omit specific items (via applyVariationToBoq); amount-based VOs
+  (no lines, like the seed's) append a single LS summary line carrying the net amount so totals
+  reconcile. revisedBoqValue() = the one authoritative figure.
+- CommercialDashboard: Contract Value AND BOQ Value now both derive from revisedBoqValue(boq,
+  vos) — identical numbers. Base BOQ is shown in the sub-lines ("revised · base X" / "N items ·
+  incl. approved VOs") only when an approved VO exists; otherwise "per BOQ" / "N items". Verified
+  on Margalla: base 21,297.9 Mn + approved VO 191.7 Mn → both tiles 21,489.6 Mn. Other tabs
+  (Retention, Calendar, EVM) already compute revisedContractValue(storedCV, vos); since stored CV
+  == base BOQ, they match the dashboard — one figure everywhere.
+- Tests: RevisedBoq.test — submitted VO doesn't revise; approved amount-based VO revises + adds
+  summary line; approved line-based qty VO edits items; omission reduces. Suite 473 (83 files,
+  shard 293+180); server 9; both builds green; whole-project typecheck clean.
+
+2026-07-07 — FINAL fix for CA≠BOQ: reconcileSeed only cleared the flagship's stale cache
+- User screenshot (Margalla Avenue Extension): Contract Value 21,491.7 Mn vs BOQ Value 4,109.7 Mn,
+  122 BOQ items — a >5× mismatch. Previous CA=BOQ work reconciled correctly in a FRESH store, so
+  why did it persist? Root cause: reconcileSeed()'s stale-cache purge cleared entity keys for the
+  FLAGSHIP ONLY ('proj-f14f15'). Every OTHER seeded project (Margalla, Attock, Thar, I-11) kept
+  its previous-session cached BOQ (e.g. 122 items @ 4,109 Mn) while the project RECORD carried the
+  raw seed cv (21,300 Mn) — the two never met. So the reconciled PROJECTS array (CV-from-BOQ) had
+  no effect on an already-populated browser.
+- Fix: reconcileSeed now (1) clears stale entity caches for ALL seeded projects (loop over
+  SEED_PROFILES, not just the flagship), and (2) RE-SYNCS each seeded project's contractValue to
+  its freshly-regenerated BOQ total — so on a seed-version bump both the BOQ and the CV reconcile,
+  not only in a brand-new store. Bumped SEED_VERSION → 2026-07-07.v11-ca-boq-reconcile to trigger
+  it for every existing user.
+- Verified: simulating a stale old-version session (single-item stale BOQ + 21,300 Mn stored CV)
+  → after upgrade the BOQ regenerates (88 items) AND contractValue re-syncs to the exact BOQ total
+  (21,297.9 Mn). CommercialDashboard's Contract Value (= original + approved VOs) now sits on a
+  base 'original' that equals BOQ value; the "revised · award" sub-line shows the base award only
+  when VOs exist — the correct construction relationship.
+- Test: NewProjectCleanSlate.test gains an upgrade-path case (stale cache cleared + CV re-synced).
+  Suite 469 (82 files, shard 293+176); server 9; both builds green; whole-project typecheck clean.
+
 2026-07-04 — Data-integrity fixes: new-project seed leakage, CA Value = BOQ Amount, salients persistence
 - ROOT-CAUSE BUG (user-reported): a newly created project showed non-zero executed/vetted/
   receivables and flagship contracts/RARs/subs. Cause: ~55 provider list/mutate call sites fell

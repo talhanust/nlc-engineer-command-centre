@@ -6,6 +6,7 @@ import { healthScore } from '../domain/health';
 import { pendingStage } from '../domain/chains';
 import { totalBalanceToRecover } from '../domain/materialrecovery';
 import { totalMachineryToRecover } from '../domain/machineryRecovery';
+import { SectionMapPane } from './SectionMapPane';
 import { activityDerivedProgress } from '../domain/derivedProgress';
 import type { OrgNode, Project } from '../data/types';
 
@@ -39,6 +40,7 @@ export function SectionDashboards({ nodes, projects }: { node?: OrgNode; nodes: 
   const [rows, setRows] = useState<Row[]>([]);
   const [pdFilter, setPdFilter] = useState('all');
   const [alarmsOnly, setAlarmsOnly] = useState(false);
+  const [view, setView] = useState<'table' | 'map'>('table');
   const [loading, setLoading] = useState(false);
 
   const nameOf = useMemo(() => Object.fromEntries(nodes.map((n) => [n.id, n.name])), [nodes]);
@@ -204,10 +206,21 @@ export function SectionDashboards({ nodes, projects }: { node?: OrgNode; nodes: 
         <label className="small" style={{ marginLeft: 4 }}>
           <input type="checkbox" checked={alarmsOnly} onChange={(e) => setAlarmsOnly(e.target.checked)} aria-label="Alarms only" /> Alarms only
         </label>
+        <div role="group" aria-label="Section view" style={{ marginLeft: 4 }}>
+          <button className="btn-ghost btn-mini" aria-pressed={view === 'table'} onClick={() => setView('table')} style={view === 'table' ? { borderColor: 'var(--primary)', fontWeight: 600 } : undefined}>Table</button>
+          <button className="btn-ghost btn-mini" aria-pressed={view === 'map'} onClick={() => setView('map')} style={view === 'map' ? { borderColor: 'var(--primary)', fontWeight: 600 } : undefined}>Map</button>
+        </div>
         {alarmCount > 0 && <span className="muted small">⚠ {alarmCount} project{alarmCount === 1 ? '' : 's'} with alarms</span>}
       </div>
 
-      {loading ? <p className="muted small">Compiling section roll-up…</p> : (
+      {loading ? <p className="muted small">Compiling section roll-up…</p> : view === 'map' ? (
+        <SectionMapPane
+          projects={projects.filter((p) => visible.some((r) => r.projectId === p.id))}
+          alarmIds={new Set(visible.filter((r) => r.alarms.length > 0).map((r) => r.projectId))}
+          nameOf={(id) => nameOf[id] ?? id}
+          title={SECTIONS.find(([s2]) => s2 === section)?.[1] ?? 'Section'}
+        />
+      ) : (
         <table className="data-table" aria-label={`${section} section`}>
           <thead><tr><th>PD</th><th>Project</th>{columns.map((c) => <th key={c} className={c === 'Contractors' ? '' : 'num'}>{c}</th>)}<th>Alarms</th><th></th></tr></thead>
           <tbody>

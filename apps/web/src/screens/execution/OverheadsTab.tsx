@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { formatMoney } from '../../domain/money';
 import { TIMELINE } from '../../domain/scurve';
-import type { OverheadLine, FinancialPayment, HrUnit } from '../../data/types';
+import type { OverheadLine, FinancialPayment, HrUnit, MachineryUsage, PolRecord } from '../../data/types';
+import { deriveOverheadSubheads, subheadTotal } from '../../domain/overheadBooking';
 import { nodeOwnHrMonthly } from '../../domain/hrrollup';
 import { CURRENT_IDX } from '../../domain/scurve';
 
@@ -11,13 +12,18 @@ export function OverheadsTab({ projectId }: { projectId: string }) {
   const [lines, setLines] = useState<OverheadLine[]>([]);
   const [payments, setPayments] = useState<FinancialPayment[]>([]);
   const [hrUnits, setHrUnits] = useState<HrUnit[]>([]);
+  const [machinery, setMachinery] = useState<MachineryUsage[]>([]);
+  const [pol, setPol] = useState<PolRecord[]>([]);
   const [category, setCategory] = useState('');
   const [month, setMonth] = useState(TIMELINE[9]);
   const [cost, setCost] = useState('');
 
   async function load() {
-    const [o, p, u] = await Promise.all([provider.listOverheads(projectId), provider.listPayments(projectId), provider.listHrUnits(projectId)]);
-    setLines(o); setPayments(p); setHrUnits(u);
+    const [o, p, u, m, pl] = await Promise.all([
+      provider.listOverheads(projectId), provider.listPayments(projectId), provider.listHrUnits(projectId),
+      provider.listMachineryUsage(projectId), provider.listPol(projectId),
+    ]);
+    setLines(o); setPayments(p); setHrUnits(u); setMachinery(m); setPol(pl);
   }
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [provider, projectId]);
 
@@ -35,6 +41,11 @@ export function OverheadsTab({ projectId }: { projectId: string }) {
   const hrBookedMonths = CURRENT_IDX + 1; // months elapsed in the fixed timeline
   const plannedTotal = lines.reduce((s, l) => s + l.plannedCost, 0) + hrMonthly * hrBookedMonths;
   const actualTotal = [...actualByMonth.values()].reduce((s, v) => s + v, 0);
+
+  // Overhead sub-head auto-booking (spec §6): vehicles, generators, their
+  // maintenance and POL are derived from operational data — no re-entry.
+  const derivedSubheads = deriveOverheadSubheads(machinery, pol);
+  const derivedTotal = subheadTotal(derivedSubheads);
 
   async function add() {
     if (!category.trim() || !cost) return;
@@ -62,6 +73,20 @@ export function OverheadsTab({ projectId }: { projectId: string }) {
         <button className="btn" onClick={add}>Add line</button>
       </div>
 
+      {derivedSubheads.length > 0 && (
+        <div className="card" style={{ margin: '10px 0', padding: '8px 12px' }} aria-label="Overhead sub-head auto-booking">
+          <strong className="small">Auto-booked overhead sub-heads</strong>
+          <span className="muted small" style={{ marginLeft: 8 }}>derived from running logs & POL — {formatMoney(derivedTotal)}</span>
+          <table className="data-table" style={{ marginTop: 6 }} aria-label="Derived overhead subheads">
+            <thead><tr><th>Sub-head</th><th className="num">Amount</th></tr></thead>
+            <tbody>
+              {derivedSubheads.map((b) => (
+                <tr key={b.subhead}><td className="small">{b.subhead}</td><td className="num">{formatMoney(b.amount)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       {hrMonthly > 0 && (
         <div className="card" style={{ margin: '10px 0', padding: '8px 12px' }} aria-label="HR manpower posting">
           <strong>Manpower (HR establishment)</strong>{' '}

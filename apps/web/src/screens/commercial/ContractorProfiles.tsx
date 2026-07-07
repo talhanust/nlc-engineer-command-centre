@@ -83,8 +83,8 @@ export function ContractorProfiles({ projectId }: { projectId: string }) {
               <div style={{ marginTop: 10 }}>
                 <div className="create-row">
                   <label className="small">Kind{' '}
-                    <select aria-label={`Kind ${s.id}`} value={s.kind ?? 'sublet'} onChange={(e) => patch(s.id, { kind: e.target.value as 'labor' | 'sublet' })}>
-                      <option value="labor">Labor</option><option value="sublet">Sublet</option>
+                    <select aria-label={`Kind ${s.id}`} value={s.kind ?? 'sublet'} onChange={(e) => patch(s.id, { kind: e.target.value as 'labor' | 'sublet' | 'epc' })}>
+                      <option value="labor">Labor</option><option value="sublet">Sublet</option><option value="epc">EPC</option>
                     </select>
                   </label>
                   <label className="small">PEC category{' '}

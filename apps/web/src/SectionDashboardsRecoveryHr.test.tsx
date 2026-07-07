@@ -61,3 +61,20 @@ describe('staff-section dashboards — Recovery & HR', () => {
     });
   });
 });
+
+describe('per-section map pane', () => {
+  it('toggles from table to map and plots the section projects', async () => {
+    localStorage.clear();
+    const user = userEvent.setup();
+    const selector = await openSections();
+    await user.click(within(selector).getByRole('button', { name: 'Monitoring Sec' }));
+    await screen.findByRole('table', { name: 'monitoring section' });
+    // switch to the map view
+    const viewGroup = screen.getByRole('group', { name: 'Section view' });
+    await user.click(within(viewGroup).getByRole('button', { name: 'Map' }));
+    // the section map renders (MapView exposes an aria-labelled region)
+    await waitFor(() => expect(screen.getByLabelText(/Monitoring Sec map/)).toBeInTheDocument());
+    // and the table is gone
+    expect(screen.queryByRole('table', { name: 'monitoring section' })).not.toBeInTheDocument();
+  });
+});

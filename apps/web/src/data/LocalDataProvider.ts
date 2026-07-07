@@ -2251,7 +2251,7 @@ const projectsKey = 'nlc-ecc.projects';
 const seedVersionKey = 'nlc-ecc.seedVersion';
 // Bump when the bundled project roster / seed changes so existing cached stores
 // pick up newly-seeded projects and nodes without losing user-created data.
-const SEED_VERSION = '2026-07-04.v10-overhead-vehicles';
+const SEED_VERSION = '2026-07-07.v11-ca-boq-reconcile';
 
 /** Merge any newly-seeded projects/nodes into an already-persisted store and
  *  backfill date/coordinate fields on seeded projects. Runs once per version. */
@@ -2296,16 +2296,34 @@ function reconcileSeed(): void {
       if (nchanged) writeJson(nodesKey, exN);
     }
 
-    // Flagship is now generated like every other project — drop any stale hand-seeded
-    // caches so its whole commercial spine regenerates consistently.
+    // Every SEEDED project is generated from its profile — on a seed-version
+    // change, drop stale cached entities for ALL of them so the whole commercial
+    // spine (incl. BOQ ↔ contract value) regenerates consistently. Without this,
+    // a project record reconciled to a new BOQ total would sit beside an OLD
+    // cached BOQ from a previous session (the CA ≠ BOQ drift users saw).
     try {
-      const F = 'proj-f14f15';
-      for (const k of [
+      const ENTITY_KEYS = [
         'boq', 'progress', 'ipcs', 'subs', 'rars', 'rarlinks', 'variations', 'contractsreg',
         'bankguarantees', 'dists', 'sched', 'escindices', 'epcs', 'resources', 'overheads',
         'receipts', 'payments', 'liabilities', 'suppliers', 'demands', 'salients',
         'production', 'materialIssues', 'inventory', 'pol', 'fixedassets', 'advances', 'boqmat', 'machinery',
-      ]) store.removeItem(`nlc-ecc.${k}.${F}`);
+      ];
+      for (const seededId of Object.keys(SEED_PROFILES)) {
+        for (const k of ENTITY_KEYS) store.removeItem(`nlc-ecc.${k}.${seededId}`);
+      }
+      // Re-sync each seeded project's contract value to its (freshly cleared →
+      // regenerated) BOQ total, so CA == BOQ after the upgrade, not just for
+      // brand-new stores.
+      const proj2 = readJson<Project[]>(projectsKey, () => []);
+      let synced = false;
+      for (const pr of proj2) {
+        const prof = SEED_PROFILES[pr.id];
+        if (!prof) continue;
+        const gg = seedFor(prof);
+        const bt = String(Math.round(gg.boq.reduce((a, i) => a + i.amount, 0)));
+        if (pr.contractValue !== bt) { pr.contractValue = bt; synced = true; }
+      }
+      if (synced) writeJson(projectsKey, proj2);
     } catch { /* ignore */ }
 
     writeJson(seedVersionKey, SEED_VERSION);

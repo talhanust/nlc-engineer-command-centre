@@ -126,3 +126,37 @@ export function applyVariationToBoq(boq: BoqItem[], variation: Variation): BoqIt
   }
   return next;
 }
+
+
+/**
+ * Revised BOQ items after applying every APPROVED variation (spec: an approved
+ * VO revises the bill of quantities). Line-based VOs edit/add/omit specific
+ * items; amount-based VOs (no lines) append a single summary line carrying the
+ * net amount so the BOQ total still reflects the variation.
+ */
+export function revisedBoqItems(boq: BoqItem[], variations: Variation[]): BoqItem[] {
+  let items = boq.map((b) => ({ ...b }));
+  for (const v of variations) {
+    if (v.status !== 'approved') continue;
+    if (v.lines && v.lines.length > 0) {
+      items = applyVariationToBoq(items, v);
+    } else {
+      // Amount-based VO: represent as one summary BOQ line so totals reconcile.
+      items.push({
+        id: `boq-${v.projectId}-vo-${v.voNo}`, projectId: v.projectId,
+        billNo: '—', billName: undefined, section: `VO ${v.voNo}`,
+        code: v.voNo, description: v.title || `Variation ${v.voNo}`,
+        unit: 'LS', qty: 1, rate: v.amount, amount: v.amount, revisedByVo: v.voNo,
+      });
+    }
+  }
+  return items;
+}
+
+/**
+ * The single authoritative contract figure: base BOQ total plus the net effect
+ * of all APPROVED variations. CA Value == Revised BOQ Value — one number.
+ */
+export function revisedBoqValue(boq: BoqItem[], variations: Variation[]): number {
+  return revisedBoqItems(boq, variations).reduce((s, b) => s + b.amount, 0);
+}

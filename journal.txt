@@ -1,6 +1,35 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-07-04 — Data-integrity fixes: new-project seed leakage, CA Value = BOQ Amount, salients persistence
+- ROOT-CAUSE BUG (user-reported): a newly created project showed non-zero executed/vetted/
+  receivables and flagship contracts/RARs/subs. Cause: ~55 provider list/mutate call sites fell
+  back to hard-coded flagship SEED_* constants (SEED_RARS, SEED_CONTRACTS, SEED_SUBS,
+  SEED_VARIATIONS, SEED_BGS, SEED_DISTRIBUTIONS, SEED_SCHEDULE, SEED_OVERHEADS, SEED_RESOURCES,
+  SEED_SALIENTS, SEED_RECEIPTS, SEED_PAYMENTS, SEED_LIABILITIES, SEED_SUPPLIERS, SEED_DEMANDS,
+  SEED_INVENTORY, SEED_POL, SEED_FA, SEED_PRODUCTION, SEED_ISSUES) whenever a project had no
+  stored value. For any project WITHOUT a seed profile (i.e. every user-created project) this
+  leaked the flagship's data. Fixed: every fallback is now `gen(projectId)?.<field> ?? []` — a
+  seeded project gets its generated data, any other project gets EMPTY. Deleted all 20 now-dead
+  SEED_ constants (SEED_RECEIPTS retained: still used). A fresh project is a true clean slate:
+  billed/received '0', planned/actual 0, and every list empty (regression-tested).
+- SALIENTS PERSISTENCE (user-reported "salients not saved"): same leak — upsertSalient read
+  SEED_SALIENTS, appended, and wrote the flagship's salients back mixed with the user's. Now a
+  new salient persists alone.
+- CA VALUE = BOQ AMOUNT (user-reported "different CA at different locations"): (1) seeded
+  projects had contractValue from the profile cv, which drifted ~2M from the generated BOQ total
+  (rounding) — now every seeded Project's contractValue is DERIVED from its generated BOQ total,
+  so flagship + all three lifecycle projects match to the rupee; (2) replaceBoq() now syncs the
+  project's contractValue to the BOQ total on every import — one figure everywhere, and a revised
+  BOQ re-syncs. (Had to relocate the PROJECTS const below gen()/SEED_PROFILES to avoid a TDZ
+  ReferenceError.)
+- Per-section map panes: confirmed already present (SectionMapPane, Table/Map toggle) and
+  section-agnostic, so the new Recovery/HR sections get maps automatically; reverted a redundant
+  NodeMap import.
+- Tests: new NewProjectCleanSlate.test.tsx — fresh project all-empty, salient persists alone,
+  flagship intact, CA=BOQ on import + re-sync, and every seeded project CA==BOQ (no drift). Suite
+  468 (82 files, shard 293+175); server 9; both builds green; whole-project typecheck clean.
+
 2026-07-04 — Data-integrity fixes: new-project clean slate, CA = BOQ, salients persist; + per-section map panes
 - ROOT-CAUSE FIX (major): ~55 provider list/mutate call sites fell back to `gen(projectId)?.X ??
   SEED_X` — flagship seed constants (SEED_RARS/CONTRACTS/SUBS/SALIENTS/RECEIPTS/PAYMENTS/…). A

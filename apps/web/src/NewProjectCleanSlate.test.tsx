@@ -77,6 +77,21 @@ describe('CA Value = BOQ Amount (single source of truth)', () => {
     }
   });
 
+  it('a seed-version upgrade clears stale caches and re-syncs CV to the regenerated BOQ', async () => {
+    const kv = memKv();
+    setKvStore(kv);
+    // simulate an old session: stale single-item BOQ + mismatched stored CV
+    kv.setItem('nlc-ecc.seedVersion', JSON.stringify('OLD-VERSION'));
+    kv.setItem('nlc-ecc.boq.proj-margalla-rd', JSON.stringify([{ id: 'stale', projectId: 'proj-margalla-rd', billNo: '1', billName: 'b', section: 's', code: '1-01', description: 'stale', unit: 'm', qty: 100, rate: 1000, amount: 100000 }]));
+    kv.setItem('nlc-ecc.projects', JSON.stringify([{ id: 'proj-margalla-rd', pdHqId: 'pd-north', clientName: 'CDA', contractValue: '21300000000', billedToDate: '0', receivedToDate: '0', plannedPct: 50, actualPct: 47 }]));
+    const p = new LocalDataProvider();
+    const proj = (await p.listProjects()).find((x) => x.id === 'proj-margalla-rd')!;
+    const boq = await p.listBoq('proj-margalla-rd');
+    const boqTotal = Math.round(boq.reduce((a, i) => a + i.amount, 0));
+    expect(boq.length).toBeGreaterThan(1);              // stale BOQ was cleared + regenerated
+    expect(proj.contractValue).toBe(String(boqTotal));  // CV re-synced to BOQ
+  });
+
   it('re-importing a revised BOQ re-syncs the CA value', async () => {
     setKvStore(memKv());
     const p = new LocalDataProvider();

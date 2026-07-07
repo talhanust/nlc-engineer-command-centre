@@ -1,6 +1,58 @@
 NLC Engineer Command Centre — work journal
 (Newest entries first. Prose, commit-style.)
 
+2026-07-04 — Data-integrity fixes: new-project clean slate, CA = BOQ, salients persist; + per-section map panes
+- ROOT-CAUSE FIX (major): ~55 provider list/mutate call sites fell back to `gen(projectId)?.X ??
+  SEED_X` — flagship seed constants (SEED_RARS/CONTRACTS/SUBS/SALIENTS/RECEIPTS/PAYMENTS/…). A
+  brand-new project (no seed profile, gen()→null) therefore inherited the FLAGSHIP's RARs,
+  contracts, salients etc., so receivables/executed/vetted were non-zero and salients looked
+  unsaved (buried among seeded ones). Swept every `?? SEED_X` → `?? []` (55 sites) and deleted
+  the 20 now-dead SEED_ constants. A fresh project is now a genuine clean slate: all lists empty,
+  billed/received/planned/actual = 0. Regression test NewProjectCleanSlate covers 18 lists + the
+  salient-persists-alone case + flagship-unaffected.
+- CA VALUE = BOQ AMOUNT (single source of truth): replaceBoq() now syncs the project's
+  contractValue to the BOQ total (import/enter BOQ → CA updates everywhere at once, audited).
+  Seeded projects reconciled too — PROJECTS now derives contractValue from each project's
+  GENERATED BOQ total instead of the profile's approximate cv, killing the CV/BOQ drift (flagship
+  was 19,284,461,163 stated vs 19,282,383,253 BOQ → now identical). Relocated the PROJECTS const
+  below SEED_PROFILES/gen to avoid a TDZ ReferenceError. Tests cover BOQ-import sync + re-sync.
+- PER-SECTION MAP PANES: new screens/SectionMapPane.tsx (reuses MapView) plotting the section's
+  projects as clickable markers colour-coded by alarm state (red = flagged); SectionDashboards
+  gains a Table/Map view toggle. Deep-links to the project node on click. Test toggles to map and
+  asserts the pane renders.
+- Full suite 467 (82 files, shard 293+174); server 9; both builds green; whole-project typecheck
+  clean.
+
+2026-07-04 — EPC subcontractor RAR parity (spec §5, A7)
+- Subcontractor.kind gains 'epc' (labor | sublet | epc); ContractorProfiles kind selector offers
+  EPC. The RAR ladder is deliberately CONTRACTOR-KIND AGNOSTIC — rarApprovalChain() takes no kind
+  argument, so labor, sublet and EPC subcontractors all walk the SAME eight-step Pre-Audit chain
+  (Contract Engr → DPM → SPM → Manager Contracts HQ PD → Pre-Audit → DPD → PD → SM Finance),
+  which is exactly what A7 requires ("byte-identical incl. Pre-Audit"). EPC contract packages
+  route on the sublet ceiling band for award approval.
+- Tests: the chain is byte-identical across calls and pins the eight appointments incl. Pre-Audit
+  at index 4; an EPC subcontractor's RAR submits to the identical ladder and walks all eight acts
+  to PAID (unchanged from labor/sublet). Suite 461 (81 files, shard 293+168); server 9; both
+  builds green; whole-project typecheck clean.
+
+2026-07-04 — Overhead sub-head auto-booking: vehicles, generators, maintenance & POL (spec §6)
+- domain/overheadBooking.ts: deriveOverheadSubheads(machinery, pol) posts non-direct running
+  costs to standard Overheads sub-heads — VEHICLE RUNNING and GENERATOR RUNNING split from
+  machinery-usage logs (works plant like EXC/RLR is excluded; only VEH*/LV-*/GEN* and
+  pickup/car/jeep/generator descriptions count), VEHICLE & PLANT MAINTENANCE as a % of running
+  (default 12%), and POL from issued litres × fuel rate (diesel 285 / petrol 290). plannedBy
+  Subhead() classifies planned overhead lines (maintenance checked before generator so "generator
+  maintenance" books correctly). One running-log or POL entry updates the overhead position with
+  no re-entry — same live-derivation pattern as HR manpower.
+- OverheadsTab now loads machinery usage + POL and renders an "Auto-booked overhead sub-heads"
+  card (sub-head → amount, derived total) above the HR manpower posting. Seeded overhead-class
+  running on every generated project (VEH-PK01 pickup + GEN-100 generator; bumped SEED_VERSION →
+  v10-overhead-vehicles so machinery regenerates).
+- Tests: vehicle/generator split + maintenance + POL derivation with works-plant exclusion;
+  empty result when only works plant present; planned-line classification incl. the
+  generator-maintenance ordering fix; UI card from seeded vehicles. Suite 459 (80 files, shard
+  293+166); server 9; both builds green; whole-project typecheck clean.
+
 2026-07-04 — Recovery + HR staff-section dashboards; per-section alarms-only filter
 - SectionDashboards gained two sections (now seven): RECOVERY SEC rolls up physically-completed
   projects — % collected, receivable (billed−received), open DLP defects, TOC date — alarming on

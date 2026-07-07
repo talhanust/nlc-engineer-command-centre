@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
-import { formatMoney, toNum } from '../../domain/money';
+import { formatMoney } from '../../domain/money';
 import { retentionSummary } from '../../domain/retention';
 import { advanceSummary } from '../../domain/advances';
-import { revisedContractValue } from '../../domain/variations';
+import { revisedBoqValue } from '../../domain/variations';
 import { seriesByPeriod, trendDelta } from '../../domain/trends';
 import { Sparkline } from '../../components/Sparkline';
 import { SkeletonTiles } from '../../components/Skeleton';
@@ -31,9 +31,13 @@ export function CommercialDashboard({ projectId, onNavigate }: { projectId: stri
   }, [provider, projectId]);
 
   const k = useMemo(() => {
-    const original = toNum(projects.find((p) => p.id === projectId)?.contractValue ?? '0');
-    const contractValue = revisedContractValue(original, vos);
-    const boqValue = boq.reduce((s, b) => s + b.amount, 0);
+    // BOQ Value and Contract Value are the SAME quantity — the revised BOQ.
+    // Base BOQ is the priced bill; approved VOs revise it; CA = revised BOQ.
+    const baseBoqValue = boq.reduce((s, b) => s + b.amount, 0);
+    const boqValue = revisedBoqValue(boq, vos);
+    const contractValue = boqValue;
+    const original = baseBoqValue;
+    const hasApprovedVo = vos.some((v) => v.status === 'approved');
     const ipcGross = ipcs.reduce((s, i) => s + i.gross, 0);
     const ipcNet = ipcs.reduce((s, i) => s + i.netPayable, 0);
     const rarBooked = rars.reduce((s, r) => s + r.gross, 0);
@@ -43,7 +47,7 @@ export function CommercialDashboard({ projectId, onNavigate }: { projectId: stri
     const sec = advanceSummary(advs, 'secure');
     const outstandingAdv = mob.outstandingClient + sec.outstandingClient;
     const coverage = ipcGross > 0 ? rarBooked / ipcGross : 0;
-    return { contractValue, original, boqValue, ipcGross, ipcNet, rarBooked, escalation, retention, outstandingAdv, coverage };
+    return { contractValue, original, boqValue, hasApprovedVo, ipcGross, ipcNet, rarBooked, escalation, retention, outstandingAdv, coverage };
   }, [projects, projectId, boq, ipcs, rars, epcs, advs, vos]);
 
   const series = useMemo(() => ({
@@ -54,8 +58,8 @@ export function CommercialDashboard({ projectId, onNavigate }: { projectId: stri
   }), [ipcs, rars, epcs]);
 
   const tiles: Array<{ label: string; value: string; sub?: string; to?: string; trend?: number[]; delta?: number | null }> = [
-    { label: 'Contract value', value: money(k.contractValue), sub: k.contractValue !== k.original ? `revised · award ${money(k.original)}` : 'FGEHA award', to: 'variations' },
-    { label: 'BOQ value', value: money(k.boqValue), sub: `${boq.length} items`, to: 'boq' },
+    { label: 'Contract value', value: money(k.contractValue), sub: k.hasApprovedVo ? `revised · base ${money(k.original)}` : 'per BOQ', to: 'variations' },
+    { label: 'BOQ value', value: money(k.boqValue), sub: k.hasApprovedVo ? `${boq.length} items · incl. approved VOs` : `${boq.length} items`, to: 'boq' },
     { label: 'IPC gross billed', value: money(k.ipcGross), sub: `${ipcs.length} IPCs`, to: 'ipc', trend: series.ipcGross.map((p) => p.cum), delta: trendDelta(series.ipcGross) },
     { label: 'IPC net certified', value: money(k.ipcNet), sub: 'after deductions', to: 'genipc', trend: series.ipcNet.map((p) => p.cum), delta: trendDelta(series.ipcNet) },
     { label: 'RAR booked', value: money(k.rarBooked), sub: `${rars.length} RARs`, to: 'rar', trend: series.rar.map((p) => p.cum), delta: trendDelta(series.rar) },

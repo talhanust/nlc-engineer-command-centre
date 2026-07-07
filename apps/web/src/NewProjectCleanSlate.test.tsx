@@ -65,6 +65,18 @@ describe('CA Value = BOQ Amount (single source of truth)', () => {
     expect(after.contractValue).toBe('800000'); // 500k + 300k — one figure everywhere
   });
 
+  it('every seeded project already has CA Value == BOQ total (no drift)', async () => {
+    setKvStore(memKv());
+    const p = new LocalDataProvider();
+    for (const id of ['proj-f14f15', 'proj-attock-byp', 'proj-thar-coal-rd', 'proj-i11-infra']) {
+      const proj = (await p.listProjects()).find((x) => x.id === id);
+      if (!proj) continue;
+      const boq = await p.listBoq(id);
+      const boqTotal = Math.round(boq.reduce((a, i) => a + i.amount, 0));
+      expect(proj.contractValue, `CA drift on ${id}`).toBe(String(boqTotal));
+    }
+  });
+
   it('re-importing a revised BOQ re-syncs the CA value', async () => {
     setKvStore(memKv());
     const p = new LocalDataProvider();

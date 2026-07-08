@@ -1572,3 +1572,29 @@ NLC Engineer Command Centre — work journal
 - Tests: +9 (domain/geo, data/projectCreation). Updated ProjectLifecycle UI test
   to the new field set. Web 191 passing, server 8 passing; typecheck clean;
   builds green in local and api modes.
+
+2026-07-08 — Clean slate: demo seed retired to a test-only fixture
+- Delivered app now starts EMPTY — no seeded projects and no generated
+  commercial data. The org scaffold (HQ NLC, HQ Engineers, 5 PD HQs) stays so
+  new projects have somewhere to attach.
+- LocalDataProvider: the 21-project demo portfolio is renamed DEMO_SEED and
+  gated behind demoSeedEnabled = import.meta.env.MODE === 'test'. Under vitest
+  the flagship + demo generate as before (all 477 web tests unchanged); every
+  real build (dev/local/api) folds the flag to false and ships clean. SEED/
+  NODES/SEED_PROFILES/PROJECTS became recomputable `let`s (buildNodes/
+  buildProfiles/buildProjects); read sites reference them live. setDemoSeed()
+  exposes the toggle for clean-slate tests.
+- Org/global demo residue also gated: SEED_HR (HQ-level postings), the global
+  SEED_MACHINERY_ASSETS pool and SEED_TRANSFERS go empty when the seed is off.
+  Project-keyed maps (HR units/people/reqs/creds/DLP/photos) are inert without
+  their demo projects and left as-is. SEED_USERS (appointment/role roster) is
+  structural and kept so the app stays operable.
+- Migration: SEED_VERSION bumped to 2026-07-08.v12-clean-slate. reconcileSeed
+  now PURGES previously-seeded demo projects — their project rows, org nodes and
+  cached entity docs — from an existing store on upgrade, while keeping any
+  projects the user created (matched against LEGACY_SEED_IDS). ENTITY_KEYS
+  lifted to module scope and reused by the purge.
+- Tests: new data/seedDisabled.test.ts covers the seed-off path (zero projects,
+  base-only nodes, empty commercial lists, working user-created project) and the
+  legacy-purge migration (demo dropped, user project kept, stale docs removed).
+  Web 477 passing, server 9; typecheck clean; local + api builds green.

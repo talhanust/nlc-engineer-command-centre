@@ -38,7 +38,16 @@ interface Seed {
 }
 
 // Client names (FGEHA, CDA, NHA, …) are PROJECT clients — never the app brand.
-const SEED: Seed[] = [
+//
+// The demo portfolio below ships ONLY as the automated-test fixture. The
+// delivered application starts as a CLEAN SLATE — no seeded projects and no
+// generated commercial data — so real projects are created by the user. Under
+// vitest (import.meta.env.MODE === 'test') the demo is generated so the
+// commercial-engine regression suite keeps its data; in every real build
+// (dev / local / api) the seed is disabled and the app comes up empty.
+// setDemoSeed(true|false) overrides at runtime — used only by clean-slate tests.
+let demoSeedEnabled = import.meta.env.MODE === 'test';
+const DEMO_SEED: Seed[] = [
   { id: 'proj-f14f15', name: 'F-14/F-15 Islamabad', pdHqId: 'pd-north', client: 'FGEHA', cv: '19284461163', billed: '11200000000', received: '9800000000', planned: 62, actual: 58 },
   { id: 'proj-bahria', name: 'Bahria Enclave Roads', pdHqId: 'pd-north', client: 'Bahria Town', cv: '12450000000', billed: '7100000000', received: '6500000000', planned: 55, actual: 54 },
   { id: 'proj-e12', name: 'E-12 Infrastructure', pdHqId: 'pd-centre', client: 'CDA', cv: '8640000000', billed: '3200000000', received: '2400000000', planned: 40, actual: 25 },
@@ -61,7 +70,18 @@ const SEED: Seed[] = [
   { id: 'proj-quetta-wss', name: 'Quetta Water Supply Scheme', pdHqId: 'pd-bln', client: 'PHED Bln', cv: '9700000000', billed: '3300000000', received: '2500000000', planned: 34, actual: 27 },
 ];
 
-const NODES: OrgNode[] = [
+// Ids of the demo portfolio — retained even when the seed is off so a seed-
+// version upgrade can PURGE a previously-seeded demo project (its node + cached
+// docs) from an existing store, while leaving any real projects the user
+// created untouched. See reconcileSeed().
+const LEGACY_SEED_IDS: readonly string[] = DEMO_SEED.map((s) => s.id);
+
+// Effective seed for this run: the demo portfolio under test, otherwise empty.
+let SEED: Seed[] = demoSeedEnabled ? DEMO_SEED : [];
+
+// The org scaffold is structural (never demo data): HQ + PD HQ nodes are always
+// present so newly-created projects have somewhere to attach.
+const BASE_NODES: OrgNode[] = [
   { id: 'hq-nlc', name: 'HQ NLC', type: 'hq', parentId: null, lat: 33.5969, lng: 73.0862, location: 'GHQ NLC, Rawalpindi' },
   { id: 'hq-engrs', name: 'HQ Engineers', type: 'hq_engrs', parentId: 'hq-nlc', lat: 33.6007, lng: 73.0679, location: 'HQ Engineers, Rawalpindi' },
   { id: 'pd-north', name: 'HQ PD North', type: 'pd_hq', parentId: 'hq-engrs', lat: 33.6938, lng: 73.0651, location: 'Islamabad' },
@@ -69,8 +89,11 @@ const NODES: OrgNode[] = [
   { id: 'pd-kpk', name: 'HQ PD KPK', type: 'pd_hq', parentId: 'hq-engrs', lat: 34.0151, lng: 71.5249, location: 'Peshawar' },
   { id: 'pd-sindh', name: 'HQ PD Sindh', type: 'pd_hq', parentId: 'hq-engrs', lat: 24.8607, lng: 67.0011, location: 'Karachi' },
   { id: 'pd-bln', name: 'HQ PD Bln', type: 'pd_hq', parentId: 'hq-engrs', lat: 30.1798, lng: 66.9750, location: 'Quetta' },
-  ...SEED.map((s): OrgNode => ({ id: s.id, name: s.name, type: 'project', parentId: s.pdHqId })),
 ];
+function buildNodes(seed: Seed[]): OrgNode[] {
+  return [...BASE_NODES, ...seed.map((s): OrgNode => ({ id: s.id, name: s.name, type: 'project', parentId: s.pdHqId }))];
+}
+let NODES: OrgNode[] = buildNodes(SEED);
 
 const COORDS: Record<string, { lat: number; lng: number; location: string }> = {
   'proj-f14f15': { lat: 33.69, lng: 73.06, location: 'Islamabad' },
@@ -127,32 +150,55 @@ const LIFECYCLE_SEED: Record<string, { stage: ProjectStage; tocDate?: string; fi
 
 // Deterministic commercial seed for every project, including the flagship, so its
 // BOQ, executed progress, vetted IPCs, RAR billing and receipts reconcile.
-const SEED_PROFILES: Record<string, SeedProfile> = Object.fromEntries(
-  SEED.map((s) => [s.id, {
-    id: s.id, cv: Number(s.cv), billed: Number(s.billed),
-    plannedPct: s.planned, actualPct: s.actual, start: DATES[s.id]?.start ?? '2025-01-01',
-  }]),
-);
+function buildProfiles(seed: Seed[]): Record<string, SeedProfile> {
+  return Object.fromEntries(
+    seed.map((s) => [s.id, {
+      id: s.id, cv: Number(s.cv), billed: Number(s.billed),
+      plannedPct: s.planned, actualPct: s.actual, start: DATES[s.id]?.start ?? '2025-01-01',
+    }]),
+  );
+}
+let SEED_PROFILES: Record<string, SeedProfile> = buildProfiles(SEED);
 /** Generated commercial seed for a non-flagship project, or null if unknown. */
 function gen(projectId: string): GeneratedSeed | null {
   const p = SEED_PROFILES[projectId];
   return p ? seedFor(p) : null;
 }
 
-const PROJECTS: Project[] = SEED.map((s) => {
-  // CA Value = BOQ Amount: derive the stated contract value from the generated
-  // BOQ total so a project shows ONE figure everywhere (no CV/BOQ drift).
-  const g = SEED_PROFILES[s.id] ? seedFor(SEED_PROFILES[s.id]) : null;
-  const boqAmount = g ? g.boq.reduce((a, i) => a + i.amount, 0) : Number(s.cv);
-  return {
-    id: s.id, pdHqId: s.pdHqId, clientName: s.client,
-    contractValue: String(Math.round(boqAmount)), billedToDate: s.billed, receivedToDate: s.received,
-    plannedPct: s.planned, actualPct: s.actual,
-    commencementDate: DATES[s.id]?.start, completionDate: DATES[s.id]?.finish,
-    lat: COORDS[s.id]?.lat, lng: COORDS[s.id]?.lng, location: COORDS[s.id]?.location,
-    ...LIFECYCLE_SEED[s.id],
-  };
-});
+function buildProjects(seed: Seed[], profiles: Record<string, SeedProfile>): Project[] {
+  return seed.map((s) => {
+    // CA Value = BOQ Amount: derive the stated contract value from the generated
+    // BOQ total so a project shows ONE figure everywhere (no CV/BOQ drift).
+    const g = profiles[s.id] ? seedFor(profiles[s.id]) : null;
+    const boqAmount = g ? g.boq.reduce((a, i) => a + i.amount, 0) : Number(s.cv);
+    return {
+      id: s.id, pdHqId: s.pdHqId, clientName: s.client,
+      contractValue: String(Math.round(boqAmount)), billedToDate: s.billed, receivedToDate: s.received,
+      plannedPct: s.planned, actualPct: s.actual,
+      commencementDate: DATES[s.id]?.start, completionDate: DATES[s.id]?.finish,
+      lat: COORDS[s.id]?.lat, lng: COORDS[s.id]?.lng, location: COORDS[s.id]?.location,
+      ...LIFECYCLE_SEED[s.id],
+    };
+  });
+}
+let PROJECTS: Project[] = buildProjects(SEED, SEED_PROFILES);
+
+// Recompute all demo-derived state when the seed flag is toggled. Read sites
+// reference these `let` bindings live, so no call site needs to know. The demo
+// content maps (SEED_HR / machinery / transfers) are gated on the initial flag
+// at their own declarations and are intentionally not recomputed here — the
+// clean-slate tests assert on the portfolio + purge, not on those.
+function recomputeSeed(): void {
+  SEED = demoSeedEnabled ? DEMO_SEED : [];
+  NODES = buildNodes(SEED);
+  SEED_PROFILES = buildProfiles(SEED);
+  PROJECTS = buildProjects(SEED, SEED_PROFILES);
+}
+
+/** Enable/disable the demo seed fixture. The delivered app never calls this
+ *  (defaults off outside tests); clean-slate tests use it to assert the
+ *  empty-by-default behaviour and the legacy-purge migration. */
+export function setDemoSeed(on: boolean): void { demoSeedEnabled = on; recomputeSeed(); }
 
 
 
@@ -2080,7 +2126,7 @@ const TRANSFERS_KEY = 'nlc-ecc.hrtransfers';
 const REQ_STAGES: HrRequisition['stage'][] = ['raised', 'advertised', 'interview', 'offer', 'joined'];
 const TRANSFER_ORDER: HrTransfer['stage'][] = ['raised', 'recommended', 'approved', 'effected'];
 const progressKey = (pid: string) => `nlc-ecc.progress.${pid}`;
-const SEED_HR: Record<string, HrPosting[]> = {
+const SEED_HR: Record<string, HrPosting[]> = demoSeedEnabled ? {
   'proj-f14f15': [
     { id: 'hr-f14-1', nodeId: 'proj-f14f15', category: 'Engineers', sanctioned: 12, posted: 10 },
     { id: 'hr-f14-2', nodeId: 'proj-f14f15', category: 'Surveyors', sanctioned: 6, posted: 5 },
@@ -2090,7 +2136,7 @@ const SEED_HR: Record<string, HrPosting[]> = {
   'pd-north': [{ id: 'hr-pdn-1', nodeId: 'pd-north', category: 'HQ staff', sanctioned: 14, posted: 12 }],
   'hq-engrs': [{ id: 'hr-eng-1', nodeId: 'hq-engrs', category: 'HQ Engineers staff', sanctioned: 20, posted: 18 }],
   'hq-nlc': [{ id: 'hr-nlc-1', nodeId: 'hq-nlc', category: 'HQ NLC secretariat', sanctioned: 30, posted: 27 }],
-};
+} : {};
 
 // ---- HR establishment / organogram seeds ----
 type EstabDef = { id: string; parent: string | null; title: string; auth: number; held: number; scale?: string; cat?: string };
@@ -2223,14 +2269,14 @@ const SEED_CREDS: Record<string, HrCredential[]> = {
   ],
 };
 
-const SEED_TRANSFERS: HrTransfer[] = [
+const SEED_TRANSFERS: HrTransfer[] = demoSeedEnabled ? [
   {
     id: 'mov-seed-1', personId: 'pr-bench', personName: 'Zeeshan Ali',
     fromNodeId: 'proj-rwp-ring', fromNodeName: 'Rawalpindi Ring Road', fromUnitId: null,
     toNodeId: 'proj-rwp-ring', toNodeName: 'Rawalpindi Ring Road', toUnitId: 'rr-mfi', toUnitTitle: 'M & FI Sec',
     stage: 'recommended', reason: 'Bench to field inspection', raisedAt: '2025-05-25T00:00:00.000Z',
   },
-];
+] : [];
 const ipcKey = (pid: string) => `nlc-ecc.ipcs.${pid}`;
 const subKey = (pid: string) => `nlc-ecc.subs.${pid}`;
 const rarKey = (pid: string) => `nlc-ecc.rars.${pid}`;
@@ -2249,9 +2295,20 @@ const seriesKey = (pid: string) => `nlc-ecc.series.${pid}`;
 const nodesKey = 'nlc-ecc.nodes';
 const projectsKey = 'nlc-ecc.projects';
 const seedVersionKey = 'nlc-ecc.seedVersion';
+// Per-project entity document keys — used both to regenerate seeded caches and
+// to purge a removed demo project's cached documents on a version upgrade.
+const ENTITY_KEYS = [
+  'boq', 'progress', 'ipcs', 'subs', 'rars', 'rarlinks', 'variations', 'contractsreg',
+  'bankguarantees', 'dists', 'sched', 'escindices', 'epcs', 'resources', 'overheads',
+  'receipts', 'payments', 'liabilities', 'suppliers', 'demands', 'salients',
+  'production', 'materialIssues', 'inventory', 'pol', 'fixedassets', 'advances', 'boqmat', 'machinery',
+];
+
 // Bump when the bundled project roster / seed changes so existing cached stores
 // pick up newly-seeded projects and nodes without losing user-created data.
-const SEED_VERSION = '2026-07-07.v11-ca-boq-reconcile';
+// v12 (clean-slate): the delivered app ships no demo portfolio, so this upgrade
+// also PURGES any previously-seeded demo projects from an existing store.
+const SEED_VERSION = '2026-07-08.v12-clean-slate';
 
 /** Merge any newly-seeded projects/nodes into an already-persisted store and
  *  backfill date/coordinate fields on seeded projects. Runs once per version. */
@@ -2296,18 +2353,29 @@ function reconcileSeed(): void {
       if (nchanged) writeJson(nodesKey, exN);
     }
 
+    // Clean-slate migration: when the demo seed is OFF (every real build), remove
+    // any previously-seeded DEMO projects — their project rows, org nodes and all
+    // cached entity documents — from an existing store, so a user upgrading from a
+    // seeded build drops the demo portfolio. Projects the USER created are not in
+    // LEGACY_SEED_IDS and are left untouched. Skipped under the test fixture.
+    if (!demoSeedEnabled && LEGACY_SEED_IDS.length) {
+      const legacy = new Set<string>(LEGACY_SEED_IDS);
+      const curP = readJson<Project[]>(projectsKey, () => []);
+      const keptP = curP.filter((p) => !legacy.has(p.id));
+      if (keptP.length !== curP.length) writeJson(projectsKey, keptP);
+      const curN = readJson<OrgNode[]>(nodesKey, () => []);
+      const keptN = curN.filter((n) => !legacy.has(n.id));
+      if (keptN.length !== curN.length) writeJson(nodesKey, keptN);
+      for (const id of legacy) for (const k of ENTITY_KEYS) store.removeItem(`nlc-ecc.${k}.${id}`);
+    }
+
     // Every SEEDED project is generated from its profile — on a seed-version
     // change, drop stale cached entities for ALL of them so the whole commercial
     // spine (incl. BOQ ↔ contract value) regenerates consistently. Without this,
     // a project record reconciled to a new BOQ total would sit beside an OLD
-    // cached BOQ from a previous session (the CA ≠ BOQ drift users saw).
+    // cached BOQ from a previous session (the CA ≠ BOQ drift users saw). With the
+    // seed off, SEED_PROFILES is empty and this loop is a no-op.
     try {
-      const ENTITY_KEYS = [
-        'boq', 'progress', 'ipcs', 'subs', 'rars', 'rarlinks', 'variations', 'contractsreg',
-        'bankguarantees', 'dists', 'sched', 'escindices', 'epcs', 'resources', 'overheads',
-        'receipts', 'payments', 'liabilities', 'suppliers', 'demands', 'salients',
-        'production', 'materialIssues', 'inventory', 'pol', 'fixedassets', 'advances', 'boqmat', 'machinery',
-      ];
       for (const seededId of Object.keys(SEED_PROFILES)) {
         for (const k of ENTITY_KEYS) store.removeItem(`nlc-ecc.${k}.${seededId}`);
       }
@@ -2343,13 +2411,13 @@ const billKey = (pid: string) => `nlc-ecc.supplierbills.${pid}`;
 const baselineKey = (pid: string) => `nlc-ecc.baselinelocks.${pid}`;
 const machAssetsKey = 'nlc-ecc.machineryassets';
 const machTransfersKey = 'nlc-ecc.machinerytransfers';
-const SEED_MACHINERY_ASSETS: MachineryAsset[] = [
+const SEED_MACHINERY_ASSETS: MachineryAsset[] = demoSeedEnabled ? [
   { id: 'ma-exc-320', code: 'EXC-320', description: 'Excavator CAT 320', category: 'plant', currentProjectId: 'proj-f14f15', locked: false },
   { id: 'ma-rlr-12t', code: 'RLR-12T', description: '12T vibratory roller', category: 'plant', currentProjectId: 'proj-f14f15', locked: false },
   { id: 'ma-bp-30', code: 'BP-30', description: 'Batching plant 30 m³/hr', category: 'batching_plant', currentProjectId: undefined, locked: false },
   { id: 'ma-ap-120', code: 'AP-120', description: 'Asphalt plant 120 t/hr', category: 'asphalt_plant', currentProjectId: 'proj-attock-byp', locked: false },
   { id: 'ma-grd-14', code: 'GRD-14', description: 'Motor grader 14ft', category: 'plant', currentProjectId: undefined, locked: false },
-];
+] : [];
 const ppayKey = (pid: string) => `nlc-ecc.ppays.${pid}`;
 const hireKey = (pid: string) => `nlc-ecc.hires.${pid}`;
 const prodKey = (pid: string) => `nlc-ecc.production.${pid}`;

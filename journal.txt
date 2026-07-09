@@ -1598,3 +1598,40 @@ NLC Engineer Command Centre — work journal
   base-only nodes, empty commercial lists, working user-created project) and the
   legacy-purge migration (demo dropped, user project kept, stale docs removed).
   Web 477 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-09 — Primavera P6 .xer import (Execution → Schedule / WBS)
+- Root cause of the failed import: there was no XER parser. Schedule import fed
+  every file through readSheetRows()/parseScheduleRows(), which expect a tabular
+  .xlsx/.csv. An .xer is P6's native tab-delimited RELATIONAL dump (%T table /
+  %F fields / %R record), so nothing mapped.
+- New domain/xer.ts (pure, no DOM): parseXer() reads the %T/%F/%R record stream
+  into a typed table map; xerToSchedule() maps PROJECT/CALENDAR/PROJWBS/TASK/
+  TASKPRED/RSRC/TASKRSRC onto ScheduleActivity — resolving the WBS code path
+  ("4.Z1.1") and readable name path ("Construction › Zone 1 › Main Carriageway"),
+  converting hour counts to days via each activity's calendar (day_hr_cnt),
+  deriving %-complete (CP_Phys vs duration-based), status, actual dates, total
+  float, critical flag (float ≤ 0), predecessor logic (FS/SS/FF/SF + lag in days,
+  resolved to activity codes) and resource assignment names. WBS-summary rows
+  (TT_WBS) are skipped; problems surface as warnings rather than exceptions.
+- types.ts: ScheduleActivity gained OPTIONAL status/pctComplete/actualStart/
+  actualFinish/totalFloatDays/isCritical/activityType/wbsPath/predecessors/
+  resourceNames, so pasted and .xlsx imports plus existing cached data stay
+  valid. replaceSchedule now spreads the row, preserving the new fields.
+- components/xerImport.ts: readXerText() decodes strict UTF-8 then falls back to
+  Windows-1252 (real P6 exports are ANSI — decoding as UTF-8 mangles names), and
+  readFileBytes() falls back to FileReader where Blob.arrayBuffer() is missing
+  (older Safari, jsdom). xlsxImport now shares that reader.
+- BaselineImport: accepts .xer/.xlsx/.csv, auto-detects .xer, and previews a P6
+  summary — project id, activity/WBS/logic/milestone/resource counts, programme
+  window, warnings — before Apply. Paste + xlsx paths unchanged.
+- Execution → Schedule: new Programme summary KPI strip (window, critical-path
+  count, status split, logic/milestones) and new Status / Float / Predecessors
+  columns; WBS cell carries the full path as a tooltip. Gantt now colours the
+  critical path red (legend in the subtitle) and calls it out in the tooltip.
+- Verified against the real 545 KB EMA-13.xer: 628 activities, 52 WBS, 787 logic
+  links, 101 critical, 379 resource-loaded, window 2026-02-23 → 2027-05-30, zero
+  warnings. Tests: +15 (domain/xer.test.ts, against a trimmed real-structure
+  fixture) and +1 UI test uploading a .xer through the dialog into the table.
+  Web 493 passing, server 9; typecheck clean; local + api builds green.
+- api mode needs no server/DB change — the new fields ride in the existing
+  /api/state JSONB documents.

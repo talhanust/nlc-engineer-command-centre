@@ -1,7 +1,7 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
   Subcontractor, Rar, RarLine, RarRecovery, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation, Contract, ContractStatus, CommercialConfig,
-  ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
+  ScheduleActivity, ScheduleWbsNode, ScheduleMeta, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry, SupplierBill, BaselineLock, MachineryAsset, MachineryTransfer,
@@ -296,8 +296,14 @@ export class ApiDataProvider implements DataProvider {
   async setDistribution(projectId: string, dist: Distribution): Promise<Distribution> {
     return this.send<Distribution>(`/api/projects/${projectId}/distributions`, 'PUT', dist);
   }
-  async replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>): Promise<ScheduleActivity[]> {
-    return (await this.send<{ items: ScheduleActivity[] }>(`/api/projects/${projectId}/schedule`, 'PUT', { rows })).items;
+  async replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>, wbs?: ScheduleWbsNode[], meta?: ScheduleMeta): Promise<ScheduleActivity[]> {
+    return (await this.send<{ items: ScheduleActivity[] }>(`/api/projects/${projectId}/schedule`, 'PUT', { rows, wbs: wbs ?? [], meta: meta ?? {} })).items;
+  }
+  async getScheduleMeta(projectId: string): Promise<ScheduleMeta> {
+    return this.get<ScheduleMeta>(`/api/projects/${projectId}/schedule/meta`);
+  }
+  async listScheduleWbs(projectId: string): Promise<ScheduleWbsNode[]> {
+    return this.get<ScheduleWbsNode[]>(`/api/projects/${projectId}/schedule/wbs`);
   }
   async importScurve(projectId: string, points: MonthlySeriesPoint[]): Promise<MonthlySeriesPoint[]> {
     return (await this.send<{ items: MonthlySeriesPoint[] }>(`/api/projects/${projectId}/scurve`, 'PUT', { points })).items;

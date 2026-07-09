@@ -352,6 +352,26 @@ export interface SchedulePredecessor {
   type: 'FS' | 'SS' | 'FF' | 'SF';
   lagDays: number;
 }
+/** Programme-level facts from the imported file: the data date, the plan window
+ *  and the working calendar needed to roll WBS durations up correctly. */
+export interface ScheduleMeta {
+  projectCode?: string;
+  dataDate?: string;
+  planStart?: string;
+  planFinish?: string;
+  /** JS weekday numbers (0 = Sunday) that are working days. */
+  workingWeekdays?: number[];
+  holidays?: string[];
+}
+
+/** A node of the imported WBS hierarchy (project root excluded). */
+export interface ScheduleWbsNode {
+  id: string;
+  parentId: string | null;
+  code: string;
+  name: string;
+  seq: number;
+}
 export interface ScheduleActivity {
   id: string;
   projectId: string;
@@ -364,6 +384,10 @@ export interface ScheduleActivity {
   isMilestone: boolean;
   // Optional fields populated when the baseline is imported from a P6 .xer.
   // All are optional so pasted / .xlsx imports and existing data stay valid.
+  wbsId?: string;              // links the activity to a ScheduleWbsNode
+  originalDurationDays?: number;
+  remainingDurationDays?: number;
+  schedulePctComplete?: number; // P6 duration-based schedule % complete
   status?: ActivityStatus;
   pctComplete?: number;        // 0–100 (schedule/physical % from P6)
   actualStart?: string;
@@ -1042,7 +1066,11 @@ export interface DataProvider {
   listItemFreezes(projectId: string): Promise<Array<import('../domain/distributionFreeze').ItemFreeze>>;
   // Execution & baselines
   listSchedule(projectId: string): Promise<ScheduleActivity[]>;
-  replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>): Promise<ScheduleActivity[]>;
+  /** The imported WBS hierarchy for grouping the activity table / Gantt. */
+  listScheduleWbs(projectId: string): Promise<ScheduleWbsNode[]>;
+  /** Data date, plan window and working calendar of the imported programme. */
+  getScheduleMeta(projectId: string): Promise<ScheduleMeta>;
+  replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>, wbs?: ScheduleWbsNode[], meta?: ScheduleMeta): Promise<ScheduleActivity[]>;
   importScurve(projectId: string, points: MonthlySeriesPoint[]): Promise<MonthlySeriesPoint[]>;
   // Schedule baseline approval cycle
   getScheduleWorkflow(projectId: string): Promise<BaselineWorkflowState>;

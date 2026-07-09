@@ -1,7 +1,7 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
   Subcontractor, Rar, RarLine, RarRecovery, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation, VariationLine, Contract, CommercialConfig,
-  ScheduleActivity, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
+  ScheduleActivity, ScheduleWbsNode, ScheduleMeta, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry, SupplierBill, SupplierBillLine, BaselineLock, MachineryAsset, MachineryTransfer,
@@ -882,7 +882,13 @@ export class LocalDataProvider implements DataProvider {
   async listSchedule(projectId: string): Promise<ScheduleActivity[]> {
     return readJson(schedKey(projectId), () => ((gen(projectId)?.schedule ?? [])));
   }
-  async replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>): Promise<ScheduleActivity[]> {
+  async listScheduleWbs(projectId: string): Promise<ScheduleWbsNode[]> {
+    return readJson<ScheduleWbsNode[]>(schedWbsKey(projectId), () => []);
+  }
+  async getScheduleMeta(projectId: string): Promise<ScheduleMeta> {
+    return readJson<ScheduleMeta>(schedMetaKey(projectId), () => ({}));
+  }
+  async replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>, wbs?: ScheduleWbsNode[], meta?: ScheduleMeta): Promise<ScheduleActivity[]> {
     const acts: ScheduleActivity[] = rows.map((r, i) => ({
       ...r, // preserve optional P6/XER fields (status, float, critical, logic, resources …)
       id: `act-${projectId}-${i + 1}`, projectId,
@@ -890,6 +896,10 @@ export class LocalDataProvider implements DataProvider {
       durationDays: r.durationDays, plannedStart: r.plannedStart, plannedFinish: r.plannedFinish, isMilestone: r.isMilestone,
     }));
     writeJson(schedKey(projectId), acts);
+    // A schedule and its WBS travel together: importing one replaces the other,
+    // so a tabular import can't leave a stale P6 hierarchy behind.
+    writeJson(schedWbsKey(projectId), wbs ?? []);
+    writeJson(schedMetaKey(projectId), meta ?? {});
     audit(projectId, 'import', 'Schedule', `${acts.length} activities`);
     return acts;
   }
@@ -2292,6 +2302,8 @@ const advKey = (pid: string) => `nlc-ecc.advances.${pid}`;
 const bgKey = (pid: string) => `nlc-ecc.bankguarantees.${pid}`;
 const distKey = (pid: string) => `nlc-ecc.dists.${pid}`;
 const schedKey = (pid: string) => `nlc-ecc.sched.${pid}`;
+const schedWbsKey = (pid: string) => `nlc-ecc.schedwbs.${pid}`;
+const schedMetaKey = (pid: string) => `nlc-ecc.schedmeta.${pid}`;
 const seriesKey = (pid: string) => `nlc-ecc.series.${pid}`;
 const nodesKey = 'nlc-ecc.nodes';
 const projectsKey = 'nlc-ecc.projects';
@@ -2300,7 +2312,7 @@ const seedVersionKey = 'nlc-ecc.seedVersion';
 // to purge a removed demo project's cached documents on a version upgrade.
 const ENTITY_KEYS = [
   'boq', 'progress', 'ipcs', 'subs', 'rars', 'rarlinks', 'variations', 'contractsreg',
-  'bankguarantees', 'dists', 'sched', 'escindices', 'epcs', 'resources', 'overheads',
+  'bankguarantees', 'dists', 'sched', 'schedwbs', 'schedmeta', 'escindices', 'epcs', 'resources', 'overheads',
   'receipts', 'payments', 'liabilities', 'suppliers', 'demands', 'salients',
   'production', 'materialIssues', 'inventory', 'pol', 'fixedassets', 'advances', 'boqmat', 'machinery',
 ];

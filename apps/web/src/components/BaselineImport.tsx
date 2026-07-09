@@ -56,7 +56,14 @@ export function BaselineImport({ projectId, kind, onClose, onDone }: { projectId
     try {
       if (kind === 'schedule') {
         if (xer) {
-          await provider.replaceSchedule(projectId, xer.activities);
+          await provider.replaceSchedule(projectId, xer.activities, xer.wbs, {
+            projectCode: xer.projectShortName,
+            dataDate: xer.dataDate,
+            planStart: xer.planStart,
+            planFinish: xer.planFinish,
+            workingWeekdays: xer.workingWeekdays,
+            holidays: xer.holidays,
+          });
         } else {
           const r = parseScheduleRows(rows);
           if (r.error) { setError(r.error); return; }

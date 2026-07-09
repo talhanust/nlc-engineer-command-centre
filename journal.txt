@@ -1635,3 +1635,46 @@ NLC Engineer Command Centre — work journal
   Web 493 passing, server 9; typecheck clean; local + api builds green.
 - api mode needs no server/DB change — the new fields ride in the existing
   /api/state JSONB documents.
+
+2026-07-09 — P6 shape: Activities table + dedicated Gantt tab
+- Why the import "landed in one tab and displayed badly": the schedule was a
+  FLAT activity list. XER carries a WBS tree (PROJWBS parent pointers) which we
+  collapsed to a code string, so there were no summary rows to group under; and
+  the Gantt was a recharts stacked bar with a "D0/D123" day-offset axis rendered
+  under the table — 628 rows tall, no dates, unreadable.
+- Model: ScheduleWbsNode (id/parentId/code/name/seq) and ScheduleMeta (data date,
+  plan window, working weekdays, holidays) now persist with the schedule.
+  ScheduleActivity gained wbsId, originalDurationDays, remainingDurationDays and
+  schedulePctComplete (P6 duration-based). replaceSchedule(rows, wbs?, meta?)
+  writes all three docs together so a tabular import cannot leave a stale P6
+  hierarchy behind; listScheduleWbs / getScheduleMeta read them back. Both
+  providers updated; schedwbs + schedmeta added to the ENTITY_KEYS purge list.
+- xer.ts: parseCalendarData() decodes clndr_data (DaysOfWeek shifts → working
+  weekdays; Exceptions → holidays from Excel day serials), and the mapper now
+  emits the WBS tree, the data date (last_recalc_date) and the dominant
+  calendar pattern alongside the activities.
+- New domain/scheduleTree.ts: buildScheduleRows() interleaves WBS summary rows
+  with their activities in tree order, honouring a collapsed set. Rollups follow
+  P6: start = earliest descendant, finish = latest, duration = WORKING-DAY SPAN
+  of that window (not the sum of children — a WBS holding two milestones a year
+  apart reads a year, not zero), schedule % = duration-weighted mean of leaves,
+  critical if any descendant is critical. Empty WBS branches are hidden;
+  activities with no hierarchy fall back to the old flat list. formatP6Date()
+  renders 23-Feb-26.
+- New components/ActivityTable.tsx: the P6 Activities grid — Activity ID,
+  Activity Name, Original Duration, Remaining Duration, Schedule % Complete,
+  Start, Finish — with collapsible WBS summary rows, find-by-id/name and
+  expand/collapse all.
+- GanttChart rewritten as a time-scaled SVG: fixed activity column, scrollable
+  timeline with year + month header bands, WBS summary bars with tapered caps,
+  activity bars (critical red) with a progress overlay, milestone diamonds, the
+  P6 data-date line, and Year/Quarter/Month/Week zoom. It now lives in its own
+  "Gantt chart" sub-tab; "Schedule / WBS" is renamed "Activities" and keeps the
+  derived-vs-expected commercial read in a separate "Schedule analysis" table.
+- Verified on the real EMA-13.xer: 628 activities under 54 WBS rows (682 display
+  rows; 5 top-level branches — Project Control Events, Prelims, Pre Cons,
+  Construction, Completion & Handover), window 23-Feb-26 → 30-May-27, data date
+  23-Feb-26, collapse-all → 5 rows. Prelims rolls up to 449d against a 450d child
+  because 2026-03-02 is a holiday in the file calendar — the calendar is honoured.
+- Web 518 passing (+25: scheduleTree 17, xer +7, Execution +1), server 9;
+  typecheck clean; local + api builds green.

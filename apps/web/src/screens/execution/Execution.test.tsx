@@ -2,6 +2,8 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import App from '../../App';
 
 function renderAt(path: string) {
@@ -138,6 +140,35 @@ describe('Phase 4 — execution', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Parse pasted text' }));
     await user.click(within(dialog).getByRole('button', { name: 'Apply baseline' }));
     expect(await screen.findByRole('img', { name: 'Gantt chart' })).toBeInTheDocument();
+  });
+
+  it('imports a Primavera P6 .xer, summarising and landing the programme', async () => {
+    const user = userEvent.setup();
+    const xerText = readFileSync(join(__dirname, '../../domain/__fixtures__', 'sample.xer'), 'utf-8');
+    const file = new File([xerText], 'EMA-13.xer', { type: 'application/octet-stream' });
+
+    renderAt('/node/proj-bahria/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Schedule / WBS' }));
+    await user.click(screen.getByRole('button', { name: 'Import baseline' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Import schedule baseline' });
+
+    await user.upload(within(dialog).getByLabelText('schedule file'), file);
+
+    // The P6 summary appears with the real project identity + logic counts.
+    const summary = await within(dialog).findByLabelText('XER import summary');
+    expect(within(summary).getByText(/project EMA-13/)).toBeInTheDocument();
+    expect(within(summary).getByText(/logic links/)).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Apply baseline' }));
+
+    // The programme lands: activity codes and WBS paths from the .xer.
+    const table = await screen.findByRole('table', { name: 'Schedule' });
+    expect(within(table).getByText('Z1-B1-101')).toBeInTheDocument();
+    expect(within(table).getByText('Clearing and grubbing within roadway limits')).toBeInTheDocument();
+    // Predecessor logic survived the round-trip through the provider.
+    expect(within(table).getByText(/Z1-B1-101 \(FS\)/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Programme summary')).toBeInTheDocument();
   });
 });
 

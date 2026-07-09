@@ -13,6 +13,11 @@ import { ProgressTab } from './ProgressTab';
 import type { MonthlySeriesPoint, ScheduleActivity, Resource, ResourceClass } from '../../data/types';
 import { activityDerivedProgress, type ActivityDerivedRow } from '../../domain/derivedProgress';
 import { DEFAULT_COMMERCIAL_CONFIG } from '../../domain/ipc';
+import { predecessorLabel } from '../../domain/xer';
+import type { ActivityStatus } from '../../data/types';
+
+const ACT_STATUS_LABEL: Record<ActivityStatus, string> = { not_started: 'Not started', in_progress: 'In progress', completed: 'Completed' };
+const ACT_STATUS_CLASS: Record<ActivityStatus, string> = { not_started: 'st-draft', in_progress: 'st-verified', completed: 'st-paid' };
 
 const SUB = ['schedule', 'lookahead', 'scurve', 'progress', 'periodmap', 'overheads', 'production', 'resources'] as const;
 type Sub = (typeof SUB)[number];
@@ -92,6 +97,46 @@ function Lookahead({ projectId }: { projectId: string }) {
   );
 }
 
+/** At-a-glance read of the imported programme: window, critical path, logic depth. */
+function ProgrammeSummary({ acts }: { acts: ScheduleActivity[] }) {
+  const starts = acts.map((a) => a.plannedStart).filter(Boolean).sort();
+  const finishes = acts.map((a) => a.plannedFinish).filter(Boolean).sort();
+  const critical = acts.filter((a) => a.isCritical).length;
+  const milestones = acts.filter((a) => a.isMilestone).length;
+  const linked = acts.filter((a) => a.predecessors && a.predecessors.length > 0).length;
+  const wbsCount = new Set(acts.map((a) => a.wbs)).size;
+  const complete = acts.filter((a) => a.status === 'completed').length;
+  const inProgress = acts.filter((a) => a.status === 'in_progress').length;
+  const hasP6 = acts.some((a) => a.totalFloatDays != null);
+
+  return (
+    <div className="kpi-grid" aria-label="Programme summary">
+      <div className="kpi">
+        <div className="kpi-label">Programme window</div>
+        <div className="kpi-value" style={{ fontSize: 15 }}>{starts[0] || '—'} → {finishes[finishes.length - 1] || '—'}</div>
+        <div className="kpi-sub muted">{acts.length} activities · {wbsCount} WBS</div>
+      </div>
+      {hasP6 && (
+        <div className="kpi">
+          <div className="kpi-label">Critical path</div>
+          <div className="kpi-value">{critical}</div>
+          <div className="kpi-sub muted">activities with zero or negative float</div>
+        </div>
+      )}
+      <div className="kpi">
+        <div className="kpi-label">Status</div>
+        <div className="kpi-value" style={{ fontSize: 15 }}>{complete} done · {inProgress} active</div>
+        <div className="kpi-sub muted">{acts.length - complete - inProgress} not started</div>
+      </div>
+      <div className="kpi">
+        <div className="kpi-label">Logic &amp; milestones</div>
+        <div className="kpi-value" style={{ fontSize: 15 }}>{linked} linked · {milestones} milestones</div>
+        <div className="kpi-sub muted">{linked === 0 ? 'no predecessor logic imported' : 'driving relationships from the programme'}</div>
+      </div>
+    </div>
+  );
+}
+
 function Schedule({ projectId }: { projectId: string }) {
   const { provider } = useData();
   const [acts, setActs] = useState<ScheduleActivity[]>([]);
@@ -124,22 +169,28 @@ function Schedule({ projectId }: { projectId: string }) {
           <button className="btn-ghost" disabled={locked} title={locked ? 'Baseline locked — amend to edit' : ''} onClick={() => setImporting(true)}>Import baseline</button>
         </div>
       </div>
+      {acts.length > 0 && <ProgrammeSummary acts={acts} />}
       {acts.length === 0 ? (
-        <p className="muted">No schedule baseline yet. Use <strong>Import baseline</strong> to upload an .xlsx or paste activities.</p>
+        <p className="muted">No schedule baseline yet. Use <strong>Import baseline</strong> to upload a Primavera P6 .xer, an .xlsx, or paste activities.</p>
       ) : (
         <>
           <GanttChart activities={acts} />
           <table className="data-table" aria-label="Schedule">
-          <thead><tr><th>WBS</th><th>Activity</th><th>Name</th><th className="num">Days</th><th>Start</th><th>Finish</th><th>Type</th><th className="num" title="Derived from validated executed BOQ quantities through the BOQ↔WBS mapping">Physical % (derived)</th><th className="num">Expected %</th><th className="num">Δ</th></tr></thead>
+          <thead><tr><th>WBS</th><th>Activity</th><th>Name</th><th className="num">Days</th><th>Start</th><th>Finish</th><th>Type</th><th>Status</th><th className="num" title="Total float from the imported programme — 0 or less means the activity is on the critical path">Float</th><th title="Driving logic from the imported P6 programme">Predecessors</th><th className="num" title="Derived from validated executed BOQ quantities through the BOQ↔WBS mapping">Physical % (derived)</th><th className="num">Expected %</th><th className="num">Δ</th></tr></thead>
           <tbody>
             {acts.map((a) => {
               const d = derivedOf[a.activityId];
               const flag = d?.mapped && Math.abs(d.divergence) > tol;
               return (
               <tr key={a.id} className={flag ? 'row-flag' : ''}>
-                <td>{a.wbs}</td><td>{a.activityId}</td><td>{a.name}</td>
+                <td title={a.wbsPath}>{a.wbs}</td><td>{a.activityId}</td><td>{a.name}</td>
                 <td className="num">{a.durationDays}</td><td>{a.plannedStart}</td><td>{a.plannedFinish}</td>
                 <td>{a.isMilestone ? <span className="status-pill">Milestone</span> : 'Task'}</td>
+                <td>{a.status ? <span className={`status-pill ${ACT_STATUS_CLASS[a.status]}`}>{ACT_STATUS_LABEL[a.status]}</span> : '—'}</td>
+                <td className={`num${a.isCritical ? ' neg' : ''}`} title={a.isCritical ? 'On the critical path' : ''}>
+                  {a.totalFloatDays == null ? '—' : `${a.totalFloatDays}d${a.isCritical ? ' ⚠' : ''}`}
+                </td>
+                <td className="small muted">{predecessorLabel(a.predecessors) || '—'}</td>
                 <td className="num">{a.isMilestone ? '—' : d?.mapped ? `${d.derivedPct}%` : <span className="muted small" title="No confirmed BOQ↔WBS mapping — map in the Mapping tab">unmapped</span>}</td>
                 <td className="num">{a.isMilestone ? '—' : `${d?.expectedPct ?? 0}%`}</td>
                 <td className={`num${flag ? ' neg' : ''}`}>{a.isMilestone || !d?.mapped ? '—' : `${d.divergence > 0 ? '+' : ''}${d.divergence}%${flag ? ' ⚠' : ''}`}</td>

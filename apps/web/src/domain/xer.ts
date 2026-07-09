@@ -14,7 +14,7 @@
 // resolving the WBS hierarchy, calendars (hours→days), relationship logic,
 // resource assignments, %-complete and total-float/critical flags.
 
-import type { ScheduleActivity, ActivityStatus, SchedulePredecessor } from '../data/types';
+import type { ScheduleActivity, ActivityStatus, SchedulePredecessor, ScheduleWbsNode } from '../data/types';
 
 export interface XerTable {
   fields: string[];
@@ -23,6 +23,88 @@ export interface XerTable {
 export interface XerDatabase {
   header: string[];
   tables: Record<string, XerTable>;
+}
+
+/** A P6 calendar reduced to what schedule maths needs. */
+export interface XerCalendar {
+  dayHours: number;
+  /** JS weekday numbers (0 = Sunday) that carry at least one work shift. */
+  workingWeekdays: Set<number>;
+  /** Holiday exceptions as YYYY-MM-DD. */
+  holidays: Set<string>;
+}
+
+const EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30);
+const DAY_MS = 86400000;
+
+/** P6 stores calendar exceptions as Excel-style day serials. */
+function serialToYmd(serial: number): string {
+  return new Date(EXCEL_EPOCH_MS + serial * DAY_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * Parse CALENDAR.clndr_data. The payload looks like:
+ *   (0||CalendarData()(
+ *     (0||DaysOfWeek()(
+ *       (0||1()(  (0||0(s|08:00|f|16:00)())))   ← day 1 = Sunday, has a shift
+ *       (0||2()())                              ← no shift = non-working
+ *     ...
+ *     (0||Exceptions()( (0||0(d|37257)()) ... ))
+ * A weekday is a working day when its block contains at least one shift ("s|").
+ */
+export function parseCalendarData(data: string | undefined, dayHours: number): XerCalendar {
+  const workingWeekdays = new Set<number>();
+  const holidays = new Set<string>();
+  if (!data) {
+    // No pattern available — assume a full week so durations never silently shrink.
+    for (let d = 0; d < 7; d++) workingWeekdays.add(d);
+    return { dayHours, workingWeekdays, holidays };
+  }
+
+  const dowStart = data.indexOf('DaysOfWeek');
+  const excStart = data.indexOf('Exceptions');
+  if (dowStart >= 0) {
+    let end = data.length;
+    for (const marker of ['VIEW', 'Exceptions']) {
+      const i = data.indexOf(marker, dowStart);
+      if (i > dowStart) end = Math.min(end, i);
+    }
+    const block = data.slice(dowStart, end);
+    // Split on day markers "(0||<n>()(" keeping the day number.
+    const parts = block.split(/\(0\|\|([1-7])\(\)\(/);
+    for (let i = 1; i < parts.length; i += 2) {
+      const p6Day = Number(parts[i]);          // 1 = Sunday … 7 = Saturday
+      const segment = parts[i + 1] ?? '';
+      if (segment.includes('s|')) workingWeekdays.add((p6Day - 1) % 7);
+    }
+  }
+  if (workingWeekdays.size === 0) for (let d = 0; d < 7; d++) workingWeekdays.add(d);
+
+  if (excStart >= 0) {
+    const block = data.slice(excStart);
+    for (const m of block.matchAll(/\(d\|(\d+)\)/g)) {
+      const serial = Number(m[1]);
+      if (Number.isFinite(serial) && serial > 0) holidays.add(serialToYmd(serial));
+    }
+  }
+  return { dayHours, workingWeekdays, holidays };
+}
+
+/** Inclusive count of working days between two YYYY-MM-DD dates on a calendar. */
+export function workingDaysBetween(startYmd: string, finishYmd: string, cal: XerCalendar): number {
+  if (!startYmd || !finishYmd) return 0;
+  let t = Date.parse(`${startYmd}T00:00:00Z`);
+  const end = Date.parse(`${finishYmd}T00:00:00Z`);
+  if (!Number.isFinite(t) || !Number.isFinite(end) || end < t) return 0;
+  let days = 0;
+  let guard = 0;
+  while (t <= end && guard++ < 20000) {
+    const d = new Date(t);
+    const ymd = d.toISOString().slice(0, 10);
+    if (cal.workingWeekdays.has(d.getUTCDay()) && !cal.holidays.has(ymd)) days++;
+    t += DAY_MS;
+  }
+  return days;
 }
 
 /** Parse raw .xer text into a typed table map. Tolerant of \r\n and stray blanks. */
@@ -84,10 +166,17 @@ const MILESTONE_TYPES = new Set(['TT_Mile', 'TT_FinMile']);
 export interface XerScheduleResult {
   /** Rows ready for provider.replaceSchedule (no id/projectId). */
   activities: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>;
+  /** The WBS hierarchy the activities hang from (project root excluded). */
+  wbs: ScheduleWbsNode[];
   projectShortName: string;
   projectName: string;
   planStart: string;
   planFinish: string;
+  /** P6 data date (last_recalc_date) — the "as of" line on the Gantt. */
+  dataDate: string;
+  /** Working pattern of the programme's dominant calendar (JS weekdays, 0=Sun). */
+  workingWeekdays: number[];
+  holidays: string[];
   wbsCount: number;
   milestoneCount: number;
   relationshipCount: number;
@@ -113,18 +202,21 @@ export function xerToSchedule(db: XerDatabase): XerScheduleResult {
   if (projects.length > 1) warnings.push(`File contains ${projects.length} projects — importing all activities.`);
   const project = projects[0] ?? {};
 
-  // Calendars: id → hours per working day (used to convert hour counts to days).
-  const dayHours = new Map<string, number>();
+  // Calendars: id → work pattern (hours/day, working weekdays, holidays).
+  const calendars = new Map<string, XerCalendar>();
   for (const c of rowsOf(db, 'CALENDAR')) {
     const h = num(c.day_hr_cnt);
-    dayHours.set(c.clndr_id, h > 0 ? h : 8);
+    calendars.set(c.clndr_id, parseCalendarData(c.clndr_data, h > 0 ? h : 8));
   }
-  const hrsPerDay = (clndrId: string | undefined): number => (clndrId && dayHours.get(clndrId)) || 8;
+  const DEFAULT_CAL: XerCalendar = { dayHours: 8, workingWeekdays: new Set([0, 1, 2, 3, 4, 5, 6]), holidays: new Set() };
+  const calOf = (clndrId: string | undefined): XerCalendar => (clndrId && calendars.get(clndrId)) || DEFAULT_CAL;
+  const hrsPerDay = (clndrId: string | undefined): number => calOf(clndrId).dayHours;
 
   // WBS: id → node, plus helpers to walk the parent chain up to (not incl.) the
   // project root node (proj_node_flag = 'Y').
   const wbs = new Map<string, Record<string, string>>();
   for (const w of rowsOf(db, 'PROJWBS')) wbs.set(w.wbs_id, w);
+  const isRoot = (id: string | undefined): boolean => !!id && wbs.get(id)?.proj_node_flag === 'Y';
   function wbsChain(wbsId: string | undefined): Array<Record<string, string>> {
     const chain: Array<Record<string, string>> = [];
     const seen = new Set<string>();
@@ -144,6 +236,20 @@ export function xerToSchedule(db: XerDatabase): XerScheduleResult {
   };
   const wbsPath = (wbsId: string | undefined): string =>
     wbsChain(wbsId).map((n) => n.wbs_name || n.wbs_short_name || '?').join(' › ');
+
+  // The WBS hierarchy as a flat parent-pointer list, project root dropped and
+  // its children re-parented to null so the tree has visible top-level branches.
+  const wbsNodes: ScheduleWbsNode[] = [];
+  for (const w of rowsOf(db, 'PROJWBS')) {
+    if (w.proj_node_flag === 'Y') continue;
+    wbsNodes.push({
+      id: w.wbs_id,
+      parentId: isRoot(w.parent_wbs_id) ? null : (w.parent_wbs_id || null),
+      code: wbsCode(w.wbs_id),
+      name: w.wbs_name || w.wbs_short_name || '?',
+      seq: num(w.seq_num),
+    });
+  }
 
   // task_id → task_code, so relationships can reference readable activity ids.
   const taskCode = new Map<string, string>();
@@ -189,6 +295,16 @@ export function xerToSchedule(db: XerDatabase): XerScheduleResult {
     return clampPct(num(t.phys_complete_pct));
   }
 
+  /** P6 "Schedule % Complete" is duration-based: how much of the original
+   *  duration has elapsed, regardless of the activity's %-complete type. */
+  function schedulePct(t: Record<string, string>, status: ActivityStatus): number {
+    if (status === 'completed') return 100;
+    if (status === 'not_started') return 0;
+    const target = num(t.target_drtn_hr_cnt);
+    if (target <= 0) return 0;
+    return clampPct(Math.round((1 - num(t.remain_drtn_hr_cnt) / target) * 100));
+  }
+
   const activities: XerScheduleResult['activities'] = [];
   let milestoneCount = 0;
   let dropped = 0;
@@ -201,6 +317,7 @@ export function xerToSchedule(db: XerDatabase): XerScheduleResult {
     const plannedStart = ymd(t.target_start_date || t.early_start_date || t.restart_date || t.act_start_date);
     const plannedFinish = ymd(t.target_end_date || t.early_end_date || t.reend_date || t.act_end_date);
     const durationDays = isMilestone ? 0 : Math.max(0, Math.round(num(t.target_drtn_hr_cnt) / hrs));
+    const remainingDurationDays = isMilestone ? 0 : Math.max(0, Math.round(num(t.remain_drtn_hr_cnt) / hrs));
     const totalFloatDays = Math.round(num(t.total_float_hr_cnt) / hrs);
     const predList = preds.get(t.task_id) ?? [];
     const resList = taskResources.get(t.task_id) ?? [];
@@ -208,7 +325,11 @@ export function xerToSchedule(db: XerDatabase): XerScheduleResult {
       activityId: t.task_code || t.task_id,
       name: t.task_name || t.task_code || t.task_id,
       wbs: wbsCode(t.wbs_id),
+      wbsId: t.wbs_id || undefined,
       durationDays,
+      originalDurationDays: durationDays,
+      remainingDurationDays,
+      schedulePctComplete: schedulePct(t, status),
       plannedStart,
       plannedFinish,
       isMilestone,
@@ -236,12 +357,25 @@ export function xerToSchedule(db: XerDatabase): XerScheduleResult {
   const starts = activities.map((a) => a.plannedStart).filter(Boolean).sort();
   const finishes = activities.map((a) => a.plannedFinish).filter(Boolean).sort();
 
+  // The programme's dominant calendar: the one most activities are driven by.
+  // WBS rollups are measured in working days on this calendar.
+  const calVotes = new Map<string, number>();
+  for (const t of rowsOf(db, 'TASK')) if (t.clndr_id) calVotes.set(t.clndr_id, (calVotes.get(t.clndr_id) ?? 0) + 1);
+  let dominant = project.clndr_id ?? '';
+  let best = -1;
+  for (const [id, votes] of calVotes) if (votes > best) { best = votes; dominant = id; }
+  const domCal = calOf(dominant);
+
   return {
     activities,
+    wbs: wbsNodes,
     projectShortName: project.proj_short_name ?? '',
     projectName: project.proj_short_name ?? '',
     planStart: ymd(project.plan_start_date) || starts[0] || '',
     planFinish: ymd(project.scd_end_date) || finishes[finishes.length - 1] || '',
+    dataDate: ymd(project.last_recalc_date) || ymd(project.plan_start_date) || '',
+    workingWeekdays: [...domCal.workingWeekdays].sort((a, b) => a - b),
+    holidays: [...domCal.holidays].sort(),
     wbsCount: new Set(activities.map((a) => a.wbs)).size,
     milestoneCount,
     relationshipCount,

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseXer, parseXerSchedule, predecessorLabel } from './xer';
+import { parseXer, parseXerSchedule, predecessorLabel, parseCalendarData } from './xer';
 
 // A trimmed slice of a real Primavera P6 export (EMA-13 / Margalla Avenue),
 // keeping the authentic table structure, field names and value formats.
@@ -33,6 +33,28 @@ describe('parseXer — P6 interchange format', () => {
 
 describe('xerToSchedule — mapping P6 onto the app schedule model', () => {
   const r = parseXerSchedule(XER);
+
+  it('exposes the WBS hierarchy with the project root dropped', () => {
+    expect(r.wbs.length).toBeGreaterThan(0);
+    // Top-level branches are re-parented to null, never to the project node.
+    expect(r.wbs.some((n) => n.parentId === null)).toBe(true);
+    expect(r.wbs.every((n) => n.name !== 'Ext of Margalla Ave')).toBe(true);
+    // Every activity points at a node that exists in the tree.
+    const ids = new Set(r.wbs.map((n) => n.id));
+    for (const a of r.activities) if (a.wbsId) expect(ids.has(a.wbsId)).toBe(true);
+  });
+
+  it('exposes the data date and the dominant calendar pattern', () => {
+    expect(r.dataDate).toBe('2026-02-23');
+    expect(r.workingWeekdays).toEqual([0, 1, 2, 3, 4, 5, 6]); // this file uses a 7-day workweek
+  });
+
+  it('reports P6 original / remaining duration and schedule % complete', () => {
+    const a = r.activities.find((x) => x.activityId === 'Z1-B1-101')!;
+    expect(a.originalDurationDays).toBe(9);
+    expect(a.remainingDurationDays).toBe(9); // nothing started
+    expect(a.schedulePctComplete).toBe(0);
+  });
 
   it('reads project identity and the programme window', () => {
     expect(r.projectShortName).toBe('EMA-13');
@@ -111,6 +133,38 @@ describe('xerToSchedule — mapping P6 onto the app schedule model', () => {
     const res = parseXerSchedule('ERMHDR\t23.12\n%T\tPROJECT\n%F\tproj_id\n%R\t1\n%E\n');
     expect(res.activities).toHaveLength(0);
     expect(res.warnings.join(' ')).toMatch(/No activities/);
+  });
+});
+
+describe('parseCalendarData — P6 clndr_data work patterns', () => {
+  const sevenDay = '(0||CalendarData()((0||DaysOfWeek()('
+    + [1, 2, 3, 4, 5, 6, 7].map((d) => `(0||${d}()((0||0(s|08:00|f|16:00)())))`).join('')
+    + ')))';
+
+  it('treats a weekday with a shift as a working day', () => {
+    const cal = parseCalendarData(sevenDay, 8);
+    expect(cal.workingWeekdays.size).toBe(7);
+    expect(cal.dayHours).toBe(8);
+  });
+
+  it('treats a weekday with no shift as non-working (P6 day 1 = Sunday)', () => {
+    const monFri = '(0||CalendarData()((0||DaysOfWeek()('
+      + '(0||1()())' // Sunday: no shift
+      + [2, 3, 4, 5, 6].map((d) => `(0||${d}()((0||0(s|08:00|f|17:00)())))`).join('')
+      + '(0||7()())' // Saturday: no shift
+      + ')))';
+    const cal = parseCalendarData(monFri, 8);
+    expect([...cal.workingWeekdays].sort()).toEqual([1, 2, 3, 4, 5]); // Mon–Fri in JS weekdays
+  });
+
+  it('reads holiday exceptions from Excel-style day serials', () => {
+    const withExc = sevenDay.replace(')))', ')))(0||Exceptions()((0||0(d|37257)())))');
+    const cal = parseCalendarData(withExc, 8);
+    expect(cal.holidays.has('2002-01-01')).toBe(true);
+  });
+
+  it('assumes a full week when the pattern is missing', () => {
+    expect(parseCalendarData(undefined, 8).workingWeekdays.size).toBe(7);
   });
 });
 

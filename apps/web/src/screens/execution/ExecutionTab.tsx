@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { SCurveChart } from '../../components/SCurveChart';
 import { GanttChart } from '../../components/GanttChart';
+import { ActivityTable } from '../../components/ActivityTable';
 import { lookahead, type LookaheadStatus } from '../../domain/lookahead';
 import { ProductionTab } from './ProductionTab';
 import { BaselineImport } from '../../components/BaselineImport';
@@ -10,7 +11,7 @@ import { BaselineLockBanner } from '../../components/BaselineLockBanner';
 import { PeriodMappingTab } from './PeriodMappingTab';
 import { OverheadsTab } from './OverheadsTab';
 import { ProgressTab } from './ProgressTab';
-import type { MonthlySeriesPoint, ScheduleActivity, Resource, ResourceClass } from '../../data/types';
+import type { MonthlySeriesPoint, ScheduleActivity, ScheduleWbsNode, ScheduleMeta, Resource, ResourceClass } from '../../data/types';
 import { activityDerivedProgress, type ActivityDerivedRow } from '../../domain/derivedProgress';
 import { DEFAULT_COMMERCIAL_CONFIG } from '../../domain/ipc';
 import { predecessorLabel } from '../../domain/xer';
@@ -19,9 +20,9 @@ import type { ActivityStatus } from '../../data/types';
 const ACT_STATUS_LABEL: Record<ActivityStatus, string> = { not_started: 'Not started', in_progress: 'In progress', completed: 'Completed' };
 const ACT_STATUS_CLASS: Record<ActivityStatus, string> = { not_started: 'st-draft', in_progress: 'st-verified', completed: 'st-paid' };
 
-const SUB = ['schedule', 'lookahead', 'scurve', 'progress', 'periodmap', 'overheads', 'production', 'resources'] as const;
+const SUB = ['schedule', 'gantt', 'lookahead', 'scurve', 'progress', 'periodmap', 'overheads', 'production', 'resources'] as const;
 type Sub = (typeof SUB)[number];
-const LABEL: Record<Sub, string> = { schedule: 'Schedule / WBS', lookahead: 'Lookahead', scurve: 'S-curve & progress', progress: 'Progress updates', periodmap: 'Period mapping', overheads: 'Overheads', production: 'Production & materials', resources: 'Resources' };
+const LABEL: Record<Sub, string> = { schedule: 'Activities', gantt: 'Gantt chart', lookahead: 'Lookahead', scurve: 'S-curve & progress', progress: 'Progress updates', periodmap: 'Period mapping', overheads: 'Overheads', production: 'Production & materials', resources: 'Resources' };
 
 export function ExecutionTab({ projectId }: { projectId: string }) {
   const [sub, setSub] = useState<Sub>('scurve');
@@ -35,6 +36,7 @@ export function ExecutionTab({ projectId }: { projectId: string }) {
         ))}
       </div>
       {sub === 'schedule' && <><BaselineLockBanner projectId={projectId} kind="schedule" /><Schedule projectId={projectId} /></>}
+      {sub === 'gantt' && <Gantt projectId={projectId} />}
       {sub === 'lookahead' && <Lookahead projectId={projectId} />}
       {sub === 'scurve' && <SCurve projectId={projectId} />}
       {sub === 'periodmap' && <PeriodMappingTab projectId={projectId} />}
@@ -140,30 +142,37 @@ function ProgrammeSummary({ acts }: { acts: ScheduleActivity[] }) {
 function Schedule({ projectId }: { projectId: string }) {
   const { provider } = useData();
   const [acts, setActs] = useState<ScheduleActivity[]>([]);
+  const [wbs, setWbs] = useState<ScheduleWbsNode[]>([]);
+  const [meta, setMeta] = useState<ScheduleMeta | null>(null);
   const [importing, setImporting] = useState(false);
   const [locked, setLocked] = useState(false);
   const [derived, setDerived] = useState<ActivityDerivedRow[]>([]);
   const [tol, setTol] = useState<number>(DEFAULT_COMMERCIAL_CONFIG.divergenceTolerancePct ?? 10);
-  function load() { provider.listSchedule(projectId).then(setActs); }
+
+  function load() {
+    void Promise.all([provider.listSchedule(projectId), provider.listScheduleWbs(projectId), provider.getScheduleMeta(projectId)])
+      .then(([sched, nodes, m]) => { setActs(sched); setWbs(nodes); setMeta(m); });
+  }
   useEffect(() => {
     let a = true;
     void Promise.all([
-      provider.listSchedule(projectId), provider.listBoq(projectId),
-      provider.listBoqWbs(projectId), provider.listProgress(projectId), provider.getCommercialConfig(projectId),
-    ]).then(([sched, items, links, progress, cfg]) => {
+      provider.listSchedule(projectId), provider.listScheduleWbs(projectId), provider.getScheduleMeta(projectId),
+      provider.listBoq(projectId), provider.listBoqWbs(projectId), provider.listProgress(projectId), provider.getCommercialConfig(projectId),
+    ]).then(([sched, nodes, m, items, links, progress, cfg]) => {
       if (!a) return;
-      setActs(sched);
+      setActs(sched); setWbs(nodes); setMeta(m);
       setTol(cfg.divergenceTolerancePct ?? 10);
       setDerived(activityDerivedProgress(sched, items, links, progress, new Date().toISOString().slice(0, 10)));
     });
     return () => { a = false; };
   }, [provider, projectId]);
   const derivedOf = Object.fromEntries(derived.map((d) => [d.activityId, d]));
+
   return (
     <div>
       {importing && <BaselineImport projectId={projectId} kind="schedule" onClose={() => setImporting(false)} onDone={load} />}
       <ScheduleWorkflowStrip projectId={projectId} onChange={setLocked} />
-      <div className="section-head"><h3>Schedule / WBS</h3>
+      <div className="section-head"><h3>Activities</h3>
         <div className="head-tools">
           <span className="muted">{acts.length} activities</span>
           <button className="btn-ghost" disabled={locked} title={locked ? 'Baseline locked — amend to edit' : ''} onClick={() => setImporting(true)}>Import baseline</button>
@@ -174,35 +183,58 @@ function Schedule({ projectId }: { projectId: string }) {
         <p className="muted">No schedule baseline yet. Use <strong>Import baseline</strong> to upload a Primavera P6 .xer, an .xlsx, or paste activities.</p>
       ) : (
         <>
-          <GanttChart activities={acts} />
-          <table className="data-table" aria-label="Schedule">
-          <thead><tr><th>WBS</th><th>Activity</th><th>Name</th><th className="num">Days</th><th>Start</th><th>Finish</th><th>Type</th><th>Status</th><th className="num" title="Total float from the imported programme — 0 or less means the activity is on the critical path">Float</th><th title="Driving logic from the imported P6 programme">Predecessors</th><th className="num" title="Derived from validated executed BOQ quantities through the BOQ↔WBS mapping">Physical % (derived)</th><th className="num">Expected %</th><th className="num">Δ</th></tr></thead>
-          <tbody>
-            {acts.map((a) => {
-              const d = derivedOf[a.activityId];
-              const flag = d?.mapped && Math.abs(d.divergence) > tol;
-              return (
-              <tr key={a.id} className={flag ? 'row-flag' : ''}>
-                <td title={a.wbsPath}>{a.wbs}</td><td>{a.activityId}</td><td>{a.name}</td>
-                <td className="num">{a.durationDays}</td><td>{a.plannedStart}</td><td>{a.plannedFinish}</td>
-                <td>{a.isMilestone ? <span className="status-pill">Milestone</span> : 'Task'}</td>
-                <td>{a.status ? <span className={`status-pill ${ACT_STATUS_CLASS[a.status]}`}>{ACT_STATUS_LABEL[a.status]}</span> : '—'}</td>
-                <td className={`num${a.isCritical ? ' neg' : ''}`} title={a.isCritical ? 'On the critical path' : ''}>
-                  {a.totalFloatDays == null ? '—' : `${a.totalFloatDays}d${a.isCritical ? ' ⚠' : ''}`}
-                </td>
-                <td className="small muted">{predecessorLabel(a.predecessors) || '—'}</td>
-                <td className="num">{a.isMilestone ? '—' : d?.mapped ? `${d.derivedPct}%` : <span className="muted small" title="No confirmed BOQ↔WBS mapping — map in the Mapping tab">unmapped</span>}</td>
-                <td className="num">{a.isMilestone ? '—' : `${d?.expectedPct ?? 0}%`}</td>
-                <td className={`num${flag ? ' neg' : ''}`}>{a.isMilestone || !d?.mapped ? '—' : `${d.divergence > 0 ? '+' : ''}${d.divergence}%${flag ? ' ⚠' : ''}`}</td>
-              </tr>
-              );
-            })}
-          </tbody>
-        </table>
+          <ActivityTable activities={acts} wbs={wbs} meta={meta} />
+
+          {/* Commercial read of the same programme: how physical progress derived
+              from validated BOQ quantities compares with the schedule. */}
+          <div className="section-head" style={{ marginTop: 22 }}><h3>Progress analysis</h3>
+            <span className="muted small">derived from executed BOQ quantities via the BOQ↔WBS mapping</span>
+          </div>
+          <table className="data-table" aria-label="Schedule analysis">
+            <thead><tr><th>WBS</th><th>Activity</th><th>Name</th><th>Status</th><th className="num" title="Total float from the imported programme — 0 or less means the activity is on the critical path">Float</th><th title="Driving logic from the imported P6 programme">Predecessors</th><th className="num">Physical % (derived)</th><th className="num">Expected %</th><th className="num">&#916;</th></tr></thead>
+            <tbody>
+              {acts.map((a) => {
+                const d = derivedOf[a.activityId];
+                const flag = d?.mapped && Math.abs(d.divergence) > tol;
+                return (
+                  <tr key={a.id} className={flag ? 'row-flag' : ''}>
+                    <td title={a.wbsPath}>{a.wbs}</td><td>{a.activityId}</td><td>{a.name}</td>
+                    <td>{a.status ? <span className={`status-pill ${ACT_STATUS_CLASS[a.status]}`}>{ACT_STATUS_LABEL[a.status]}</span> : (a.isMilestone ? <span className="status-pill">Milestone</span> : 'Task')}</td>
+                    <td className={`num${a.isCritical ? ' neg' : ''}`} title={a.isCritical ? 'On the critical path' : ''}>
+                      {a.totalFloatDays == null ? '\u2014' : `${a.totalFloatDays}d${a.isCritical ? ' \u26a0' : ''}`}
+                    </td>
+                    <td className="small muted">{predecessorLabel(a.predecessors) || '\u2014'}</td>
+                    <td className="num">{a.isMilestone ? '\u2014' : d?.mapped ? `${d.derivedPct}%` : <span className="muted small" title="No confirmed BOQ-to-WBS mapping — map it in the Mapping tab">unmapped</span>}</td>
+                    <td className="num">{a.isMilestone ? '\u2014' : `${d?.expectedPct ?? 0}%`}</td>
+                    <td className={`num${flag ? ' neg' : ''}`}>{a.isMilestone || !d?.mapped ? '\u2014' : `${d.divergence > 0 ? '+' : ''}${d.divergence}%${flag ? ' \u26a0' : ''}`}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </>
       )}
     </div>
   );
+}
+
+/** The Gantt lives in its own tab so the timeline gets the full width. */
+function Gantt({ projectId }: { projectId: string }) {
+  const { provider } = useData();
+  const [acts, setActs] = useState<ScheduleActivity[]>([]);
+  const [wbs, setWbs] = useState<ScheduleWbsNode[]>([]);
+  const [meta, setMeta] = useState<ScheduleMeta | null>(null);
+  useEffect(() => {
+    let a = true;
+    void Promise.all([provider.listSchedule(projectId), provider.listScheduleWbs(projectId), provider.getScheduleMeta(projectId)])
+      .then(([sched, nodes, m]) => { if (a) { setActs(sched); setWbs(nodes); setMeta(m); } });
+    return () => { a = false; };
+  }, [provider, projectId]);
+
+  if (acts.length === 0) {
+    return <p className="muted">No schedule baseline yet. Import one under <strong>Activities</strong> to see the Gantt chart.</p>;
+  }
+  return <GanttChart activities={acts} wbs={wbs} meta={meta} />;
 }
 
 function SCurve({ projectId }: { projectId: string }) {

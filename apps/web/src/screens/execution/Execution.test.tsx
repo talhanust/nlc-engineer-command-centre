@@ -37,10 +37,17 @@ describe('Phase 4 — execution', () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/execution');
     await screen.findByRole('heading', { name: 'Progress S-curve' });
-    await user.click(screen.getByRole('tab', { name: 'Schedule / WBS' }));
+    await user.click(screen.getByRole('tab', { name: 'Activities' }));
     const table = await screen.findByRole('table', { name: 'Schedule' });
     expect(within(table).getByText('Earthwork')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Gantt chart' })).toBeInTheDocument();
+  });
+
+  it('renders the Gantt chart in its own tab', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Gantt chart' }));
+    expect(await screen.findByRole('img', { name: 'Gantt chart' })).toBeInTheDocument();
   });
 
   it('adds a resource', async () => {
@@ -105,7 +112,7 @@ describe('Phase 4 — execution', () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/execution');
     await screen.findByRole('heading', { name: 'Progress S-curve' });
-    await user.click(screen.getByRole('tab', { name: 'Schedule / WBS' }));
+    await user.click(screen.getByRole('tab', { name: 'Activities' }));
     await screen.findByText('Baseline approval');
     const roleSel = screen.getByLabelText('Baseline acting role');
     for (const [r, label] of [
@@ -133,13 +140,14 @@ describe('Phase 4 — execution', () => {
     const user = userEvent.setup();
     renderAt('/node/proj-bahria/execution');
     await screen.findByRole('heading', { name: 'Progress S-curve' });
-    await user.click(screen.getByRole('tab', { name: 'Schedule / WBS' }));
+    await user.click(screen.getByRole('tab', { name: 'Activities' }));
     await user.click(screen.getByRole('button', { name: 'Import baseline' }));
     const dialog = await screen.findByRole('dialog', { name: 'Import schedule baseline' });
     await user.type(within(dialog).getByLabelText('schedule paste'), 'A-100\tEarthworks\t1.1\t2025-09-01\t2025-12-15');
     await user.click(within(dialog).getByRole('button', { name: 'Parse pasted text' }));
     await user.click(within(dialog).getByRole('button', { name: 'Apply baseline' }));
-    expect(await screen.findByRole('img', { name: 'Gantt chart' })).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: 'Schedule' });
+    expect(within(table).getByText('Earthworks')).toBeInTheDocument();
   });
 
   it('imports a Primavera P6 .xer, summarising and landing the programme', async () => {
@@ -149,7 +157,7 @@ describe('Phase 4 — execution', () => {
 
     renderAt('/node/proj-bahria/execution');
     await screen.findByRole('heading', { name: 'Progress S-curve' });
-    await user.click(screen.getByRole('tab', { name: 'Schedule / WBS' }));
+    await user.click(screen.getByRole('tab', { name: 'Activities' }));
     await user.click(screen.getByRole('button', { name: 'Import baseline' }));
     const dialog = await screen.findByRole('dialog', { name: 'Import schedule baseline' });
 
@@ -162,13 +170,23 @@ describe('Phase 4 — execution', () => {
 
     await user.click(within(dialog).getByRole('button', { name: 'Apply baseline' }));
 
-    // The programme lands: activity codes and WBS paths from the .xer.
+    // The programme lands in the P6-shaped activity table, grouped by WBS.
     const table = await screen.findByRole('table', { name: 'Schedule' });
     expect(within(table).getByText('Z1-B1-101')).toBeInTheDocument();
     expect(within(table).getByText('Clearing and grubbing within roadway limits')).toBeInTheDocument();
+    // WBS summary rows are present and collapsible.
+    expect(within(table).getByText('Construction')).toBeInTheDocument();
+    expect(within(table).getByRole('button', { name: /Collapse Construction/ })).toBeInTheDocument();
+    // Dates render in P6's format, durations in working days.
+    expect(within(table).getAllByText('23-Feb-26').length).toBeGreaterThan(0);
     // Predecessor logic survived the round-trip through the provider.
-    expect(within(table).getByText(/Z1-B1-101 \(FS\)/)).toBeInTheDocument();
+    const analysis = await screen.findByRole('table', { name: 'Schedule analysis' });
+    expect(within(analysis).getByText(/Z1-B1-101 \(FS\)/)).toBeInTheDocument();
     expect(screen.getByLabelText('Programme summary')).toBeInTheDocument();
+
+    // …and the Gantt tab now renders the imported programme.
+    await user.click(screen.getByRole('tab', { name: 'Gantt chart' }));
+    expect(await screen.findByRole('img', { name: 'Gantt chart' })).toBeInTheDocument();
   });
 });
 

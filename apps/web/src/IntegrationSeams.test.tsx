@@ -129,8 +129,10 @@ describe('schedule derived progress UI', () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/execution');
     await screen.findByRole('heading', { name: 'Progress S-curve' });
-    await user.click(screen.getByRole('tab', { name: 'Schedule / WBS' }));
-    const table = await screen.findByRole('table', { name: 'Schedule' });
+    await user.click(screen.getByRole('tab', { name: 'Activities' }));
+    // The derived-vs-expected read of the programme lives in the analysis table,
+    // alongside the P6-shaped activity table.
+    const table = await screen.findByRole('table', { name: 'Schedule analysis' });
     expect(within(table).getByText('Physical % (derived)')).toBeInTheDocument();
     expect(within(table).getByText('Expected %')).toBeInTheDocument();
   });

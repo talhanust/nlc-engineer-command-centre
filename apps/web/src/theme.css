@@ -1092,3 +1092,40 @@ code { font-family: var(--font-mono); font-size: .9em; }
   .kpi-card { border: 1px solid #ccc !important; }
   .collapsible-card[data-collapsed='true'] .card-body { display: block !important; }
 }
+
+/* ---- Schedule: P6-style activity table + Gantt ---- */
+.data-table tr.wbs-row td { background: color-mix(in srgb, var(--primary) 7%, transparent); }
+.data-table tr.row-critical td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+.wbs-toggle {
+  background: none; border: 0; cursor: pointer; color: var(--muted);
+  font-size: 11px; padding: 0 6px 0 0; line-height: 1;
+}
+.wbs-toggle:hover { color: var(--text); }
+
+.gantt-wrap {
+  border: 1px solid var(--border); border-radius: var(--r);
+  max-height: 560px; overflow-y: auto; background: var(--surface);
+}
+.gantt-panes { display: flex; align-items: flex-start; }
+.gantt-left { flex: none; border-right: 1px solid var(--border); }
+.gantt-right { flex: 1; overflow-x: auto; }
+.gantt-head, .gantt-head-sticky {
+  position: sticky; top: 0; z-index: 2; background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.gantt-head {
+  box-sizing: border-box;
+  display: flex; align-items: flex-end; padding: 0 8px 6px;
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--muted); font-weight: 600;
+}
+.gantt-label {
+  /* border-box keeps each label exactly ROW_H tall so the rows stay pixel-aligned
+     with the SVG bars on the right. */
+  box-sizing: border-box;
+  display: flex; align-items: center; gap: 2px; padding-right: 8px;
+  font-size: 12px; white-space: nowrap; overflow: hidden;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+.gantt-label.is-wbs { font-weight: 600; background: color-mix(in srgb, var(--primary) 7%, transparent); }
+.gantt-label-text { overflow: hidden; text-overflow: ellipsis; }

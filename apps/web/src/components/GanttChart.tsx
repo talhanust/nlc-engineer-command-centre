@@ -18,11 +18,12 @@ export function GanttChart({ activities }: { activities: ScheduleActivity[] }) {
     const finish = new Date(a.plannedFinish).getTime();
     const offset = Math.round((start - t0) / DAY);
     const duration = Math.max(a.isMilestone ? 2 : 1, Math.round((finish - start) / DAY));
-    return { name: a.activityId, label: a.name, offset, duration, milestone: a.isMilestone, start: a.plannedStart, finish: a.plannedFinish };
+    return { name: a.activityId, label: a.name, offset, duration, milestone: a.isMilestone, critical: a.isCritical === true, start: a.plannedStart, finish: a.plannedFinish };
   });
+  const anyCritical = data.some((d) => d.critical);
 
   return (
-    <ChartCard focusable title="Schedule (Gantt)" subtitle="planned activity windows" ariaLabel="Gantt chart">
+    <ChartCard focusable title="Schedule (Gantt)" subtitle={anyCritical ? 'planned activity windows · red = critical path' : 'planned activity windows'} ariaLabel="Gantt chart">
       <ResponsiveContainer width="100%" height={Math.max(200, activities.length * 42 + 40)}>
         <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }} barCategoryGap="22%">
           <CartesianGrid stroke={c.grid} horizontal={false} />
@@ -37,13 +38,14 @@ export function GanttChart({ activities }: { activities: ScheduleActivity[] }) {
                 <div className="recharts-default-tooltip" style={{ padding: 8 }}>
                   <div style={{ fontWeight: 700 }}>{p.label}</div>
                   <div className="muted small">{p.start} → {p.finish}</div>
+                  {p.critical && <div className="neg small">On the critical path</div>}
                 </div>
               );
             }}
           />
           <Bar dataKey="offset" stackId="g" fill="transparent" />
           <Bar dataKey="duration" stackId="g" radius={[3, 3, 3, 3]} maxBarSize={18}>
-            {data.map((d, i) => (<Cell key={i} fill={d.milestone ? c.amber : c.primary} />))}
+            {data.map((d, i) => (<Cell key={i} fill={d.milestone ? c.amber : d.critical ? c.danger : c.primary} />))}
           </Bar>
         </BarChart>
       </ResponsiveContainer>

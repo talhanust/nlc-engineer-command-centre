@@ -346,6 +346,12 @@ export interface Distribution {
 }
 
 // ---- Execution & baselines (Phase 4) ----
+export type ActivityStatus = 'not_started' | 'in_progress' | 'completed';
+export interface SchedulePredecessor {
+  activityId: string;
+  type: 'FS' | 'SS' | 'FF' | 'SF';
+  lagDays: number;
+}
 export interface ScheduleActivity {
   id: string;
   projectId: string;
@@ -356,6 +362,18 @@ export interface ScheduleActivity {
   plannedStart: string;
   plannedFinish: string;
   isMilestone: boolean;
+  // Optional fields populated when the baseline is imported from a P6 .xer.
+  // All are optional so pasted / .xlsx imports and existing data stay valid.
+  status?: ActivityStatus;
+  pctComplete?: number;        // 0–100 (schedule/physical % from P6)
+  actualStart?: string;
+  actualFinish?: string;
+  totalFloatDays?: number;
+  isCritical?: boolean;        // total float ≤ 0
+  activityType?: string;       // raw P6 task_type (TT_Task, TT_Mile …)
+  wbsPath?: string;            // readable WBS name path ("Construction › Zone 1")
+  predecessors?: SchedulePredecessor[];
+  resourceNames?: string[];
 }
 
 /** One point of the monthly cumulative S-curve. `actual` is null beyond now. */

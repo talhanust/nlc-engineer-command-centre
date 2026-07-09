@@ -884,6 +884,7 @@ export class LocalDataProvider implements DataProvider {
   }
   async replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>): Promise<ScheduleActivity[]> {
     const acts: ScheduleActivity[] = rows.map((r, i) => ({
+      ...r, // preserve optional P6/XER fields (status, float, critical, logic, resources …)
       id: `act-${projectId}-${i + 1}`, projectId,
       activityId: sanitize(r.activityId), name: sanitize(r.name), wbs: sanitize(r.wbs),
       durationDays: r.durationDays, plannedStart: r.plannedStart, plannedFinish: r.plannedFinish, isMilestone: r.isMilestone,

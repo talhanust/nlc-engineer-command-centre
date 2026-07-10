@@ -52,7 +52,8 @@ export function activityDerivedProgress(
     const execQty = cumulativeExecuted(progress, itemId);
     const execVal = Math.min(execQty, item.qty) * item.rate;
     for (const l of itemLinks) {
-      const w = effectiveWeight(l, itemLinks);
+      // Quantity-allocated links carry exactly the value of their own quantity.
+      const w = effectiveWeight(l, itemLinks, item);
       mappedValue.set(l.activityId, (mappedValue.get(l.activityId) ?? 0) + item.amount * w);
       executedValue.set(l.activityId, (executedValue.get(l.activityId) ?? 0) + execVal * w);
     }

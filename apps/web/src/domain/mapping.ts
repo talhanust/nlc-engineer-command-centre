@@ -49,10 +49,113 @@ export function linksByItem(links: BoqWbsLink[]): Map<string, BoqWbsLink[]> {
   return m;
 }
 
-/** Effective value share of one link: explicit weight, else even split across the item's links. */
-export function effectiveWeight(link: BoqWbsLink, itemLinks: BoqWbsLink[]): number {
+/** True when the item's mapping is driven by explicit quantity allocation. */
+export function usesQtyAllocation(itemLinks: BoqWbsLink[]): boolean {
+  return itemLinks.some((l) => l.qty !== undefined && l.qty >= 0);
+}
+
+/**
+ * Effective value share of one link, in priority order:
+ *   1. quantity allocation — qty ÷ item qty (the honest measure: an activity
+ *      carries exactly the value of the quantity executed under it);
+ *   2. an explicit weight;
+ *   3. an even split across the item's links.
+ * `item` is optional so existing call sites keep compiling; pass it whenever a
+ * quantity-allocated mapping must be respected.
+ */
+export function effectiveWeight(link: BoqWbsLink, itemLinks: BoqWbsLink[], item?: { qty: number }): number {
+  if (item && item.qty > 0 && usesQtyAllocation(itemLinks)) {
+    return Math.max(0, Math.min(1, (link.qty ?? 0) / item.qty));
+  }
   if (link.weight !== undefined && link.weight >= 0) return Math.min(1, link.weight);
   return itemLinks.length > 0 ? 1 / itemLinks.length : 0;
+}
+
+export interface ItemAllocation {
+  itemId: string;
+  itemQty: number;
+  /** Σ of allocated quantities across the item's links. */
+  allocatedQty: number;
+  /** itemQty − allocatedQty, floored at 0. */
+  remainingQty: number;
+  /** allocatedQty > itemQty (by more than a rounding tolerance). */
+  overAllocated: boolean;
+  /** Every unit of the item is accounted for. */
+  fullyAllocated: boolean;
+  usesQty: boolean;
+}
+
+// Quantities are decimals (m³, tonnes); compare with a tolerance rather than ===.
+const EPS = 1e-6;
+
+/** Quantity allocation of a single BOQ item across the activities it maps to. */
+export function itemAllocation(item: { id: string; qty: number }, itemLinks: BoqWbsLink[]): ItemAllocation {
+  const usesQty = usesQtyAllocation(itemLinks);
+  const allocatedQty = itemLinks.reduce((s, l) => s + (l.qty ?? 0), 0);
+  return {
+    itemId: item.id,
+    itemQty: item.qty,
+    allocatedQty,
+    remainingQty: Math.max(0, item.qty - allocatedQty),
+    overAllocated: usesQty && allocatedQty - item.qty > EPS,
+    fullyAllocated: usesQty && Math.abs(allocatedQty - item.qty) <= EPS,
+    usesQty,
+  };
+}
+
+export interface AllocationIssues {
+  /** Items whose links allocate MORE than the BOQ quantity — must be fixed. */
+  overAllocated: ItemAllocation[];
+  /** Quantity-allocated items with quantity still unassigned — a warning. */
+  underAllocated: ItemAllocation[];
+  /** Blocking problems exist; the mapping should not be locked. */
+  blocking: boolean;
+}
+
+/**
+ * Pre-lock validation. Over-allocation is blocking: it would bill the same
+ * quantity twice through two activities. Under-allocation is only a warning —
+ * a planner may legitimately map part of an item now and the rest later.
+ */
+export function allocationIssues(items: Array<{ id: string; qty: number }>, links: BoqWbsLink[]): AllocationIssues {
+  const by = linksByItem(links.filter((l) => l.confidence !== 'disputed'));
+  const overAllocated: ItemAllocation[] = [];
+  const underAllocated: ItemAllocation[] = [];
+  for (const item of items) {
+    const itemLinks = by.get(item.id) ?? [];
+    if (itemLinks.length === 0) continue;
+    const a = itemAllocation(item, itemLinks);
+    if (!a.usesQty) continue;
+    if (a.overAllocated) overAllocated.push(a);
+    else if (a.remainingQty > EPS) underAllocated.push(a);
+  }
+  return { overAllocated, underAllocated, blocking: overAllocated.length > 0 };
+}
+
+/** Links grouped per activity — the "one activity, many BOQ items" view. */
+export function linksByActivity(links: BoqWbsLink[]): Map<string, BoqWbsLink[]> {
+  const m = new Map<string, BoqWbsLink[]>();
+  for (const l of links) {
+    const arr = m.get(l.activityId) ?? [];
+    arr.push(l);
+    m.set(l.activityId, arr);
+  }
+  return m;
+}
+
+/** Value an activity carries: Σ over its links of (allocated share × item amount). */
+export function activityMappedValue(
+  activityLinks: BoqWbsLink[],
+  itemOf: Map<string, { id: string; qty: number; amount: number }>,
+  linksOfItem: Map<string, BoqWbsLink[]>,
+): number {
+  let total = 0;
+  for (const l of activityLinks) {
+    const item = itemOf.get(l.boqItemId);
+    if (!item) continue;
+    total += item.amount * effectiveWeight(l, linksOfItem.get(l.boqItemId) ?? [l], item);
+  }
+  return total;
 }
 
 export interface ValueCoverage {

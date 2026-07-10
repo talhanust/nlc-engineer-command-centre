@@ -1,16 +1,19 @@
 import { useMemo, useState } from 'react';
-import type { ScheduleActivity, ScheduleWbsNode, ScheduleMeta } from '../data/types';
+import type { ScheduleActivity, ScheduleWbsNode, ScheduleMeta, ScheduleBaseline } from '../data/types';
 import { buildScheduleRows, formatP6Date, type ScheduleRow } from '../domain/scheduleTree';
+import { baselineIndex, varianceOf } from '../domain/scheduleDiff';
 
 /** The P6 activity table: WBS summary rows (bold, collapsible) with their
  *  activities beneath, showing the columns a planner expects. */
 export function ActivityTable({
-  activities, wbs, meta,
-}: { activities: ScheduleActivity[]; wbs: ScheduleWbsNode[]; meta: ScheduleMeta | null }) {
+  activities, wbs, meta, baseline = null,
+}: { activities: ScheduleActivity[]; wbs: ScheduleWbsNode[]; meta: ScheduleMeta | null; baseline?: ScheduleBaseline | null }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [query, setQuery] = useState('');
 
   const rows = useMemo(() => buildScheduleRows(activities, wbs, meta, collapsed), [activities, wbs, meta, collapsed]);
+  const baseIdx = useMemo(() => baselineIndex(baseline), [baseline]);
+  const hasBaseline = baseIdx.size > 0;
 
   // Filtering searches activities; matching rows keep their WBS ancestry visible
   // by simply showing the flat matches, which is what P6's find does.
@@ -57,10 +60,13 @@ export function ActivityTable({
             <th className="num" title="Duration-based schedule % complete">Schedule % Complete</th>
             <th>Start</th>
             <th>Finish</th>
+            {hasBaseline && <th className="num" title="Finish variance against the frozen baseline — positive is slip">Var</th>}
           </tr>
         </thead>
         <tbody>
-          {shown.map((r) => (r.kind === 'wbs' ? <WbsRow key={r.key} row={r} onToggle={toggle} /> : <ActivityRow key={r.key} row={r} />))}
+          {shown.map((r) => (r.kind === 'wbs'
+            ? <WbsRow key={r.key} row={r} onToggle={toggle} showVar={hasBaseline} />
+            : <ActivityRow key={r.key} row={r} variance={hasBaseline ? varianceOf({ activityId: r.code, plannedStart: r.start, plannedFinish: r.finish }, baseIdx) : null} showVar={hasBaseline} />))}
         </tbody>
       </table>
       {shown.length === 0 && <p className="muted">No activity matches “{query}”.</p>}
@@ -68,7 +74,7 @@ export function ActivityTable({
   );
 }
 
-function WbsRow({ row, onToggle }: { row: ScheduleRow; onToggle: (id: string) => void }) {
+function WbsRow({ row, onToggle, showVar }: { row: ScheduleRow; onToggle: (id: string) => void; showVar: boolean }) {
   return (
     <tr className="wbs-row">
       <td colSpan={2} style={{ paddingLeft: 8 + row.depth * 16 }}>
@@ -87,11 +93,13 @@ function WbsRow({ row, onToggle }: { row: ScheduleRow; onToggle: (id: string) =>
       <td className="num"><strong>{row.schedulePct}%</strong></td>
       <td><strong>{formatP6Date(row.start)}</strong></td>
       <td><strong>{formatP6Date(row.finish)}</strong></td>
+      {showVar && <td className="num" />}
     </tr>
   );
 }
 
-function ActivityRow({ row }: { row: ScheduleRow }) {
+function ActivityRow({ row, variance, showVar }: { row: ScheduleRow; variance: { finishVarDays: number; baselineFinish: string } | null; showVar: boolean }) {
+  const v = variance?.finishVarDays ?? 0;
   return (
     <tr className={row.isCritical ? 'row-critical' : ''}>
       <td style={{ paddingLeft: 8 + row.depth * 16 }} title={row.activity?.wbsPath}>
@@ -104,6 +112,12 @@ function ActivityRow({ row }: { row: ScheduleRow }) {
       <td className="num">{row.schedulePct}%</td>
       <td>{formatP6Date(row.start)}</td>
       <td>{formatP6Date(row.finish)}</td>
+      {showVar && (
+        <td className={`num${v > 0 ? ' neg' : v < 0 ? ' pos' : ''}`}
+          title={variance ? `Baseline finish ${formatP6Date(variance.baselineFinish)}` : 'Not in the baseline'}>
+          {!variance ? 'new' : v === 0 ? '—' : `${v > 0 ? '+' : ''}${v}d`}
+        </td>
+      )}
     </tr>
   );
 }

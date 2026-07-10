@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../data/DataContext';
 import { parseScheduleRows, parseScurveRows, textToRows, type Row } from '../domain/importers';
 import { readSheetRows } from './xlsxImport';
 import { readXerText, isXerFile } from './xerImport';
 import { parseXerSchedule, predecessorLabel, type XerScheduleResult } from '../domain/xer';
-import type { ScheduleActivity } from '../data/types';
+import type { ScheduleActivity, BoqWbsLink } from '../data/types';
+import { diffSchedule, isNoOp, diffHeadline, type ScheduleDiff } from '../domain/scheduleDiff';
 
 type Kind = 'schedule' | 'scurve';
 type DraftActivity = Omit<ScheduleActivity, 'id' | 'projectId'>;
@@ -21,6 +22,17 @@ export function BaselineImport({ projectId, kind, onClose, onDone }: { projectId
   const [paste, setPaste] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // Re-importing must never be a silent overwrite: hold the current programme
+  // and its BOQ links so the change set can be shown before anything is written.
+  const [current, setCurrent] = useState<ScheduleActivity[]>([]);
+  const [links, setLinks] = useState<BoqWbsLink[]>([]);
+  useEffect(() => {
+    if (kind !== 'schedule') return;
+    let alive = true;
+    void Promise.all([provider.listSchedule(projectId), provider.listBoqWbs(projectId)])
+      .then(([s, l]) => { if (alive) { setCurrent(s); setLinks(l); } });
+    return () => { alive = false; };
+  }, [provider, projectId, kind]);
 
   const title = kind === 'schedule' ? 'Import schedule baseline' : 'Import S-curve baseline';
   const parsed = kind === 'schedule' ? parseScheduleRows(rows) : parseScurveRows(rows);
@@ -28,6 +40,12 @@ export function BaselineImport({ projectId, kind, onClose, onDone }: { projectId
     ? (parsed as ReturnType<typeof parseScheduleRows>).rows.length
     : (parsed as ReturnType<typeof parseScurveRows>).points.length;
   const count = xer ? xer.activities.length : tabularCount;
+
+  const incoming: DraftActivity[] = xer ? xer.activities : (kind === 'schedule' ? (parsed as ReturnType<typeof parseScheduleRows>).rows : []);
+  const diff: ScheduleDiff | null = useMemo(
+    () => (kind === 'schedule' && incoming.length > 0 ? diffSchedule(current, incoming, links) : null),
+    [kind, incoming, current, links],
+  );
 
   const preview: DraftActivity[] = xer
     ? xer.activities.slice(0, 10)
@@ -132,6 +150,31 @@ export function BaselineImport({ projectId, kind, onClose, onDone }: { projectId
           </div>
         )}
 
+        {diff && !diff.isFirstImport && (
+          <div className="card" style={{ marginTop: 8, borderColor: diff.orphaned.length ? 'var(--danger)' : undefined }} aria-label="Import change set">
+            <div className="small"><strong>Change set</strong> — {diffHeadline(diff)}</div>
+            {diff.finishShiftDays !== 0 && (
+              <div className={`small ${diff.finishShiftDays > 0 ? 'neg' : 'pos'}`}>
+                Programme finish moves {Math.abs(diff.finishShiftDays)} day(s) {diff.finishShiftDays > 0 ? 'later' : 'earlier'}
+              </div>
+            )}
+            {diff.slipped.length > 0 && (
+              <div className="muted small">
+                Worst slip: {diff.slipped.slice(0, 3).map((s) => `${s.activityId} +${s.finishSlipDays}d`).join(', ')}
+              </div>
+            )}
+            {diff.orphaned.length > 0 ? (
+              <div className="neg small" role="alert" style={{ marginTop: 4 }}>
+                ⚠ {diff.orphaned.length} mapped activity(ies) would be removed, orphaning {diff.orphanedLinkCount} BOQ link(s):{' '}
+                {diff.orphaned.slice(0, 5).map((o) => o.activityId).join(', ')}. Their quantity allocations will be lost.
+              </div>
+            ) : diff.removed.length > 0 ? (
+              <div className="muted small" style={{ marginTop: 4 }}>{diff.removed.length} activity(ies) removed — none carry BOQ mappings.</div>
+            ) : null}
+            {isNoOp(diff) && <div className="muted small">Applying this import would change nothing.</div>}
+          </div>
+        )}
+
         {count > 0 && (
           <div className="sample" style={{ marginTop: 8, maxHeight: 180, overflowY: 'auto' }}>
             {kind === 'schedule'
@@ -150,7 +193,10 @@ export function BaselineImport({ projectId, kind, onClose, onDone }: { projectId
 
         <div className="modal-actions">
           <button className="btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn" onClick={apply} disabled={busy || count === 0}>Apply baseline</button>
+          <button className="btn" onClick={apply} disabled={busy || count === 0}
+            title={diff?.orphaned.length ? 'This import removes mapped activities' : ''}>
+            {diff && !diff.isFirstImport ? 'Apply changes' : 'Apply baseline'}
+          </button>
         </div>
       </div>
     </div>

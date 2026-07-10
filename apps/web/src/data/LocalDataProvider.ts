@@ -1,7 +1,7 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
   Subcontractor, Rar, RarLine, RarRecovery, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation, VariationLine, Contract, CommercialConfig,
-  ScheduleActivity, ScheduleWbsNode, ScheduleMeta, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
+  ScheduleActivity, ScheduleWbsNode, ScheduleMeta, ScheduleBaseline, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry, SupplierBill, SupplierBillLine, BaselineLock, MachineryAsset, MachineryTransfer,
@@ -888,19 +888,57 @@ export class LocalDataProvider implements DataProvider {
   async getScheduleMeta(projectId: string): Promise<ScheduleMeta> {
     return readJson<ScheduleMeta>(schedMetaKey(projectId), () => ({}));
   }
+  async listScheduleBaselines(projectId: string): Promise<ScheduleBaseline[]> {
+    const set = readJson<ScheduleBaseline[]>(schedBasesKey(projectId), () => []);
+    if (set.length > 0) return set;
+    // Migrate a project frozen under the older single-baseline model.
+    const legacy = readJson<ScheduleBaseline | null>(schedBaseKey(projectId), () => null);
+    if (!legacy) return [];
+    const migrated = [{ ...legacy, id: legacy.id ?? `base-${projectId}-0` }];
+    writeJson(schedBasesKey(projectId), migrated);
+    return migrated;
+  }
+  async getScheduleBaseline(projectId: string): Promise<ScheduleBaseline | null> {
+    // The ORIGINAL approval is the contract baseline: first captured, never replaced.
+    return (await this.listScheduleBaselines(projectId))[0] ?? null;
+  }
+  async setScheduleBaseline(projectId: string, source?: string, revision?: number): Promise<ScheduleBaseline> {
+    const acts = await this.listSchedule(projectId);
+    const set = await this.listScheduleBaselines(projectId);
+    const baseline: ScheduleBaseline = {
+      id: `base-${projectId}-${set.length}`,
+      capturedAt: new Date().toISOString().slice(0, 10),
+      source: source ?? 'manual re-baseline',
+      revision,
+      activities: acts.map((a) => ({ activityId: a.activityId, plannedStart: a.plannedStart, plannedFinish: a.plannedFinish, durationDays: a.durationDays })),
+    };
+    // Append: an approved revision never overwrites the programme the contract
+    // was signed against.
+    writeJson(schedBasesKey(projectId), [...set, baseline]);
+    audit(projectId, 'update', 'Schedule baseline', `${baseline.activities.length} activities frozen`, baseline.source);
+    return baseline;
+  }
   async replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>, wbs?: ScheduleWbsNode[], meta?: ScheduleMeta): Promise<ScheduleActivity[]> {
-    const acts: ScheduleActivity[] = rows.map((r, i) => ({
-      ...r, // preserve optional P6/XER fields (status, float, critical, logic, resources …)
-      id: `act-${projectId}-${i + 1}`, projectId,
-      activityId: sanitize(r.activityId), name: sanitize(r.name), wbs: sanitize(r.wbs),
-      durationDays: r.durationDays, plannedStart: r.plannedStart, plannedFinish: r.plannedFinish, isMilestone: r.isMilestone,
-    }));
+    const acts: ScheduleActivity[] = rows.map((r) => {
+      const code = sanitize(r.activityId);
+      return {
+        ...r, // preserve optional P6/XER fields (status, float, critical, logic, resources …)
+        // The row id is derived from the activity CODE, not its position, so a
+        // re-import that reorders or inserts activities keeps stable identities.
+        id: `act-${projectId}-${code}`, projectId,
+        activityId: code, name: sanitize(r.name), wbs: sanitize(r.wbs),
+        durationDays: r.durationDays, plannedStart: r.plannedStart, plannedFinish: r.plannedFinish, isMilestone: r.isMilestone,
+      };
+    });
     writeJson(schedKey(projectId), acts);
     // A schedule and its WBS travel together: importing one replaces the other,
     // so a tabular import can't leave a stale P6 hierarchy behind.
     writeJson(schedWbsKey(projectId), wbs ?? []);
     writeJson(schedMetaKey(projectId), meta ?? {});
     audit(projectId, 'import', 'Schedule', `${acts.length} activities`);
+    // Importing NEVER creates a baseline. A baseline is an act of approval, not a
+    // side effect of receiving a file — it is captured when the schedule workflow
+    // reaches "Approve & lock". See advanceScheduleWorkflow().
     return acts;
   }
   async importScurve(projectId: string, points: MonthlySeriesPoint[]): Promise<MonthlySeriesPoint[]> {
@@ -919,6 +957,20 @@ export class LocalDataProvider implements DataProvider {
     if (error) throw new Error(error);
     writeJson(schedWfKey(projectId), state);
     audit(projectId, stage?.action ?? 'advance', 'Baseline', `rev ${state.revision}`, `${ROLE_LABEL[role] ?? role}${state.locked ? ' → locked' : ''}`);
+
+    // The programme becomes a baseline the moment a planner approves it. The first
+    // approval freezes the CONTRACT baseline; each later approval (after an
+    // amendment) appends a revision beside it rather than replacing it, because an
+    // EOT claim is argued against the original while day-to-day slip is read
+    // against the latest approved revision.
+    if (state.locked) {
+      const acts = readJson<ScheduleActivity[]>(schedKey(projectId), () => []);
+      const already = (await this.listScheduleBaselines(projectId)).some((b) => b.revision === state.revision);
+      if (acts.length > 0 && !already) {
+        const source = state.revision > 0 ? `approved rev ${state.revision}` : 'approved (original)';
+        await this.setScheduleBaseline(projectId, source, state.revision);
+      }
+    }
     return state;
   }
   async amendScheduleBaseline(projectId: string): Promise<BaselineWorkflowState> {
@@ -2304,6 +2356,8 @@ const distKey = (pid: string) => `nlc-ecc.dists.${pid}`;
 const schedKey = (pid: string) => `nlc-ecc.sched.${pid}`;
 const schedWbsKey = (pid: string) => `nlc-ecc.schedwbs.${pid}`;
 const schedMetaKey = (pid: string) => `nlc-ecc.schedmeta.${pid}`;
+const schedBaseKey = (pid: string) => `nlc-ecc.schedbaseline.${pid}`;   // legacy: one baseline
+const schedBasesKey = (pid: string) => `nlc-ecc.schedbaselines.${pid}`; // current: the baseline set
 const seriesKey = (pid: string) => `nlc-ecc.series.${pid}`;
 const nodesKey = 'nlc-ecc.nodes';
 const projectsKey = 'nlc-ecc.projects';
@@ -2312,7 +2366,7 @@ const seedVersionKey = 'nlc-ecc.seedVersion';
 // to purge a removed demo project's cached documents on a version upgrade.
 const ENTITY_KEYS = [
   'boq', 'progress', 'ipcs', 'subs', 'rars', 'rarlinks', 'variations', 'contractsreg',
-  'bankguarantees', 'dists', 'sched', 'schedwbs', 'schedmeta', 'escindices', 'epcs', 'resources', 'overheads',
+  'bankguarantees', 'dists', 'sched', 'schedwbs', 'schedmeta', 'schedbaseline', 'schedbaselines', 'escindices', 'epcs', 'resources', 'overheads',
   'receipts', 'payments', 'liabilities', 'suppliers', 'demands', 'salients',
   'production', 'materialIssues', 'inventory', 'pol', 'fixedassets', 'advances', 'boqmat', 'machinery',
 ];

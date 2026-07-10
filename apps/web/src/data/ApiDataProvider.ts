@@ -1,7 +1,7 @@
 import {
   DataProvider, OrgNode, Project, NodeComment, BoqItem, Ipc,
   Subcontractor, Rar, RarLine, RarRecovery, RarIpcLink, Epc, Advance, BankGuarantee, Distribution, Variation, Contract, ContractStatus, CommercialConfig,
-  ScheduleActivity, ScheduleWbsNode, ScheduleMeta, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
+  ScheduleActivity, ScheduleWbsNode, ScheduleMeta, ScheduleBaseline, MonthlySeriesPoint, Resource, BoqWbsLink, BoqMaterialLink,
   FinancialReceipt, FinancialPayment, FinancialLiability,
   Supplier, Demand, DemandItem, DemandType, PurchaseOrder, Crv, CrvLine,
   ProcPayment, ProcChainType, MachineryHire, AuditEntry, AlertState, AppUser, Directive, DirectiveStatus, ProjectStage, MaterialMaster, DlpDefect, MarkInput, HrProposal, HrProposalEntry, SupplierBill, BaselineLock, MachineryAsset, MachineryTransfer,
@@ -301,6 +301,15 @@ export class ApiDataProvider implements DataProvider {
   }
   async getScheduleMeta(projectId: string): Promise<ScheduleMeta> {
     return this.get<ScheduleMeta>(`/api/projects/${projectId}/schedule/meta`);
+  }
+  async listScheduleBaselines(projectId: string): Promise<ScheduleBaseline[]> {
+    return this.get<ScheduleBaseline[]>(`/api/projects/${projectId}/schedule/baselines`);
+  }
+  async getScheduleBaseline(projectId: string): Promise<ScheduleBaseline | null> {
+    return (await this.listScheduleBaselines(projectId))[0] ?? null;
+  }
+  async setScheduleBaseline(projectId: string, source?: string, revision?: number): Promise<ScheduleBaseline> {
+    return this.send<ScheduleBaseline>(`/api/projects/${projectId}/schedule/baseline`, 'PUT', { source, revision });
   }
   async listScheduleWbs(projectId: string): Promise<ScheduleWbsNode[]> {
     return this.get<ScheduleWbsNode[]>(`/api/projects/${projectId}/schedule/wbs`);

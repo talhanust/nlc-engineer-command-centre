@@ -4,7 +4,7 @@ import { ROLE_LABEL } from '../domain/chains';
 import { MAPPING_CHAIN, pendingMappingStage, INITIAL_MAPPING_WORKFLOW } from '../domain/mappingapproval';
 import type { BaselineWorkflowState } from '../domain/schedulebaseline';
 
-export function MappingWorkflowStrip({ projectId }: { projectId: string }) {
+export function MappingWorkflowStrip({ projectId, blockedReason }: { projectId: string; blockedReason?: string }) {
   const { provider } = useData();
   const [wf, setWf] = useState<BaselineWorkflowState>(INITIAL_MAPPING_WORKFLOW);
   const [role, setRole] = useState('pm');
@@ -50,10 +50,11 @@ export function MappingWorkflowStrip({ projectId }: { projectId: string }) {
               {[...new Set(MAPPING_CHAIN.map((s) => s.role))].map((r) => (<option key={r} value={r}>{ROLE_LABEL[r] ?? r}</option>))}
             </select>
           </label>
-          <button className="btn" onClick={advance} disabled={!stage || stage.role !== role}
-            title={stage && stage.role !== role ? `Awaiting ${ROLE_LABEL[stage.role] ?? stage.role}` : ''}>
+          <button className="btn" onClick={advance} disabled={!stage || stage.role !== role || !!blockedReason}
+            title={blockedReason || (stage && stage.role !== role ? `Awaiting ${ROLE_LABEL[stage.role] ?? stage.role}` : '')}>
             {stage ? stage.label : '—'}
           </button>
+          {blockedReason && <span className="neg small" role="alert">{blockedReason}</span>}
           {error && <span className="neg small">{error}</span>}
         </div>
       )}

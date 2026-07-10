@@ -364,6 +364,19 @@ export interface ScheduleMeta {
   holidays?: string[];
 }
 
+/** A frozen snapshot of the approved programme. Later imports become the
+ *  CURRENT schedule; variance is measured against this. */
+export interface ScheduleBaseline {
+  /** Stable id, so a comparison selection survives a reload. */
+  id: string;
+  capturedAt: string;
+  /** Where the snapshot came from (approval revision / explicit re-baseline). */
+  source?: string;
+  /** Workflow revision that was frozen, when the baseline came from an approval. */
+  revision?: number;
+  activities: Array<{ activityId: string; plannedStart: string; plannedFinish: string; durationDays: number }>;
+}
+
 /** A node of the imported WBS hierarchy (project root excluded). */
 export interface ScheduleWbsNode {
   id: string;
@@ -426,6 +439,14 @@ export interface BoqWbsLink {
   confidence: MapConfidence;
   /** Share of the item's value carried by this activity (0..1). Omitted = even split across the item's links. */
   weight?: number;
+  /**
+   * Quantity of the BOQ item executed under this activity, in the item's own
+   * unit. When ANY of an item's links carries a qty, allocation is quantity-
+   * driven: each link's value share is qty ÷ item qty, and the unallocated
+   * remainder is visible. Omitted on every link = fall back to weight / even
+   * split, so pre-existing mappings keep working unchanged.
+   */
+  qty?: number;
 }
 export interface BoqMaterialLink {
   boqItemId: string;
@@ -1070,6 +1091,15 @@ export interface DataProvider {
   listScheduleWbs(projectId: string): Promise<ScheduleWbsNode[]>;
   /** Data date, plan window and working calendar of the imported programme. */
   getScheduleMeta(projectId: string): Promise<ScheduleMeta>;
+  /** Every frozen programme, oldest first. Index 0 is the ORIGINAL approval —
+   *  the contract baseline a delay claim is argued against. Each later approval
+   *  appends a revision, so slip can be read against either. */
+  listScheduleBaselines(projectId: string): Promise<ScheduleBaseline[]>;
+  /** The original (contract) baseline, or null before the first approval. */
+  getScheduleBaseline(projectId: string): Promise<ScheduleBaseline | null>;
+  /** Freeze the current programme as a NEW baseline. Never overwrites an earlier
+   *  one — the original always survives. */
+  setScheduleBaseline(projectId: string, source?: string, revision?: number): Promise<ScheduleBaseline>;
   replaceSchedule(projectId: string, rows: Array<Omit<ScheduleActivity, 'id' | 'projectId'>>, wbs?: ScheduleWbsNode[], meta?: ScheduleMeta): Promise<ScheduleActivity[]>;
   importScurve(projectId: string, points: MonthlySeriesPoint[]): Promise<MonthlySeriesPoint[]>;
   // Schedule baseline approval cycle

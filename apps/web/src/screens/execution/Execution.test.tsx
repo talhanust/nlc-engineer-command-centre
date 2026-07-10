@@ -145,7 +145,7 @@ describe('Phase 4 — execution', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Import schedule baseline' });
     await user.type(within(dialog).getByLabelText('schedule paste'), 'A-100\tEarthworks\t1.1\t2025-09-01\t2025-12-15');
     await user.click(within(dialog).getByRole('button', { name: 'Parse pasted text' }));
-    await user.click(within(dialog).getByRole('button', { name: 'Apply baseline' }));
+    await user.click(within(dialog).getByRole('button', { name: /Apply (baseline|changes)/ }));
     const table = await screen.findByRole('table', { name: 'Schedule' });
     expect(within(table).getByText('Earthworks')).toBeInTheDocument();
   });
@@ -168,7 +168,7 @@ describe('Phase 4 — execution', () => {
     expect(within(summary).getByText(/project EMA-13/)).toBeInTheDocument();
     expect(within(summary).getByText(/logic links/)).toBeInTheDocument();
 
-    await user.click(within(dialog).getByRole('button', { name: 'Apply baseline' }));
+    await user.click(within(dialog).getByRole('button', { name: /Apply (baseline|changes)/ }));
 
     // The programme lands in the P6-shaped activity table, grouped by WBS.
     const table = await screen.findByRole('table', { name: 'Schedule' });
@@ -187,6 +187,143 @@ describe('Phase 4 — execution', () => {
     // …and the Gantt tab now renders the imported programme.
     await user.click(screen.getByRole('tab', { name: 'Gantt chart' }));
     expect(await screen.findByRole('img', { name: 'Gantt chart' })).toBeInTheDocument();
+  });
+
+  it('shows the change set before overwriting an existing programme', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/execution'); // already carries a seeded schedule
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Activities' }));
+    await user.click(screen.getByRole('button', { name: 'Import baseline' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Import schedule baseline' });
+
+    await user.type(within(dialog).getByLabelText('schedule paste'), 'NEW-1\tBrand new activity\t1.1\t2026-09-01\t2026-12-15');
+    await user.click(within(dialog).getByRole('button', { name: 'Parse pasted text' }));
+
+    // The diff is shown, and the removal of mapped activities is called out.
+    const changeSet = await within(dialog).findByLabelText('Import change set');
+    expect(within(changeSet).getByText(/^Change set/)).toBeInTheDocument();
+    expect(within(changeSet).getByText(/1 added/)).toBeInTheDocument();
+    // The seeded activities carry no BOQ links, so removal is a note, not an alarm.
+    expect(within(changeSet).getByText(/none carry BOQ mappings/)).toBeInTheDocument();
+    // Re-import is framed as a change, not a fresh baseline.
+    expect(within(dialog).getByRole('button', { name: 'Apply changes' })).toBeInTheDocument();
+  });
+
+  it('has no baseline until the programme is approved — importing never freezes one', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Activities' }));
+
+    expect(await screen.findByText(/No baseline — approve the programme to freeze it/)).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: 'Schedule' });
+    expect(within(table).queryByRole('columnheader', { name: 'Var' })).toBeNull();
+    // Re-baseline is not offered before an approved baseline exists.
+    expect(screen.queryByRole('button', { name: 'Re-baseline' })).toBeNull();
+  });
+
+  it('captures the baseline when the planner approves and locks the programme', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Activities' }));
+
+    // Walk the approval chain: each stage is gated on the acting role.
+    const roleSelect = await screen.findByLabelText('Baseline acting role');
+    const stages = [
+      ['pm', 'Validate (PM)'],
+      ['manager_plan', 'Scrutinise (Manager Plan HQ PD)'],
+      ['pd', 'Endorse (PD)'],
+      ['manager_plan_engrs', 'Tech-check (Manager Plan HQ Engrs)'],
+      ['comd_engrs', 'Approve & lock (Comd Engineer)'],
+    ] as const;
+    for (const [role, label] of stages) {
+      await user.selectOptions(roleSelect, role);
+      await user.click(await screen.findByRole('button', { name: label }));
+    }
+
+    // Approval froze the programme: the pill appears and variance is reported.
+    expect(await screen.findByLabelText('Schedule baseline')).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: 'Schedule' });
+    expect(await within(table).findByRole('columnheader', { name: 'Var' })).toBeInTheDocument();
+    // Nothing has moved yet, so every activity sits on its baseline.
+    expect(within(table).getAllByText('—').length).toBeGreaterThan(0);
+    // A deliberate re-baseline is now available.
+    expect(screen.getByRole('button', { name: 'Re-baseline' })).toBeInTheDocument();
+    // With a single baseline there is nothing to choose between.
+    expect(screen.queryByLabelText('Compare against baseline')).toBeNull();
+  });
+
+  it('explains that variance needs an approved baseline before showing one', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Variance & claim' }));
+    expect(await screen.findByText(/No baseline to measure against/)).toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: 'Variance report' })).toBeNull();
+  });
+
+  it('offers a near-critical filter on the Gantt', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Gantt chart' }));
+    await screen.findByRole('img', { name: 'Gantt chart' });
+
+    const near = screen.getByRole('button', { name: 'Near-critical' });
+    await user.click(near);
+    expect(near).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(/amber = near-critical/)).toBeInTheDocument();
+  });
+
+  it('keeps every approved revision and lets variance be read against either', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Activities' }));
+
+    const stages = [
+      ['pm', 'Validate (PM)'],
+      ['manager_plan', 'Scrutinise (Manager Plan HQ PD)'],
+      ['pd', 'Endorse (PD)'],
+      ['manager_plan_engrs', 'Tech-check (Manager Plan HQ Engrs)'],
+      ['comd_engrs', 'Approve & lock (Comd Engineer)'],
+    ] as const;
+    // Amending remounts the workflow strip, so the role select is re-queried.
+    async function walkChain() {
+      for (const [role, label] of stages) {
+        await user.selectOptions(await screen.findByLabelText('Baseline acting role'), role);
+        await user.click(await screen.findByRole('button', { name: label }));
+      }
+    }
+    await walkChain();
+    expect(await screen.findByLabelText('Schedule baseline')).toHaveTextContent(/^Original/);
+
+    // Amend and re-approve: a second baseline is appended, the original survives.
+    await user.click(await screen.findByRole('button', { name: 'Amend baseline' }));
+    await walkChain();
+
+    const selector = await screen.findByLabelText('Compare against baseline');
+    const options = within(selector as HTMLSelectElement).getAllByRole('option');
+    expect(options).toHaveLength(2);
+    expect(options[0].textContent).toMatch(/^Original/);
+    expect(options[1].textContent).toMatch(/^Rev 1/);
+
+    // Switching the comparison keeps the variance column present.
+    await user.selectOptions(selector, options[1]);
+    const table = await screen.findByRole('table', { name: 'Schedule' });
+    expect(within(table).getByRole('columnheader', { name: 'Var' })).toBeInTheDocument();
+
+    // The claim report reads slip against both frozen programmes at once.
+    await user.click(screen.getByRole('tab', { name: 'Variance & claim' }));
+    expect(await screen.findByLabelText('Variance summary')).toBeInTheDocument();
+    expect(screen.getByText('Finish vs contract baseline')).toBeInTheDocument();
+    expect(screen.getByText('Finish vs latest revision')).toBeInTheDocument();
+    expect(screen.getByText('Absorbed by amendments')).toBeInTheDocument();
+    const report = await screen.findByRole('table', { name: 'Variance report' });
+    expect(within(report).getByRole('columnheader', { name: 'vs Contract' })).toBeInTheDocument();
+    expect(within(report).getByRole('columnheader', { name: 'vs Revision' })).toBeInTheDocument();
   });
 });
 

@@ -3,6 +3,8 @@ import { useData } from '../../data/DataContext';
 import { SCurveChart } from '../../components/SCurveChart';
 import { GanttChart } from '../../components/GanttChart';
 import { ActivityTable } from '../../components/ActivityTable';
+import { BaselineSelector, baselineLabel } from '../../components/BaselineSelector';
+import { VarianceReport } from './VarianceReport';
 import { lookahead, type LookaheadStatus } from '../../domain/lookahead';
 import { ProductionTab } from './ProductionTab';
 import { BaselineImport } from '../../components/BaselineImport';
@@ -11,7 +13,7 @@ import { BaselineLockBanner } from '../../components/BaselineLockBanner';
 import { PeriodMappingTab } from './PeriodMappingTab';
 import { OverheadsTab } from './OverheadsTab';
 import { ProgressTab } from './ProgressTab';
-import type { MonthlySeriesPoint, ScheduleActivity, ScheduleWbsNode, ScheduleMeta, Resource, ResourceClass } from '../../data/types';
+import type { MonthlySeriesPoint, ScheduleActivity, ScheduleWbsNode, ScheduleMeta, ScheduleBaseline, Resource, ResourceClass } from '../../data/types';
 import { activityDerivedProgress, type ActivityDerivedRow } from '../../domain/derivedProgress';
 import { DEFAULT_COMMERCIAL_CONFIG } from '../../domain/ipc';
 import { predecessorLabel } from '../../domain/xer';
@@ -20,9 +22,9 @@ import type { ActivityStatus } from '../../data/types';
 const ACT_STATUS_LABEL: Record<ActivityStatus, string> = { not_started: 'Not started', in_progress: 'In progress', completed: 'Completed' };
 const ACT_STATUS_CLASS: Record<ActivityStatus, string> = { not_started: 'st-draft', in_progress: 'st-verified', completed: 'st-paid' };
 
-const SUB = ['schedule', 'gantt', 'lookahead', 'scurve', 'progress', 'periodmap', 'overheads', 'production', 'resources'] as const;
+const SUB = ['schedule', 'gantt', 'variance', 'lookahead', 'scurve', 'progress', 'periodmap', 'overheads', 'production', 'resources'] as const;
 type Sub = (typeof SUB)[number];
-const LABEL: Record<Sub, string> = { schedule: 'Activities', gantt: 'Gantt chart', lookahead: 'Lookahead', scurve: 'S-curve & progress', progress: 'Progress updates', periodmap: 'Period mapping', overheads: 'Overheads', production: 'Production & materials', resources: 'Resources' };
+const LABEL: Record<Sub, string> = { schedule: 'Activities', gantt: 'Gantt chart', variance: 'Variance & claim', lookahead: 'Lookahead', scurve: 'S-curve & progress', progress: 'Progress updates', periodmap: 'Period mapping', overheads: 'Overheads', production: 'Production & materials', resources: 'Resources' };
 
 export function ExecutionTab({ projectId }: { projectId: string }) {
   const [sub, setSub] = useState<Sub>('scurve');
@@ -37,6 +39,7 @@ export function ExecutionTab({ projectId }: { projectId: string }) {
       </div>
       {sub === 'schedule' && <><BaselineLockBanner projectId={projectId} kind="schedule" /><Schedule projectId={projectId} /></>}
       {sub === 'gantt' && <Gantt projectId={projectId} />}
+      {sub === 'variance' && <VarianceReport projectId={projectId} />}
       {sub === 'lookahead' && <Lookahead projectId={projectId} />}
       {sub === 'scurve' && <SCurve projectId={projectId} />}
       {sub === 'periodmap' && <PeriodMappingTab projectId={projectId} />}
@@ -99,6 +102,13 @@ function Lookahead({ projectId }: { projectId: string }) {
   );
 }
 
+/** Re-baselining changes the yardstick the team reads slip against, so it asks
+ *  first. Earlier baselines are kept. Guarded for non-browser (test) environments. */
+function confirmReBaseline(): boolean {
+  if (typeof window === 'undefined' || typeof window.confirm !== 'function') return true;
+  return window.confirm('Freeze the current programme as a new baseline? Earlier baselines, including the original, are kept for comparison.');
+}
+
 /** At-a-glance read of the imported programme: window, critical path, logic depth. */
 function ProgrammeSummary({ acts }: { acts: ScheduleActivity[] }) {
   const starts = acts.map((a) => a.plannedStart).filter(Boolean).sort();
@@ -144,37 +154,58 @@ function Schedule({ projectId }: { projectId: string }) {
   const [acts, setActs] = useState<ScheduleActivity[]>([]);
   const [wbs, setWbs] = useState<ScheduleWbsNode[]>([]);
   const [meta, setMeta] = useState<ScheduleMeta | null>(null);
+  const [baselines, setBaselines] = useState<ScheduleBaseline[]>([]);
+  const [compareId, setCompareId] = useState('');
   const [importing, setImporting] = useState(false);
   const [locked, setLocked] = useState(false);
   const [derived, setDerived] = useState<ActivityDerivedRow[]>([]);
   const [tol, setTol] = useState<number>(DEFAULT_COMMERCIAL_CONFIG.divergenceTolerancePct ?? 10);
 
   function load() {
-    void Promise.all([provider.listSchedule(projectId), provider.listScheduleWbs(projectId), provider.getScheduleMeta(projectId)])
-      .then(([sched, nodes, m]) => { setActs(sched); setWbs(nodes); setMeta(m); });
+    void Promise.all([provider.listSchedule(projectId), provider.listScheduleWbs(projectId), provider.getScheduleMeta(projectId), provider.listScheduleBaselines(projectId)])
+      .then(([sched, nodes, m, bs]) => { setActs(sched); setWbs(nodes); setMeta(m); setBaselines(bs); });
   }
   useEffect(() => {
     let a = true;
     void Promise.all([
-      provider.listSchedule(projectId), provider.listScheduleWbs(projectId), provider.getScheduleMeta(projectId),
+      provider.listSchedule(projectId), provider.listScheduleWbs(projectId), provider.getScheduleMeta(projectId), provider.listScheduleBaselines(projectId),
       provider.listBoq(projectId), provider.listBoqWbs(projectId), provider.listProgress(projectId), provider.getCommercialConfig(projectId),
-    ]).then(([sched, nodes, m, items, links, progress, cfg]) => {
+    ]).then(([sched, nodes, m, bs, items, links, progress, cfg]) => {
       if (!a) return;
-      setActs(sched); setWbs(nodes); setMeta(m);
+      setActs(sched); setWbs(nodes); setMeta(m); setBaselines(bs);
       setTol(cfg.divergenceTolerancePct ?? 10);
       setDerived(activityDerivedProgress(sched, items, links, progress, new Date().toISOString().slice(0, 10)));
     });
     return () => { a = false; };
   }, [provider, projectId]);
   const derivedOf = Object.fromEntries(derived.map((d) => [d.activityId, d]));
+  // Default comparison is the ORIGINAL contract baseline.
+  const baseline = baselines.find((b) => b.id === compareId) ?? baselines[0] ?? null;
 
   return (
     <div>
       {importing && <BaselineImport projectId={projectId} kind="schedule" onClose={() => setImporting(false)} onDone={load} />}
-      <ScheduleWorkflowStrip projectId={projectId} onChange={setLocked} />
+      {/* Approving the programme captures a baseline, so reload the set on lock changes. */}
+      <ScheduleWorkflowStrip projectId={projectId} onChange={(l) => { setLocked(l); void provider.listScheduleBaselines(projectId).then(setBaselines); }} />
       <div className="section-head"><h3>Activities</h3>
         <div className="head-tools">
           <span className="muted">{acts.length} activities</span>
+          {baseline ? (
+            <span className="status-pill st-paid" aria-label="Schedule baseline" title={`Frozen ${baseline.capturedAt} · ${baseline.source ?? 'approval'}`}>
+              {baselineLabel(baseline)}
+            </span>
+          ) : (
+            <span className="muted small" title="A baseline is captured when the programme is approved and locked, not when a file is imported.">
+              No baseline — approve the programme to freeze it
+            </span>
+          )}
+          <BaselineSelector baselines={baselines} selectedId={baseline?.id ?? ''} onSelect={setCompareId} />
+          {acts.length > 0 && baselines.length > 0 && (
+            <button className="btn-ghost" title="Freeze the current programme as an additional baseline. Earlier baselines — including the original the contract was signed against — are kept."
+              onClick={() => { if (confirmReBaseline()) void provider.setScheduleBaseline(projectId).then(() => provider.listScheduleBaselines(projectId).then(setBaselines)); }}>
+              Re-baseline
+            </button>
+          )}
           <button className="btn-ghost" disabled={locked} title={locked ? 'Baseline locked — amend to edit' : ''} onClick={() => setImporting(true)}>Import baseline</button>
         </div>
       </div>
@@ -183,7 +214,7 @@ function Schedule({ projectId }: { projectId: string }) {
         <p className="muted">No schedule baseline yet. Use <strong>Import baseline</strong> to upload a Primavera P6 .xer, an .xlsx, or paste activities.</p>
       ) : (
         <>
-          <ActivityTable activities={acts} wbs={wbs} meta={meta} />
+          <ActivityTable activities={acts} wbs={wbs} meta={meta} baseline={baseline} />
 
           {/* Commercial read of the same programme: how physical progress derived
               from validated BOQ quantities compares with the schedule. */}
@@ -224,17 +255,29 @@ function Gantt({ projectId }: { projectId: string }) {
   const [acts, setActs] = useState<ScheduleActivity[]>([]);
   const [wbs, setWbs] = useState<ScheduleWbsNode[]>([]);
   const [meta, setMeta] = useState<ScheduleMeta | null>(null);
+  const [baselines, setBaselines] = useState<ScheduleBaseline[]>([]);
+  const [compareId, setCompareId] = useState('');
   useEffect(() => {
     let a = true;
-    void Promise.all([provider.listSchedule(projectId), provider.listScheduleWbs(projectId), provider.getScheduleMeta(projectId)])
-      .then(([sched, nodes, m]) => { if (a) { setActs(sched); setWbs(nodes); setMeta(m); } });
+    void Promise.all([provider.listSchedule(projectId), provider.listScheduleWbs(projectId), provider.getScheduleMeta(projectId), provider.listScheduleBaselines(projectId)])
+      .then(([sched, nodes, m, bs]) => { if (a) { setActs(sched); setWbs(nodes); setMeta(m); setBaselines(bs); } });
     return () => { a = false; };
   }, [provider, projectId]);
 
   if (acts.length === 0) {
     return <p className="muted">No schedule baseline yet. Import one under <strong>Activities</strong> to see the Gantt chart.</p>;
   }
-  return <GanttChart activities={acts} wbs={wbs} meta={meta} />;
+  const baseline = baselines.find((b) => b.id === compareId) ?? baselines[0] ?? null;
+  return (
+    <>
+      {baselines.length > 1 && (
+        <div className="create-row" style={{ marginBottom: 8 }}>
+          <BaselineSelector baselines={baselines} selectedId={baseline?.id ?? ''} onSelect={setCompareId} />
+        </div>
+      )}
+      <GanttChart activities={acts} wbs={wbs} meta={meta} baseline={baseline} />
+    </>
+  );
 }
 
 function SCurve({ projectId }: { projectId: string }) {

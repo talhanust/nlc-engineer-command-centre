@@ -1,30 +1,49 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
-import { materialCoverage, valueCoverage, activityCoverage, linksByItem, effectiveWeight, type Coverage } from '../../domain/mapping';
+import { materialCoverage, valueCoverage, activityCoverage, linksByItem, effectiveWeight, allocationIssues, type Coverage } from '../../domain/mapping';
 import { suggestWbsLinks } from '../../domain/mappingSuggest';
 import { rateAnalysis } from '../../domain/rateanalysis';
 import { BaselineLockBanner } from '../../components/BaselineLockBanner';
 import { formatMoney } from '../../domain/money';
 import { materialRecovery, issueValue, totalBalanceToRecover } from '../../domain/materialrecovery';
 import { MappingWorkflowStrip } from '../../components/MappingWorkflowStrip';
+import { ActivityMapping } from './ActivityMapping';
 import type { BoqItem, ScheduleActivity, BoqWbsLink, BoqMaterialLink, MaterialIssue, Subcontractor, MaterialMaster } from '../../data/types';
 
-const SUB = ['wbs', 'material', 'recovery'] as const;
+const SUB = ['wbs', 'activity', 'material', 'recovery'] as const;
 type Sub = (typeof SUB)[number];
 
 export function MappingTab({ projectId }: { projectId: string }) {
+  const { provider } = useData();
   const [sub, setSub] = useState<Sub>('wbs');
   const [mapLocked, setMapLocked] = useState(false);
+  // Over-allocated BOQ quantities must not survive into a locked mapping, so the
+  // approval strip is blocked until they are resolved.
+  const [blocked, setBlocked] = useState<string>('');
+  useEffect(() => {
+    let alive = true;
+    void Promise.all([provider.listBoq(projectId), provider.listBoqWbs(projectId)]).then(([items, links]) => {
+      if (!alive) return;
+      const issues = allocationIssues(items, links);
+      setBlocked(issues.blocking
+        ? `${issues.overAllocated.length} BOQ item(s) allocate more quantity than the BOQ carries — resolve under Activity → BOQ before approval.`
+        : '');
+    });
+    return () => { alive = false; };
+  }, [provider, projectId, sub]);
+
   return (
     <div>
       <BaselineLockBanner projectId={projectId} kind="mapping" onChange={setMapLocked} />
-      <MappingWorkflowStrip projectId={projectId} />
+      <MappingWorkflowStrip projectId={projectId} blockedReason={blocked} />
       <div className="subtabs" role="tablist">
         <button role="tab" aria-selected={sub === 'wbs'} className={`subtab${sub === 'wbs' ? ' active' : ''}`} onClick={() => setSub('wbs')}>BOQ → WBS</button>
+        <button role="tab" aria-selected={sub === 'activity'} className={`subtab${sub === 'activity' ? ' active' : ''}`} onClick={() => setSub('activity')}>Activity → BOQ</button>
         <button role="tab" aria-selected={sub === 'material'} className={`subtab${sub === 'material' ? ' active' : ''}`} onClick={() => setSub('material')}>BOQ → Material</button>
         <button role="tab" aria-selected={sub === 'recovery'} className={`subtab${sub === 'recovery' ? ' active' : ''}`} onClick={() => setSub('recovery')}>Material recovery</button>
       </div>
       {sub === 'wbs' && <WbsMapping projectId={projectId} locked={mapLocked} />}
+      {sub === 'activity' && <ActivityMapping projectId={projectId} locked={mapLocked} />}
       {sub === 'material' && <MaterialMapping projectId={projectId} locked={mapLocked} />}
       {sub === 'recovery' && <MaterialRecovery projectId={projectId} />}
     </div>

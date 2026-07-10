@@ -1678,3 +1678,164 @@ NLC Engineer Command Centre — work journal
   because 2026-03-02 is a holiday in the file calendar — the calendar is honoured.
 - Web 518 passing (+25: scheduleTree 17, xer +7, Execution +1), server 9;
   typecheck clean; local + api builds green.
+
+2026-07-09 — Interactive Gantt + quantity-allocated BOQ mapping
+- Gantt is now a working instrument rather than a picture: continuous zoom
+  slider (0.3–30 px/day) with Fit-to-width, a pan slider that scrubs the
+  timeline, a row-height slider, view filters (All / Critical only / In progress
+  / Milestones), and click-to-select a bar — which dims the rest and draws elbow
+  arrows back to the driving predecessors we already parse from TASKPRED, so a
+  planner can walk the logic chain. Dependencies toggle; selection clears.
+  Month labels thin out automatically at low zoom instead of overprinting.
+- BOQ↔activity mapping is now QUANTITY-ALLOCATED, and works in both directions.
+  BoqWbsLink gained an optional qty: the quantity of that BOQ item executed under
+  that activity, in the item unit. Semantics, in domain/mapping.ts:
+    * effectiveWeight() priority — qty ÷ item qty, else explicit weight, else
+      even split. Legacy call sites that pass no item keep the old behaviour, so
+      existing mappings are untouched.
+    * itemAllocation() reports allocated / remaining qty, over- and fully-
+      allocated, with a decimal tolerance (quantities are m³ and tonnes).
+    * allocationIssues() is the pre-lock gate. OVER-allocation is blocking — it
+      would bill the same quantity twice through two activities. Under-allocation
+      is only a warning: mapping part of an item now and the rest later is valid.
+    * linksByActivity() / activityMappedValue() give the activity-centric read.
+  derivedProgress now passes the item, so a quantity-allocated activity carries
+  exactly the value of the quantity it will execute.
+- New screens/mapping/ActivityMapping.tsx ("Activity → BOQ" sub-tab): pick an
+  activity, attach as many BOQ items as it consumes, and set how much of each via
+  a slider or a number box. New links default to whatever quantity of the item is
+  still free; an "all" shortcut takes the remaining head-room. Each row shows the
+  share, the value carried and what is left of the item across every activity.
+  Over-allocated rows flag red and raise a blocking banner.
+- MappingWorkflowStrip takes a blockedReason: the approval button is disabled and
+  the reason announced (role=alert) while any item is over-allocated, so a bad
+  allocation cannot be locked into a baseline.
+- Tests: +17 domain (mappingQty.test.ts — weight priority, tolerance, blocking vs
+  warning, activity value split) and +6 UI (Gantt sliders/filters/selection, many
+  items to one activity, over-allocation blocks approval).
+  Web 541 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-09 — Diff-on-import + frozen baseline (the data-loss fix)
+- The latent bug: replaceSchedule was a silent overwrite, and BoqWbsLink keys off
+  the activity CODE. Re-importing a revised .xer would drop any activity no longer
+  in the file, orphaning every BOQ link — and now the quantity allocations — hanging
+  off it, with no warning. Row ids were positional (act-<pid>-<n>), so an inserted
+  activity renumbered everything after it.
+- Stable identity: the row id is now derived from the activity code
+  (act-<pid>-<code>), so reordering or inserting activities keeps identities.
+- New domain/scheduleDiff.ts: diffSchedule(current, incoming, links) returns added /
+  removed / changed (with the exact fields that moved) / unchanged, the net shift of
+  the programme finish, slipped activities worst-first, and — the point of the whole
+  thing — `orphaned`: removed activities that still carry non-disputed BOQ links,
+  with the link count. isNoOp() and diffHeadline() for the summary line.
+- BaselineImport now previews the change set before ANY write, for both .xer and
+  tabular imports. Orphaned mappings raise a red role=alert naming the activities
+  and the number of links that would be lost. The action reads "Apply changes"
+  rather than "Apply baseline" once a programme already exists.
+- Frozen baseline: new ScheduleBaseline doc (capturedAt, source, activity windows).
+  The first programme a project receives IS its baseline, captured automatically;
+  later imports become the current schedule. A Re-baseline button freezes the
+  current programme on demand. getScheduleBaseline / setScheduleBaseline on both
+  providers; schedbaseline added to the ENTITY_KEYS purge list.
+- Variance: baselineIndex() / varianceOf() give per-activity start and finish
+  variance. The Activities table gains a Var column (positive = slip, "new" for
+  activities absent from the baseline) and the Gantt draws a grey baseline ghost
+  under each live bar, so slip reads as an overhang. Both are toggleable/absent
+  when no baseline exists.
+- Verified against the real EMA-13.xer: simulating rev-2 (one mapped activity
+  deleted, one slipped 18d, one added) yields "1 changed · 1 added · 1 removed ·
+  626 unchanged" and correctly names MAT-ASP-MIX as orphaning 1 BOQ link.
+- Tests: +13 domain (scheduleDiff.test.ts) and +2 UI (change set shown before
+  overwrite; re-baseline adds the variance column).
+  Web 556 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — The baseline is an act of approval, not a side effect of import
+- Previously the FIRST import auto-froze the baseline. For a project carrying a
+  seeded schedule that meant the seed silently became the contract baseline —
+  the thing every variance figure and delay claim is measured against. Wrong
+  provenance, and no human ever said so.
+- Capture moved to the approval seam. advanceScheduleWorkflow() freezes the
+  programme only when the chain reaches "Approve & lock (Comd Engineer)" and the
+  workflow locks. replaceSchedule() now never creates a baseline, no matter how
+  many times a file is imported. Approving an EMPTY schedule freezes nothing.
+- A later re-approval (after amendScheduleBaseline) deliberately LEAVES THE
+  ORIGINAL BASELINE STANDING. An EOT claim is argued against the programme that
+  was originally approved, so a revision must not quietly redefine the yardstick.
+  Replacing it is an explicit act: setScheduleBaseline() is the manual
+  re-baseline, and the UI asks for confirmation before discarding the frozen
+  programme. ScheduleBaseline gained `revision`; source reads "approved
+  (original)" for revision 0 and "approved rev N" thereafter.
+- UI: the Activities header shows a Baseline pill (date + revision, provenance in
+  the tooltip) once approved, and otherwise says plainly "No baseline — approve
+  the programme to freeze it". Re-baseline only appears once a baseline exists.
+  The Schedule tab reloads the baseline when the workflow lock changes, so the
+  Var column and the Gantt ghost bars appear the moment approval completes.
+- Tests: +7 provider (data/scheduleBaseline.test.ts — import never freezes; part-
+  way through the chain freezes nothing; approval captures rev 0; empty schedule
+  freezes nothing; re-approval preserves the original; explicit re-baseline
+  overwrites; a wrong acting role cannot advance and therefore cannot freeze) and
+  the Execution UI tests now prove absence-before-approval and capture-on-approval
+  by walking the five-stage chain.
+  Web 564 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Multiple baselines: contract original + every approved revision
+- A claim is presented two ways at once: slip against the programme the CONTRACT
+  was signed against, and slip against the LAST APPROVED revision. One frozen
+  document cannot answer both, so the baseline is now a set.
+- Storage: nlc-ecc.schedbaselines.<pid> holds ScheduleBaseline[], oldest first;
+  index 0 is the original approval. ScheduleBaseline gained a stable `id` so a
+  comparison selection survives a reload. listScheduleBaselines() migrates a
+  project frozen under the older single-document key on first read, minting an id
+  for the legacy record; the old key is left untouched. schedbaselines added to
+  the ENTITY_KEYS purge list.
+- setScheduleBaseline() now APPENDS. It can no longer destroy the programme the
+  contract was signed against, whoever calls it. getScheduleBaseline() answers
+  with the original, so every existing call site keeps its meaning.
+- advanceScheduleWorkflow() captures on EVERY approval, not just the first, and
+  guards against appending the same revision twice (a duplicate advance on a
+  locked workflow throws before it can). Original = "approved (original)",
+  revision N = "approved rev N".
+- UI: a Compare-against selector (hidden while only one baseline exists) sits in
+  the Activities header and above the Gantt. Switching it re-reads the Var column
+  and the grey ghost bars against the chosen programme — original and latest
+  revision are one click apart. The baseline pill now reads "Original · <date>" /
+  "Rev 2 · <date>". Re-baseline copy corrected: it adds a baseline, it does not
+  replace one.
+- Tests: baseline provider suite grew to 9 (append-not-overwrite, no duplicate
+  revision, original survives re-approval, legacy migration mints an id) and the
+  Execution UI proves two approved revisions appear in the selector and variance
+  can be read against either. A test bug was caught and fixed on the way:
+  amending remounts the workflow strip, so the acting-role select must be
+  re-queried rather than captured once.
+  Web 567 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Variance & claim report + near-critical band
+- New domain/varianceReport.ts. With a baseline SET, slip must be read two ways
+  at once: against the ORIGINAL approval (the yardstick an EOT claim is argued
+  from) and against the LATEST approved revision (what the team is judged on now).
+  The gap between them is the slip approved amendments already absorbed. A project
+  can be 31 days behind contract while sitting exactly on its current revision —
+  both statements true, and the report says so in one line rather than letting
+  someone pick the flattering number.
+  varianceReport() returns per-activity varVsOriginal / varVsRevision /
+  absorbedByRevision (null where an activity is absent from that programme — new
+  scope, not zero slip), plus a summary: programme finish against each frozen
+  programme, slipped / ahead counts, critical slip, new-scope count, worst ten.
+  singleBaseline collapses the two yardsticks so the UI hides the columns instead
+  of printing zeroes.
+- New Execution → "Variance & claim" sub-tab: KPI strip (finish vs contract, vs
+  latest revision, absorbed by amendments, slipped activities, new scope), filters
+  (All / Slipped / Critical / New scope) and the claim table. Before any approval
+  it says plainly that variance needs an approved baseline, rather than rendering
+  a table of dashes.
+- floatBand(): critical (float ≤ 0), near-critical (≤ 10d by default, configurable),
+  normal, unknown. The critical path says what IS late; the near-critical band says
+  what is one bad week from driving completion. Added as a Gantt filter and an
+  amber bar colour, with the float quoted in the tooltip.
+  On the real EMA-13 programme: 101 critical, 13 near-critical at 10 days,
+  59 at 30 — a real population, not an empty band.
+- Tests: +14 domain (varianceReport.test.ts — the two yardsticks, absorbed time,
+  behind-contract-yet-ahead-of-revision, new scope, single/no baseline, float
+  bands) and +2 UI (variance tab explains itself without a baseline; near-critical
+  filter), with the two-revision UI test extended to assert the claim columns.
+  Web 583 passing, server 9; typecheck clean; local + api builds green.

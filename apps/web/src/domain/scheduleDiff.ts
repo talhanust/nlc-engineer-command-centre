@@ -172,3 +172,130 @@ export function varianceOf(
     baselineFinish: b.plannedFinish,
   };
 }
+
+// ---- Rename detection ----
+//
+// A revised programme routinely renumbers an activity rather than deleting it:
+// MAT-ASP-MIX becomes MAT-ASP-MIX-A, "Laying asphalt" becomes "Laying asphalt
+// base course". The diff sees a removal and an addition, and the BOQ links —
+// with their quantity allocations — die with the removal.
+//
+// So: for every ORPHANED removal (one that still carries links, and therefore has
+// something to lose) look for the added activity most likely to be the same work,
+// and offer to carry the mapping across. Nothing moves without a human saying so.
+
+/** Dice coefficient over character bigrams. Robust to suffixes and reorderings,
+ *  and it works on codes as well as prose, unlike token-set measures. */
+export function similarity(a: string, b: string): number {
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  const x = norm(a);
+  const y = norm(b);
+  if (!x || !y) return 0;
+  if (x === y) return 1;
+  if (x.length < 2 || y.length < 2) return x === y ? 1 : 0;
+
+  const bigrams = (s: string): Map<string, number> => {
+    const m = new Map<string, number>();
+    for (let i = 0; i < s.length - 1; i++) {
+      const g = s.slice(i, i + 2);
+      m.set(g, (m.get(g) ?? 0) + 1);
+    }
+    return m;
+  };
+  const ax = bigrams(x);
+  const by = bigrams(y);
+  let hits = 0;
+  for (const [g, n] of ax) hits += Math.min(n, by.get(g) ?? 0);
+  return (2 * hits) / (x.length - 1 + (y.length - 1));
+}
+
+export interface RenameCandidate {
+  fromActivityId: string;
+  fromName: string;
+  toActivityId: string;
+  toName: string;
+  /** 0..1 confidence that these are the same activity. */
+  score: number;
+  /** BOQ links that would be carried across. */
+  linkCount: number;
+  /** Why the match was made, in words a planner can check. */
+  reason: string;
+}
+
+export interface RenameOptions {
+  /** Minimum score to offer a remap at all. */
+  threshold?: number;
+}
+
+/**
+ * Pair orphaned removals with added activities that look like the same work.
+ * Greedy and one-to-one: the strongest pair is taken first, and neither side is
+ * offered twice. Only activities carrying links are considered — a removal with
+ * nothing mapped to it has nothing to rescue.
+ */
+export function detectRenames(
+  diff: ScheduleDiff,
+  current: ScheduleActivity[],
+  { threshold = 0.6 }: RenameOptions = {},
+): RenameCandidate[] {
+  const currentBy = new Map(current.map((a) => [a.activityId, a]));
+  const addedBy = new Map(diff.added.map((a) => [a.activityId, a]));
+
+  const pairs: RenameCandidate[] = [];
+  for (const orphan of diff.orphaned) {
+    const from = currentBy.get(orphan.activityId);
+    if (!from) continue;
+    for (const to of diff.added) {
+      const nameScore = similarity(from.name, to.name);
+      const codeScore = similarity(from.activityId, to.activityId);
+      const sameDates = from.plannedStart === to.plannedStart && from.plannedFinish === to.plannedFinish;
+      const sameWbs = from.wbs === to.wbs;
+
+      let score = 0.6 * nameScore + 0.4 * codeScore;
+      if (sameDates) score += 0.15;
+      if (sameWbs) score += 0.1;
+      score = Math.min(1, score);
+      if (score < threshold) continue;
+
+      const reasons: string[] = [];
+      // "same" is reserved for exact equality — a planner checking this list must
+      // be able to trust the word.
+      if (nameScore === 1) reasons.push('same name');
+      else if (nameScore > 0.5) reasons.push('similar name');
+      if (codeScore === 1) reasons.push('same id');
+      else if (codeScore > 0.7) reasons.push('similar id');
+      if (sameDates) reasons.push('same dates');
+      if (sameWbs) reasons.push('same WBS');
+
+      pairs.push({
+        fromActivityId: from.activityId,
+        fromName: from.name,
+        toActivityId: to.activityId,
+        toName: to.name,
+        score: +score.toFixed(2),
+        linkCount: orphan.linkCount,
+        reason: reasons.join(', ') || 'partial match',
+      });
+    }
+  }
+
+  // Greedy one-to-one: strongest first, each side used once.
+  pairs.sort((a, b) => b.score - a.score || a.fromActivityId.localeCompare(b.fromActivityId));
+  const usedFrom = new Set<string>();
+  const usedTo = new Set<string>();
+  const out: RenameCandidate[] = [];
+  for (const p of pairs) {
+    if (usedFrom.has(p.fromActivityId) || usedTo.has(p.toActivityId)) continue;
+    if (!addedBy.has(p.toActivityId)) continue;
+    usedFrom.add(p.fromActivityId);
+    usedTo.add(p.toActivityId);
+    out.push(p);
+  }
+  return out;
+}
+
+/** Orphans with no plausible successor — their mappings are genuinely lost. */
+export function unrescuedOrphans(diff: ScheduleDiff, renames: RenameCandidate[]): RemovedActivity[] {
+  const rescued = new Set(renames.map((r) => r.fromActivityId));
+  return diff.orphaned.filter((o) => !rescued.has(o.activityId));
+}

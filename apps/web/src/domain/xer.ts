@@ -177,6 +177,8 @@ export interface XerScheduleResult {
   /** Working pattern of the programme's dominant calendar (JS weekdays, 0=Sun). */
   workingWeekdays: number[];
   holidays: string[];
+  /** Σ TASKRSRC.target_cost — the programme's own budget. 0 when not cost-loaded. */
+  totalBudgetCost: number;
   wbsCount: number;
   milestoneCount: number;
   relationshipCount: number;
@@ -276,12 +278,22 @@ export function xerToSchedule(db: XerDatabase): XerScheduleResult {
   const rsrcName = new Map<string, string>();
   for (const r of rowsOf(db, 'RSRC')) rsrcName.set(r.rsrc_id, r.rsrc_name || r.rsrc_short_name || '');
   const taskResources = new Map<string, string[]>();
+  // A cost-loaded programme carries its own budget in TASKRSRC.target_cost. Summed
+  // per activity it gives a planned VALUE curve that needs no second spreadsheet.
+  const taskCost = new Map<string, number>();
+  let totalBudgetCost = 0;
   for (const a of rowsOf(db, 'TASKRSRC')) {
     const nm = rsrcName.get(a.rsrc_id);
-    if (!nm) continue;
-    const list = taskResources.get(a.task_id) ?? [];
-    if (!list.includes(nm)) list.push(nm);
-    taskResources.set(a.task_id, list);
+    if (nm) {
+      const list = taskResources.get(a.task_id) ?? [];
+      if (!list.includes(nm)) list.push(nm);
+      taskResources.set(a.task_id, list);
+    }
+    const cost = num(a.target_cost);
+    if (cost > 0) {
+      taskCost.set(a.task_id, (taskCost.get(a.task_id) ?? 0) + cost);
+      totalBudgetCost += cost;
+    }
   }
 
   function pctComplete(t: Record<string, string>, status: ActivityStatus): number {
@@ -343,6 +355,7 @@ export function xerToSchedule(db: XerDatabase): XerScheduleResult {
       wbsPath: wbsPath(t.wbs_id) || undefined,
       predecessors: predList.length ? predList : undefined,
       resourceNames: resList.length ? resList : undefined,
+      budgetCost: taskCost.get(t.task_id),
     });
   }
   if (dropped > 0) warnings.push(`Skipped ${dropped} WBS-summary row(s).`);
@@ -376,6 +389,7 @@ export function xerToSchedule(db: XerDatabase): XerScheduleResult {
     dataDate: ymd(project.last_recalc_date) || ymd(project.plan_start_date) || '',
     workingWeekdays: [...domCal.workingWeekdays].sort((a, b) => a - b),
     holidays: [...domCal.holidays].sort(),
+    totalBudgetCost: Math.round(totalBudgetCost),
     wbsCount: new Set(activities.map((a) => a.wbs)).size,
     milestoneCount,
     relationshipCount,

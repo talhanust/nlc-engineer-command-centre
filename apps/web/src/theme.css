@@ -1154,3 +1154,15 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .gantt-control input[type="range"] { accent-color: var(--primary); width: 130px; }
 .gantt-row-hit { cursor: pointer; }
 .gantt-label.is-selected, .gantt-label.is-selected .gantt-label-text { color: var(--primary); font-weight: 700; }
+
+/* ---- BOQ allocation heat-map ---- */
+.alloc-track {
+  display: flex; width: 100%; min-width: 90px; height: 10px; border-radius: 5px;
+  overflow: hidden; background: color-mix(in srgb, var(--muted) 16%, transparent);
+}
+.alloc-seg { height: 100%; }
+.alloc-remaining { background: color-mix(in srgb, var(--muted) 34%, transparent); }
+.alloc-unmapped { background: repeating-linear-gradient(45deg,
+  color-mix(in srgb, var(--muted) 22%, transparent) 0 4px,
+  color-mix(in srgb, var(--muted) 10%, transparent) 4px 8px); }
+.alloc-over { background: var(--danger); }

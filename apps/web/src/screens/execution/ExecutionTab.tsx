@@ -5,6 +5,7 @@ import { GanttChart } from '../../components/GanttChart';
 import { ActivityTable } from '../../components/ActivityTable';
 import { BaselineSelector, baselineLabel } from '../../components/BaselineSelector';
 import { VarianceReport } from './VarianceReport';
+import { shortHash } from '../../components/fileHash';
 import { lookahead, type LookaheadStatus } from '../../domain/lookahead';
 import { ProductionTab } from './ProductionTab';
 import { BaselineImport } from '../../components/BaselineImport';
@@ -26,7 +27,12 @@ const SUB = ['schedule', 'gantt', 'variance', 'lookahead', 'scurve', 'progress',
 type Sub = (typeof SUB)[number];
 const LABEL: Record<Sub, string> = { schedule: 'Activities', gantt: 'Gantt chart', variance: 'Variance & claim', lookahead: 'Lookahead', scurve: 'S-curve & progress', progress: 'Progress updates', periodmap: 'Period mapping', overheads: 'Overheads', production: 'Production & materials', resources: 'Resources' };
 
+/** Collapse state is shared by the Activities table and the Gantt: collapsing a
+ *  WBS branch in one leaves it collapsed in the other. Kept in memory, not
+ *  persisted — a planner who collapses everything to skim does not expect that
+ *  state back next week. */
 export function ExecutionTab({ projectId }: { projectId: string }) {
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [sub, setSub] = useState<Sub>('scurve');
   return (
     <div>
@@ -37,8 +43,8 @@ export function ExecutionTab({ projectId }: { projectId: string }) {
           </button>
         ))}
       </div>
-      {sub === 'schedule' && <><BaselineLockBanner projectId={projectId} kind="schedule" /><Schedule projectId={projectId} /></>}
-      {sub === 'gantt' && <Gantt projectId={projectId} />}
+      {sub === 'schedule' && <><BaselineLockBanner projectId={projectId} kind="schedule" /><Schedule projectId={projectId} collapsed={collapsed} setCollapsed={setCollapsed} /></>}
+      {sub === 'gantt' && <Gantt projectId={projectId} collapsed={collapsed} setCollapsed={setCollapsed} />}
       {sub === 'variance' && <VarianceReport projectId={projectId} />}
       {sub === 'lookahead' && <Lookahead projectId={projectId} />}
       {sub === 'scurve' && <SCurve projectId={projectId} />}
@@ -149,7 +155,7 @@ function ProgrammeSummary({ acts }: { acts: ScheduleActivity[] }) {
   );
 }
 
-function Schedule({ projectId }: { projectId: string }) {
+function Schedule({ projectId, collapsed, setCollapsed }: { projectId: string; collapsed: ReadonlySet<string>; setCollapsed: (n: ReadonlySet<string>) => void }) {
   const { provider } = useData();
   const [acts, setActs] = useState<ScheduleActivity[]>([]);
   const [wbs, setWbs] = useState<ScheduleWbsNode[]>([]);
@@ -209,12 +215,21 @@ function Schedule({ projectId }: { projectId: string }) {
           <button className="btn-ghost" disabled={locked} title={locked ? 'Baseline locked — amend to edit' : ''} onClick={() => setImporting(true)}>Import baseline</button>
         </div>
       </div>
+      {meta?.sourceFileName && (
+        <p className="muted small" style={{ marginTop: -4 }}
+          title={meta.sourceFileHash ? `${(meta.sourceHashAlgorithm ?? '').toUpperCase()}: ${meta.sourceFileHash}` : undefined}>
+          Imported from <strong>{meta.sourceFileName}</strong>
+          {meta.sourceFileHash ? ` · ${meta.sourceHashAlgorithm} ${shortHash(meta.sourceFileHash)}` : ''}
+          {meta.importedAt ? ` · ${meta.importedAt.slice(0, 10)}` : ''}
+          {meta.totalBudgetCost ? ` · cost-loaded` : ''}
+        </p>
+      )}
       {acts.length > 0 && <ProgrammeSummary acts={acts} />}
       {acts.length === 0 ? (
         <p className="muted">No schedule baseline yet. Use <strong>Import baseline</strong> to upload a Primavera P6 .xer, an .xlsx, or paste activities.</p>
       ) : (
         <>
-          <ActivityTable activities={acts} wbs={wbs} meta={meta} baseline={baseline} />
+          <ActivityTable activities={acts} wbs={wbs} meta={meta} baseline={baseline} collapsed={collapsed} setCollapsed={setCollapsed} />
 
           {/* Commercial read of the same programme: how physical progress derived
               from validated BOQ quantities compares with the schedule. */}
@@ -250,7 +265,7 @@ function Schedule({ projectId }: { projectId: string }) {
 }
 
 /** The Gantt lives in its own tab so the timeline gets the full width. */
-function Gantt({ projectId }: { projectId: string }) {
+function Gantt({ projectId, collapsed, setCollapsed }: { projectId: string; collapsed: ReadonlySet<string>; setCollapsed: (n: ReadonlySet<string>) => void }) {
   const { provider } = useData();
   const [acts, setActs] = useState<ScheduleActivity[]>([]);
   const [wbs, setWbs] = useState<ScheduleWbsNode[]>([]);
@@ -275,7 +290,7 @@ function Gantt({ projectId }: { projectId: string }) {
           <BaselineSelector baselines={baselines} selectedId={baseline?.id ?? ''} onSelect={setCompareId} />
         </div>
       )}
-      <GanttChart activities={acts} wbs={wbs} meta={meta} baseline={baseline} />
+      <GanttChart activities={acts} wbs={wbs} meta={meta} baseline={baseline} collapsed={collapsed} setCollapsed={setCollapsed} />
     </>
   );
 }

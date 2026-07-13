@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { materialCoverage, valueCoverage, activityCoverage, linksByItem, effectiveWeight, allocationIssues, type Coverage } from '../../domain/mapping';
-import { suggestWbsLinks } from '../../domain/mappingSuggest';
+import { suggestAllocations, proposalsToLinks } from '../../domain/mappingSuggest';
 import { rateAnalysis } from '../../domain/rateanalysis';
 import { BaselineLockBanner } from '../../components/BaselineLockBanner';
 import { formatMoney } from '../../domain/money';
 import { materialRecovery, issueValue, totalBalanceToRecover } from '../../domain/materialrecovery';
 import { MappingWorkflowStrip } from '../../components/MappingWorkflowStrip';
 import { ActivityMapping } from './ActivityMapping';
+import { AllocationBar } from '../../components/AllocationBar';
 import type { BoqItem, ScheduleActivity, BoqWbsLink, BoqMaterialLink, MaterialIssue, Subcontractor, MaterialMaster } from '../../data/types';
 
 const SUB = ['wbs', 'activity', 'material', 'recovery'] as const;
@@ -172,9 +173,27 @@ function WbsMapping({ projectId, locked }: { projectId: string; locked?: boolean
     await provider.setBoqWbs(projectId, { ...l, confidence: 'confirmed' });
     setLinks(await provider.listBoqWbs(projectId));
   }
+  const [suggesting, setSuggesting] = useState(false);
   async function runSuggest() {
-    const sugg = suggestWbsLinks(items, acts, links);
-    for (const s of sugg) await provider.setBoqWbs(projectId, s.link);
+    if (locked) return;
+    setSuggesting(true);
+    try {
+      // Propose WHICH activities consume each unmapped item and HOW MUCH of it.
+      // Everything lands as 'auto' and takes no part in derived progress until a
+      // named user confirms it below.
+      const proposed = proposalsToLinks(suggestAllocations(items, acts, links), projectId);
+      for (const l of proposed) await provider.setBoqWbs(projectId, l);
+      setLinks(await provider.listBoqWbs(projectId));
+    } finally {
+      setSuggesting(false);
+    }
+  }
+  async function confirmAll() {
+    for (const l of pending) await provider.setBoqWbs(projectId, { ...l, confidence: 'confirmed' });
+    setLinks(await provider.listBoqWbs(projectId));
+  }
+  async function rejectAll() {
+    for (const l of pending) await provider.removeBoqWbs(projectId, l.boqItemId, l.activityId);
     setLinks(await provider.listBoqWbs(projectId));
   }
 
@@ -197,7 +216,10 @@ function WbsMapping({ projectId, locked }: { projectId: string; locked?: boolean
       <div className="section-head">
         <h3>BOQ → WBS mapping</h3>
         <div>
-          <button className="btn-ghost" onClick={runSuggest} title="Score unmapped items against activity names and queue candidates for review">✨ Suggest mappings</button>
+          <button className="btn-ghost" onClick={runSuggest} disabled={locked || suggesting}
+            title="Score unmapped BOQ items against activity names, WBS paths and assigned resources; propose a quantity split across the activities that execute them. Nothing takes effect until confirmed.">
+            {suggesting ? 'Suggesting…' : '✨ Suggest mappings & quantities'}
+          </button>
         </div>
       </div>
       <div className="coverage">
@@ -210,21 +232,33 @@ function WbsMapping({ projectId, locked }: { projectId: string; locked?: boolean
       {pending.length > 0 && (
         <div className="card" style={{ margin: '10px 0' }}>
           <div className="section-head"><h4>Suggested mappings — pending review</h4>
-            <span className="muted small">auto-suggested; a named user must confirm before they take effect</span>
+            <div className="head-tools">
+              <span className="muted small">{pending.length} proposal(s); a named user must confirm before they take effect</span>
+              <button className="btn btn-mini" onClick={confirmAll} disabled={locked}>Confirm all</button>
+              <button className="btn-ghost btn-mini" onClick={rejectAll} disabled={locked}>Reject all</button>
+            </div>
           </div>
+          <p className="muted small" style={{ marginTop: 0 }}>
+            Quantities are a proportional starting point — weighted by match strength and activity duration. Check them: a
+            plausible name match is not proof that an activity executes that work.
+          </p>
           <table className="data-table" aria-label="Mapping review queue">
-            <thead><tr><th>BOQ item</th><th>→ Activity</th><th></th></tr></thead>
+            <thead><tr><th>BOQ item</th><th>→ Activity</th><th className="num">Proposed qty</th><th></th></tr></thead>
             <tbody>
-              {pending.map((l) => (
-                <tr key={`${l.boqItemId}-${l.activityId}`}>
-                  <td>{itemOf[l.boqItemId]?.code} — {itemOf[l.boqItemId]?.description}</td>
-                  <td>{l.activityId} — {actName[l.activityId] ?? ''}</td>
-                  <td>
-                    <button className="btn btn-mini" aria-label={`Confirm ${itemOf[l.boqItemId]?.code} to ${l.activityId}`} onClick={() => confirmLink(l)}>Confirm</button>{' '}
-                    <button className="btn-ghost btn-mini" aria-label={`Reject ${itemOf[l.boqItemId]?.code} to ${l.activityId}`} onClick={() => removeLink(l)}>Reject</button>
-                  </td>
-                </tr>
-              ))}
+              {pending.map((l) => {
+                const it = itemOf[l.boqItemId];
+                return (
+                  <tr key={`${l.boqItemId}-${l.activityId}`}>
+                    <td>{it?.code} — {it?.description}</td>
+                    <td>{l.activityId} — {actName[l.activityId] ?? ''}</td>
+                    <td className="num">{l.qty != null ? `${l.qty.toLocaleString('en-PK')} ${it?.unit ?? ''}` : '—'}</td>
+                    <td>
+                      <button className="btn btn-mini" aria-label={`Confirm ${it?.code} to ${l.activityId}`} onClick={() => confirmLink(l)}>Confirm</button>{' '}
+                      <button className="btn-ghost btn-mini" aria-label={`Reject ${it?.code} to ${l.activityId}`} onClick={() => removeLink(l)}>Reject</button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -250,7 +284,9 @@ function WbsMapping({ projectId, locked }: { projectId: string; locked?: boolean
             <span className="muted small">{rows.length} of {items.length} items</span>
           </div>
           <table className="data-table" aria-label="WBS mapping">
-            <thead><tr><th>Code</th><th>Description</th><th>Mapped activities</th><th>Add activity</th></tr></thead>
+            <thead><tr><th>Code</th><th>Description</th>
+              <th style={{ minWidth: 110 }} title="Each activity's share of the item; grey is quantity not yet allocated">Allocation</th>
+              <th>Mapped activities</th><th>Add activity</th></tr></thead>
             <tbody>
               {rows.map((it) => {
                 const itemLinks = byItem.get(it.id) ?? [];
@@ -258,6 +294,7 @@ function WbsMapping({ projectId, locked }: { projectId: string; locked?: boolean
                   <tr key={it.id}>
                     <td>{it.code}</td>
                     <td>{it.description}</td>
+                    <td><AllocationBar item={it} links={itemLinks} /></td>
                     <td>
                       {itemLinks.length === 0 ? <span className="muted small">Unmapped</span> : itemLinks.map((l) => (
                         <span key={l.activityId} className="chip" style={{ marginRight: 6 }}>

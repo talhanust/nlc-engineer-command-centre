@@ -1,4 +1,4 @@
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -76,6 +76,77 @@ describe('Gantt — interactive controls', () => {
     await user.click(critical);
     expect(critical).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('img', { name: 'Gantt chart' })).toBeInTheDocument();
+  });
+});
+
+describe('Mapping — allocation heat-map', () => {
+  it('marks unmapped items and shows a stacked bar once allocated', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/mapping');
+
+    const table = await screen.findByRole('table', { name: 'WBS mapping' });
+    expect(within(table).getByRole('columnheader', { name: 'Allocation' })).toBeInTheDocument();
+    // Nothing is mapped yet, so every bar reads as unmapped.
+    expect(within(table).getAllByLabelText(/unmapped$/).length).toBeGreaterThan(0);
+
+    // Suggest mappings, confirm one, and that item's bar becomes an allocation.
+    await user.click(screen.getByRole('button', { name: /Suggest mappings & quantities/ }));
+    const queue = await screen.findByRole('table', { name: 'Mapping review queue' });
+    await user.click(within(queue).getAllByRole('button', { name: /^Confirm/ })[0]);
+
+    const after = await screen.findByRole('table', { name: 'WBS mapping' });
+    expect(within(after).getAllByLabelText(/allocation$/).length).toBeGreaterThan(0);
+  });
+
+  it('draws an over-allocated item as a full red bar, not an overflowing segment', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/mapping');
+    await user.click(await screen.findByRole('tab', { name: 'Activity → BOQ' }));
+
+    const add = await screen.findByLabelText(/^Add BOQ item to /);
+    const options = within(add as HTMLSelectElement).getAllByRole('option');
+    await user.selectOptions(add, options[1]);
+    const qty = within(await screen.findByRole('table', { name: 'Activity BOQ allocation' })).getAllByLabelText(/^Allocated qty /)[0];
+    await user.clear(qty);
+    await user.type(qty, '999999');
+    await user.tab();
+    await screen.findByLabelText('Allocation errors');
+
+    await user.click(screen.getByRole('tab', { name: 'BOQ → WBS' }));
+    const table = await screen.findByRole('table', { name: 'WBS mapping' });
+    expect(within(table).getAllByLabelText(/over-allocated$/).length).toBe(1);
+  });
+});
+
+describe('Mapping — suggested quantity allocations', () => {
+  it('proposes quantities for unmapped items and holds them for confirmation', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/mapping');
+
+    await user.click(await screen.findByRole('button', { name: /Suggest mappings & quantities/ }));
+
+    // Proposals land in the review queue, carrying a quantity, still unconfirmed.
+    const queue = await screen.findByRole('table', { name: 'Mapping review queue' });
+    expect(within(queue).getByRole('columnheader', { name: 'Proposed qty' })).toBeInTheDocument();
+    const rows = within(queue).getAllByRole('row').slice(1);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(screen.getByText(/a named user must confirm before they take effect/)).toBeInTheDocument();
+
+    // Confirming one proposal removes it from the queue.
+    const before = rows.length;
+    await user.click(within(rows[0]).getByRole('button', { name: /^Confirm/ }));
+    const after = within(await screen.findByRole('table', { name: 'Mapping review queue' })).getAllByRole('row').slice(1);
+    expect(after.length).toBe(before - 1);
+  });
+
+  it('rejects every proposal at once', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/mapping');
+    await user.click(await screen.findByRole('button', { name: /Suggest mappings & quantities/ }));
+    await screen.findByRole('table', { name: 'Mapping review queue' });
+
+    await user.click(screen.getByRole('button', { name: 'Reject all' }));
+    await waitFor(() => expect(screen.queryByRole('table', { name: 'Mapping review queue' })).toBeNull());
   });
 });
 

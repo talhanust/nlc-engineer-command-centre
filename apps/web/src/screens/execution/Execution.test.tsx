@@ -42,6 +42,49 @@ describe('Phase 4 — execution', () => {
     expect(within(table).getByText('Earthwork')).toBeInTheDocument();
   });
 
+  it('shares collapse state between the Activities table and the Gantt', async () => {
+    const user = userEvent.setup();
+    const xerText = readFileSync(join(__dirname, '../../domain/__fixtures__', 'sample.xer'), 'utf-8');
+    const file = new File([xerText], 'EMA-13.xer', { type: 'application/octet-stream' });
+
+    renderAt('/node/proj-bahria/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Activities' }));
+    await user.click(screen.getByRole('button', { name: 'Import baseline' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Import schedule baseline' });
+    await user.upload(within(dialog).getByLabelText('schedule file'), file);
+    await user.click(within(dialog).getByRole('button', { name: /Apply (baseline|changes)/ }));
+
+    // Collapse a WBS branch in the table…
+    const table = await screen.findByRole('table', { name: 'Schedule' });
+    await user.click(within(table).getByRole('button', { name: /Collapse Construction/ }));
+    expect(within(table).getByRole('button', { name: /Expand Construction/ })).toBeInTheDocument();
+
+    // …and the Gantt shows it collapsed too, rather than keeping its own state.
+    await user.click(screen.getByRole('tab', { name: 'Gantt chart' }));
+    const chart = await screen.findByRole('img', { name: 'Gantt chart' });
+    expect(within(chart).getByRole('button', { name: /Expand Construction/ })).toBeInTheDocument();
+
+    // Expanding it there puts it back for the table.
+    await user.click(within(chart).getByRole('button', { name: /Expand Construction/ }));
+    await user.click(screen.getByRole('tab', { name: 'Activities' }));
+    const table2 = await screen.findByRole('table', { name: 'Schedule' });
+    expect(within(table2).getByRole('button', { name: /Collapse Construction/ })).toBeInTheDocument();
+  });
+
+  it('filters the Gantt to the lookahead window', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Gantt chart' }));
+    await screen.findByRole('img', { name: 'Gantt chart' });
+
+    const chip = screen.getByRole('button', { name: 'Next 8 weeks' });
+    await user.click(chip);
+    expect(chip).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('img', { name: 'Gantt chart' })).toBeInTheDocument();
+  });
+
   it('renders the Gantt chart in its own tab', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/execution');
@@ -189,6 +232,40 @@ describe('Phase 4 — execution', () => {
     expect(await screen.findByRole('img', { name: 'Gantt chart' })).toBeInTheDocument();
   });
 
+  it('records the source file, derives the planned curve, and reconciles the budget', async () => {
+    const user = userEvent.setup();
+    const xerText = readFileSync(join(__dirname, '../../domain/__fixtures__', 'sample.xer'), 'utf-8');
+    const file = new File([xerText], 'EMA-13.xer', { type: 'application/octet-stream' });
+
+    renderAt('/node/proj-bahria/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Activities' }));
+    await user.click(screen.getByRole('button', { name: 'Import baseline' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Import schedule baseline' });
+    await user.upload(within(dialog).getByLabelText('schedule file'), file);
+
+    const summary = await within(dialog).findByLabelText('XER import summary');
+    // Provenance: the file is hashed as uploaded, and the algorithm is named.
+    const prov = await within(summary).findByLabelText('Source provenance');
+    expect(prov.textContent).toContain('EMA-13.xer');
+    expect(prov.textContent).toContain('sha-256');
+
+    // The fixture is cost-loaded, so a planned curve can be derived from it.
+    const derive = within(summary).getByLabelText('Derive planned S-curve from the programme');
+    expect(derive).toBeChecked();
+    // …and its budget is reconciled against the BOQ rather than assumed to agree.
+    expect(within(summary).getByLabelText('Budget reconciliation')).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: /Apply (baseline|changes)/ }));
+
+    // The provenance follows the programme into the app.
+    expect((await screen.findByText(/Imported from/)).textContent).toContain('EMA-13.xer');
+
+    // The S-curve now comes from the programme, not a second spreadsheet.
+    await user.click(screen.getByRole('tab', { name: 'S-curve & progress' }));
+    expect(await screen.findByRole('heading', { name: 'Progress S-curve' })).toBeInTheDocument();
+  });
+
   it('shows the change set before overwriting an existing programme', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/execution'); // already carries a seeded schedule
@@ -324,6 +401,61 @@ describe('Phase 4 — execution', () => {
     const report = await screen.findByRole('table', { name: 'Variance report' });
     expect(within(report).getByRole('columnheader', { name: 'vs Contract' })).toBeInTheDocument();
     expect(within(report).getByRole('columnheader', { name: 'vs Revision' })).toBeInTheDocument();
+
+    // The claim table can leave the browser, as a spreadsheet or a document.
+    expect(screen.getByRole('button', { name: 'Export to Excel' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Export to PDF' })).toBeEnabled();
+  });
+
+  it('offers to carry BOQ mappings across a renamed activity, instead of losing them', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/mapping');
+
+    // Map a BOQ item to a seeded activity so the rename has something to rescue.
+    await user.click(await screen.findByRole('tab', { name: 'Activity → BOQ' }));
+    const add = await screen.findByLabelText(/^Add BOQ item to /);
+    const opts = within(add as HTMLSelectElement).getAllByRole('option');
+    await user.selectOptions(add, opts[1]);
+    await screen.findByRole('table', { name: 'Activity BOQ allocation' });
+    // Which activity did we just map? The detail pane names it.
+    const heading = screen.getByRole('heading', { level: 4 }).textContent ?? '';
+    const mappedId = heading.split(' — ')[0].trim();
+
+    // Now re-import a programme in which that activity is renamed.
+    renderAt('/node/proj-f14f15/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Activities' }));
+    await user.click(screen.getByRole('button', { name: 'Import baseline' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Import schedule baseline' });
+
+    const table = await screen.findByRole('table', { name: 'Schedule' });
+    const row = within(table).getByText(mappedId).closest('tr')!;
+    const name = row.children[1].textContent ?? 'Activity';
+    const start = '2025-09-01';
+    const finish = '2025-12-15';
+    await user.type(within(dialog).getByLabelText('schedule paste'),
+      `${mappedId}-A\t${name}\t1.1\t${start}\t${finish}`);
+    await user.click(within(dialog).getByRole('button', { name: 'Parse pasted text' }));
+
+    // The rename is spotted, pre-ticked, and the loss warning is replaced.
+    const remaps = await within(dialog).findByLabelText('Proposed remaps');
+    const box = within(remaps).getByLabelText(`Remap ${mappedId} to ${mappedId}-A`);
+    expect(box).toBeChecked();
+    expect(within(dialog).getByText(/no BOQ links will be lost/)).toBeInTheDocument();
+
+    // Unticking it restores the honest warning about losing the mapping.
+    await user.click(box);
+    expect(await within(dialog).findByText(/would be removed with no successor/)).toBeInTheDocument();
+  });
+
+  it('offers no export before there is anything to measure against', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/execution');
+    await screen.findByRole('heading', { name: 'Progress S-curve' });
+    await user.click(screen.getByRole('tab', { name: 'Variance & claim' }));
+    await screen.findByText(/No baseline to measure against/);
+    expect(screen.queryByRole('button', { name: 'Export to Excel' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Export to PDF' })).toBeNull();
   });
 });
 

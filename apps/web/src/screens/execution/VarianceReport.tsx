@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { varianceReport, type VarianceRow } from '../../domain/varianceReport';
 import { formatP6Date } from '../../domain/scheduleTree';
-import { baselineLabel } from '../../components/BaselineSelector';
+import { baselineLabel } from '../../domain/baselines';
+import { varianceWorkbook, varianceFileName, variancePdf, variancePdfBaseName } from '../../domain/varianceExport';
+import { downloadWorkbook } from '../../components/xlsxExport';
+import { downloadTablePdf } from '../../components/tablePdf';
 import type { ScheduleActivity, ScheduleBaseline } from '../../data/types';
 
 type Filter = 'all' | 'slipped' | 'critical' | 'new';
@@ -21,11 +24,18 @@ export function VarianceReport({ projectId }: { projectId: string }) {
   const [acts, setActs] = useState<ScheduleActivity[]>([]);
   const [baselines, setBaselines] = useState<ScheduleBaseline[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
+  const [projectName, setProjectName] = useState(projectId);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
 
   useEffect(() => {
     let alive = true;
-    void Promise.all([provider.listSchedule(projectId), provider.listScheduleBaselines(projectId)])
-      .then(([s, b]) => { if (alive) { setActs(s); setBaselines(b); } });
+    void Promise.all([provider.listSchedule(projectId), provider.listScheduleBaselines(projectId), provider.listNodes()])
+      .then(([s, b, nodes]) => {
+        if (!alive) return;
+        setActs(s); setBaselines(b);
+        setProjectName(nodes.find((n) => n.id === projectId)?.name ?? projectId);
+      });
     return () => { alive = false; };
   }, [provider, projectId]);
 
@@ -51,15 +61,56 @@ export function VarianceReport({ projectId }: { projectId: string }) {
   const original = baselines[0];
   const revision = baselines.length > 1 ? baselines[baselines.length - 1] : null;
 
+  async function exportPdf() {
+    setExporting(true);
+    setExportError('');
+    try {
+      const generatedOn = new Date().toISOString().slice(0, 10);
+      const spec = variancePdf({ rows, summary }, { projectName, baselines, generatedOn });
+      await downloadTablePdf({ ...spec, filename: `${variancePdfBaseName(projectName, generatedOn)}.pdf` });
+    } catch {
+      setExportError('Could not build the PDF.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function exportXlsx() {
+    setExporting(true);
+    setExportError('');
+    try {
+      // The workbook always carries EVERY activity, never the current filter — a
+      // claim built from a filtered table is a claim with holes in it.
+      const generatedOn = new Date().toISOString().slice(0, 10);
+      const sheets = varianceWorkbook({ rows, summary }, { projectName, baselines, generatedOn });
+      await downloadWorkbook(sheets, varianceFileName(projectName, generatedOn));
+    } catch {
+      setExportError('Could not build the workbook.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div>
       <div className="section-head">
         <h3>Variance &amp; claim</h3>
-        <span className="muted small">
-          measured against {baselineLabel(original)}
-          {revision ? ` and ${baselineLabel(revision)}` : ''}
-        </span>
+        <div className="head-tools">
+          <span className="muted small">
+            measured against {baselineLabel(original)}
+            {revision ? ` and ${baselineLabel(revision)}` : ''}
+          </span>
+          <button className="btn-ghost" disabled={exporting} onClick={exportXlsx}
+            title="Download the summary and the full activity table as an .xlsx">
+            {exporting ? 'Exporting…' : 'Export to Excel'}
+          </button>
+          <button className="btn-ghost" disabled={exporting} onClick={exportPdf}
+            title="Download a paginated, branded PDF of the same report">
+            Export to PDF
+          </button>
+        </div>
       </div>
+      {exportError && <p className="neg small" role="alert">{exportError}</p>}
 
       <div className="kpi-grid" aria-label="Variance summary">
         <div className="kpi">

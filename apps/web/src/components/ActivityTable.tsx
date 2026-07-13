@@ -6,9 +6,14 @@ import { baselineIndex, varianceOf } from '../domain/scheduleDiff';
 /** The P6 activity table: WBS summary rows (bold, collapsible) with their
  *  activities beneath, showing the columns a planner expects. */
 export function ActivityTable({
-  activities, wbs, meta, baseline = null,
-}: { activities: ScheduleActivity[]; wbs: ScheduleWbsNode[]; meta: ScheduleMeta | null; baseline?: ScheduleBaseline | null }) {
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  activities, wbs, meta, baseline = null, collapsed, setCollapsed,
+}: {
+  activities: ScheduleActivity[]; wbs: ScheduleWbsNode[]; meta: ScheduleMeta | null; baseline?: ScheduleBaseline | null;
+  /** Collapse state is owned by the Execution tab so the Gantt and the table
+   *  agree: expanding a branch here leaves it expanded there. */
+  collapsed: ReadonlySet<string>;
+  setCollapsed: (next: ReadonlySet<string>) => void;
+}) {
   const [query, setQuery] = useState('');
 
   const rows = useMemo(() => buildScheduleRows(activities, wbs, meta, collapsed), [activities, wbs, meta, collapsed]);
@@ -23,11 +28,9 @@ export function ActivityTable({
     : rows;
 
   function toggle(id: string) {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+    const next = new Set(collapsed);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setCollapsed(next);
   }
   const wbsIds = wbs.map((n) => n.id);
   const allCollapsed = wbsIds.length > 0 && wbsIds.every((id) => collapsed.has(id));

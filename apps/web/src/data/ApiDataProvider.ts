@@ -358,6 +358,9 @@ export class ApiDataProvider implements DataProvider {
   async setBoqWbs(projectId: string, link: BoqWbsLink): Promise<BoqWbsLink> {
     return this.send<BoqWbsLink>(`/api/projects/${projectId}/boq-wbs`, 'PUT', link);
   }
+  async remapBoqWbsActivity(projectId: string, fromActivityId: string, toActivityId: string): Promise<BoqWbsLink[]> {
+    return (await this.send<{ items: BoqWbsLink[] }>(`/api/projects/${projectId}/boq-wbs/remap`, 'POST', { fromActivityId, toActivityId })).items;
+  }
   async removeBoqWbs(projectId: string, boqItemId: string, activityId: string): Promise<BoqWbsLink[]> {
     return (await this.send<{ items: BoqWbsLink[] }>(`/api/projects/${projectId}/boq-wbs/remove`, 'POST', { boqItemId, activityId })).items;
   }

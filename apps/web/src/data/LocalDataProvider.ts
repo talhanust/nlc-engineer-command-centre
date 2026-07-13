@@ -1037,6 +1037,32 @@ export class LocalDataProvider implements DataProvider {
     writeJson(wbsKey(projectId), all);
     return link;
   }
+  async remapBoqWbsActivity(projectId: string, fromActivityId: string, toActivityId: string): Promise<BoqWbsLink[]> {
+    if (fromActivityId === toActivityId) return readJson<BoqWbsLink[]>(wbsKey(projectId), () => []);
+    const all = readJson<BoqWbsLink[]>(wbsKey(projectId), () => []);
+    const moving = all.filter((l) => l.activityId === fromActivityId);
+    if (moving.length === 0) return all;
+
+    const rest = all.filter((l) => l.activityId !== fromActivityId);
+    let carried = 0;
+    for (const link of moving) {
+      const existing = rest.find((l) => l.boqItemId === link.boqItemId && l.activityId === toActivityId);
+      if (!existing) {
+        rest.push({ ...link, activityId: toActivityId });
+      } else {
+        // The target already maps this item. Merge rather than lose either side:
+        // quantities add up (both describe work on the same BOQ item), and a
+        // confirmed link is never demoted to auto by the merge.
+        const qty = link.qty != null || existing.qty != null ? (existing.qty ?? 0) + (link.qty ?? 0) : undefined;
+        existing.qty = qty;
+        if (link.confidence === 'confirmed' || existing.confidence === 'confirmed') existing.confidence = 'confirmed';
+      }
+      carried++;
+    }
+    writeJson(wbsKey(projectId), rest);
+    audit(projectId, 'update', 'BOQ mapping', `${carried} link(s) carried`, `${fromActivityId} → ${toActivityId}`);
+    return rest;
+  }
   async removeBoqWbs(projectId: string, boqItemId: string, activityId: string): Promise<BoqWbsLink[]> {
     const all = readJson<BoqWbsLink[]>(wbsKey(projectId), () => [])
       .filter((l) => !(l.boqItemId === boqItemId && l.activityId === activityId));

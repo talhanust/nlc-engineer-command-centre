@@ -2,10 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../data/DataContext';
 import { parseScheduleRows, parseScurveRows, textToRows, type Row } from '../domain/importers';
 import { readSheetRows } from './xlsxImport';
-import { readXerText, isXerFile } from './xerImport';
+import { readXerText, isXerFile, readFileBytes } from './xerImport';
+import { hashBytes, shortHash, type FileHash } from './fileHash';
+import { scurveFromSchedule, reconcileProgrammeCost } from '../domain/scurveFromSchedule';
+import { formatMoney } from '../domain/money';
 import { parseXerSchedule, predecessorLabel, type XerScheduleResult } from '../domain/xer';
 import type { ScheduleActivity, BoqWbsLink } from '../data/types';
-import { diffSchedule, isNoOp, diffHeadline, type ScheduleDiff } from '../domain/scheduleDiff';
+import { diffSchedule, isNoOp, diffHeadline, detectRenames, unrescuedOrphans, type ScheduleDiff, type RenameCandidate } from '../domain/scheduleDiff';
 
 type Kind = 'schedule' | 'scurve';
 type DraftActivity = Omit<ScheduleActivity, 'id' | 'projectId'>;
@@ -26,11 +29,17 @@ export function BaselineImport({ projectId, kind, onClose, onDone }: { projectId
   // and its BOQ links so the change set can be shown before anything is written.
   const [current, setCurrent] = useState<ScheduleActivity[]>([]);
   const [links, setLinks] = useState<BoqWbsLink[]>([]);
+  // Proposed remaps the user has agreed to. Defaults are set once the diff lands.
+  const [accepted, setAccepted] = useState<ReadonlySet<string>>(new Set());
+  // Provenance of the uploaded file, and the optional derived planned curve.
+  const [source, setSource] = useState<{ name: string; bytes: number; hash: FileHash } | null>(null);
+  const [deriveCurve, setDeriveCurve] = useState(true);
+  const [boqAmount, setBoqAmount] = useState(0);
   useEffect(() => {
     if (kind !== 'schedule') return;
     let alive = true;
-    void Promise.all([provider.listSchedule(projectId), provider.listBoqWbs(projectId)])
-      .then(([s, l]) => { if (alive) { setCurrent(s); setLinks(l); } });
+    void Promise.all([provider.listSchedule(projectId), provider.listBoqWbs(projectId), provider.listBoq(projectId)])
+      .then(([s, l, boq]) => { if (alive) { setCurrent(s); setLinks(l); setBoqAmount(boq.reduce((t, i) => t + i.amount, 0)); } });
     return () => { alive = false; };
   }, [provider, projectId, kind]);
 
@@ -46,10 +55,42 @@ export function BaselineImport({ projectId, kind, onClose, onDone }: { projectId
     () => (kind === 'schedule' && incoming.length > 0 ? diffSchedule(current, incoming, links) : null),
     [kind, incoming, current, links],
   );
+  // A renamed activity looks like a removal plus an addition. Offer to carry its
+  // BOQ links — and their quantity allocations — across, rather than lose them.
+  const renames: RenameCandidate[] = useMemo(
+    () => (diff && !diff.isFirstImport ? detectRenames(diff, current) : []),
+    [diff, current],
+  );
+  const lost = useMemo(() => (diff ? unrescuedOrphans(diff, renames.filter((r) => accepted.has(r.fromActivityId))) : []), [diff, renames, accepted]);
+
+  const curve = useMemo(
+    () => (xer ? scurveFromSchedule(xer.activities.map((a, i) => ({ ...a, id: `t${i}`, projectId })), {
+      workingWeekdays: xer.workingWeekdays, holidays: xer.holidays,
+    }) : null),
+    [xer, projectId],
+  );
+  const reconciliation = useMemo(
+    () => (curve && curve.costLoaded ? reconcileProgrammeCost(curve.totalCost, boqAmount) : null),
+    [curve, boqAmount],
+  );
 
   const preview: DraftActivity[] = xer
     ? xer.activities.slice(0, 10)
     : (kind === 'schedule' ? (parsed as ReturnType<typeof parseScheduleRows>).rows.slice(0, 10) : []);
+
+  // High-confidence renames are pre-ticked; the rest wait to be chosen.
+  useEffect(() => {
+    setAccepted(new Set(renames.filter((r) => r.score >= 0.85).map((r) => r.fromActivityId)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renames.map((r) => `${r.fromActivityId}>${r.toActivityId}`).join('|')]);
+
+  function toggleRename(fromActivityId: string) {
+    setAccepted((prev) => {
+      const next = new Set(prev);
+      if (next.has(fromActivityId)) next.delete(fromActivityId); else next.add(fromActivityId);
+      return next;
+    });
+  }
 
   async function onFile(file: File) {
     setError(''); setXer(null); setRows([]); setFileName(file.name);
@@ -58,6 +99,10 @@ export function BaselineImport({ projectId, kind, onClose, onDone }: { projectId
         const result = parseXerSchedule(await readXerText(file));
         if (result.activities.length === 0) { setError(result.warnings[0] || 'No activities found in that .xer file.'); return; }
         setXer(result);
+        // Hash the bytes as they were uploaded, so the record proves which file
+        // produced this baseline.
+        const bytes = await readFileBytes(file);
+        setSource({ name: file.name, bytes: bytes.byteLength, hash: await hashBytes(bytes) });
       } else {
         setRows(await readSheetRows(file));
       }
@@ -66,7 +111,7 @@ export function BaselineImport({ projectId, kind, onClose, onDone }: { projectId
     }
   }
   function applyPaste() {
-    setXer(null); setFileName('');
+    setXer(null); setFileName(''); setSource(null);
     setRows(textToRows(paste));
   }
   async function apply() {
@@ -74,18 +119,34 @@ export function BaselineImport({ projectId, kind, onClose, onDone }: { projectId
     try {
       if (kind === 'schedule') {
         if (xer) {
-          await provider.replaceSchedule(projectId, xer.activities, xer.wbs, {
+          const meta = {
             projectCode: xer.projectShortName,
             dataDate: xer.dataDate,
             planStart: xer.planStart,
             planFinish: xer.planFinish,
             workingWeekdays: xer.workingWeekdays,
             holidays: xer.holidays,
-          });
+            totalBudgetCost: xer.totalBudgetCost,
+            sourceFileName: source?.name,
+            sourceFileBytes: source?.bytes,
+            sourceFileHash: source?.hash.hash,
+            sourceHashAlgorithm: source?.hash.algorithm,
+            importedAt: new Date().toISOString(),
+          };
+          const saved = await provider.replaceSchedule(projectId, xer.activities, xer.wbs, meta);
+          // The planned curve is computed from the programme we just stored, so the
+          // two can never drift apart.
+          if (deriveCurve && curve && curve.points.length > 0) {
+            await provider.importScurve(projectId, scurveFromSchedule(saved, meta).points);
+          }
         } else {
           const r = parseScheduleRows(rows);
           if (r.error) { setError(r.error); return; }
           await provider.replaceSchedule(projectId, r.rows);
+        }
+        // The new activities exist now, so the mappings can be carried across.
+        for (const r of renames) {
+          if (accepted.has(r.fromActivityId)) await provider.remapBoqWbsActivity(projectId, r.fromActivityId, r.toActivityId);
         }
       } else {
         const r = parseScurveRows(rows);
@@ -147,6 +208,36 @@ export function BaselineImport({ projectId, kind, onClose, onDone }: { projectId
               <div className="muted small">Programme window: {xer.planStart || '—'} → {xer.planFinish || '—'}</div>
             )}
             {xer.warnings.length > 0 && <div className="neg small" style={{ marginTop: 4 }}>{xer.warnings.join(' ')}</div>}
+
+            {source && (
+              <div className="muted small" style={{ marginTop: 4 }} aria-label="Source provenance"
+                title={`${source.hash.algorithm.toUpperCase()}: ${source.hash.hash}`}>
+                Source recorded: {source.name} · {(source.bytes / 1024).toFixed(0)} KB · {source.hash.algorithm} {shortHash(source.hash.hash)}
+              </div>
+            )}
+
+            {curve && curve.costLoaded && (
+              <div style={{ marginTop: 6 }}>
+                <label className="small">
+                  <input type="checkbox" checked={deriveCurve} onChange={(e) => setDeriveCurve(e.target.checked)}
+                    aria-label="Derive planned S-curve from the programme" />{' '}
+                  Derive the planned S-curve from this programme
+                  <span className="muted"> — cost-loaded, {formatMoney(curve.totalCost)} over {curve.points.length} months</span>
+                </label>
+                {reconciliation && (
+                  <div className={`small ${reconciliation.agrees ? 'pos' : 'neg'}`} aria-label="Budget reconciliation" style={{ marginTop: 2 }}>
+                    {reconciliation.agrees
+                      ? `Programme budget agrees with the BOQ within ${Math.abs(reconciliation.differencePct)}%.`
+                      : `⚠ Programme budget differs from the BOQ by ${reconciliation.differencePct}% (${formatMoney(reconciliation.programmeCost)} vs ${formatMoney(reconciliation.boqAmount)}). Check for bills missing from the programme, or resources never loaded.`}
+                  </div>
+                )}
+              </div>
+            )}
+            {curve && !curve.costLoaded && (
+              <div className="muted small" style={{ marginTop: 4 }}>
+                This programme carries no resource costs, so no planned curve can be derived from it.
+              </div>
+            )}
           </div>
         )}
 
@@ -163,10 +254,32 @@ export function BaselineImport({ projectId, kind, onClose, onDone }: { projectId
                 Worst slip: {diff.slipped.slice(0, 3).map((s) => `${s.activityId} +${s.finishSlipDays}d`).join(', ')}
               </div>
             )}
-            {diff.orphaned.length > 0 ? (
+            {renames.length > 0 && (
+              <div className="card" style={{ margin: '8px 0' }} aria-label="Proposed remaps">
+                <div className="small"><strong>Renamed activities</strong> — carry their BOQ mappings across?</div>
+                <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 0 }}>
+                  {renames.map((r) => (
+                    <li key={r.fromActivityId} className="small" style={{ marginBottom: 3 }}>
+                      <label>
+                        <input type="checkbox" checked={accepted.has(r.fromActivityId)} onChange={() => toggleRename(r.fromActivityId)}
+                          aria-label={`Remap ${r.fromActivityId} to ${r.toActivityId}`} />{' '}
+                        <span className="mono">{r.fromActivityId}</span> → <span className="mono">{r.toActivityId}</span>{' '}
+                        <span className="muted">· {r.linkCount} link(s) · {Math.round(r.score * 100)}% · {r.reason}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {lost.length > 0 ? (
               <div className="neg small" role="alert" style={{ marginTop: 4 }}>
-                ⚠ {diff.orphaned.length} mapped activity(ies) would be removed, orphaning {diff.orphanedLinkCount} BOQ link(s):{' '}
-                {diff.orphaned.slice(0, 5).map((o) => o.activityId).join(', ')}. Their quantity allocations will be lost.
+                ⚠ {lost.length} mapped activity(ies) would be removed with no successor, orphaning{' '}
+                {lost.reduce((s, o) => s + o.linkCount, 0)} BOQ link(s): {lost.slice(0, 5).map((o) => o.activityId).join(', ')}.
+                Their quantity allocations will be lost.
+              </div>
+            ) : diff.orphaned.length > 0 ? (
+              <div className="pos small" style={{ marginTop: 4 }}>
+                Every mapped activity that disappears has a successor selected — no BOQ links will be lost.
               </div>
             ) : diff.removed.length > 0 ? (
               <div className="muted small" style={{ marginTop: 4 }}>{diff.removed.length} activity(ies) removed — none carry BOQ mappings.</div>

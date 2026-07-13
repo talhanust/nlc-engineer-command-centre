@@ -1,10 +1,7 @@
 import type { ScheduleBaseline } from '../data/types';
+import { baselineLabel } from '../domain/baselines';
 
-/** Human label for a frozen programme: "Original (23-Feb-26)" / "Rev 2 (…)". */
-export function baselineLabel(b: ScheduleBaseline): string {
-  const name = b.revision === 0 ? 'Original' : b.revision != null ? `Rev ${b.revision}` : 'Re-baseline';
-  return `${name} · ${b.capturedAt}`;
-}
+export { baselineLabel };
 
 /**
  * Choose which frozen programme variance is measured against. A delay claim is

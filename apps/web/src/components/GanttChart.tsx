@@ -4,6 +4,7 @@ import { buildScheduleRows, formatP6Date, type ScheduleRow } from '../domain/sch
 import { chartPalette } from './chartUtils';
 import { baselineIndex } from '../domain/scheduleDiff';
 import { floatBand } from '../domain/varianceReport';
+import { lookahead } from '../domain/lookahead';
 
 const DAY = 86400000;
 const HEADER_H = 40;
@@ -14,10 +15,30 @@ const FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'critical', label: 'Critical only' },
   { key: 'near', label: 'Near-critical' },
+  { key: 'lookahead', label: 'Next 8 weeks' },
   { key: 'inprogress', label: 'In progress' },
   { key: 'milestones', label: 'Milestones' },
 ] as const;
+/** The chip reuses the Lookahead tab's own window, so one screen cannot hold two
+ *  different definitions of "the next eight weeks". */
+const LOOKAHEAD_WEEKS = 8;
 type FilterKey = (typeof FILTERS)[number]['key'];
+
+/**
+ * Which rows must actually be rendered for a given scroll position. Overscan
+ * keeps a few rows beyond each edge so a fast scroll never shows blank bands.
+ * Pure, so the arithmetic is tested rather than inferred from a screenshot.
+ */
+export function rowWindow(scrollTop: number, viewportH: number, rowH: number, count: number, overscan = 6): { first: number; last: number; padTop: number; padBottom: number } {
+  if (rowH <= 0 || count <= 0) return { first: 0, last: 0, padTop: 0, padBottom: 0 };
+  const top = Math.max(0, scrollTop);
+  const last = Math.min(count, Math.ceil((top + Math.max(0, viewportH)) / rowH) + overscan);
+  // Clamp `first` to `last`: a scroll position past the end of the content (a
+  // stale scrollTop after a collapse, say) would otherwise render nothing behind
+  // a page-tall top spacer.
+  const first = Math.min(Math.max(0, Math.floor(top / rowH) - overscan), last);
+  return { first, last, padTop: first * rowH, padBottom: Math.max(0, (count - last) * rowH) };
+}
 
 const parse = (ymd: string): number => Date.parse(`${ymd}T00:00:00Z`);
 const addMonths = (t: number, n: number): number => {
@@ -35,24 +56,37 @@ const addMonths = (t: number, n: number): number => {
  * driving predecessors with arrows so a planner can walk the logic chain.
  */
 export function GanttChart({
-  activities, wbs = [], meta = null, baseline = null,
-}: { activities: ScheduleActivity[]; wbs?: ScheduleWbsNode[]; meta?: ScheduleMeta | null; baseline?: ScheduleBaseline | null }) {
+  activities, wbs = [], meta = null, baseline = null, collapsed, setCollapsed,
+}: {
+  activities: ScheduleActivity[]; wbs?: ScheduleWbsNode[]; meta?: ScheduleMeta | null; baseline?: ScheduleBaseline | null;
+  collapsed: ReadonlySet<string>;
+  setCollapsed: (next: ReadonlySet<string>) => void;
+}) {
   const c = chartPalette();
   const [dayW, setDayW] = useState(3);
   const [rowH, setRowH] = useState(24);
   const [filter, setFilter] = useState<FilterKey>('all');
   const [showDeps, setShowDeps] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [showBaseline, setShowBaseline] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState(0);
+  // Virtualization: only the rows inside the viewport (plus a small overscan) are
+  // rendered. A 5,000-activity programme is 120,000px of DOM otherwise, and the
+  // zoom slider stutters on every frame.
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportH, setViewportH] = useState(0);
 
   const baseIdx = useMemo(() => baselineIndex(baseline), [baseline]);
   const treeRows = useMemo(() => buildScheduleRows(activities, wbs, meta, collapsed), [activities, wbs, meta, collapsed]);
 
   // Filtering drops the WBS scaffolding and shows the matching activities flat —
   // when you ask for "critical only" you want the chain, not the outline.
+  const lookaheadIds = useMemo(
+    () => new Set(lookahead(activities, meta?.dataDate ? new Date(meta.dataDate) : new Date(), LOOKAHEAD_WEEKS).map((r) => r.activity.activityId)),
+    [activities, meta?.dataDate],
+  );
   const rows = useMemo(() => {
     if (filter === 'all') return treeRows;
     const keep = (r: ScheduleRow) =>
@@ -60,10 +94,11 @@ export function GanttChart({
         filter === 'critical' ? r.isCritical :
         // Near-critical: not yet driving the finish date, but one bad week away.
         filter === 'near' ? (r.activity ? floatBand(r.activity) === 'near_critical' : false) :
+        filter === 'lookahead' ? lookaheadIds.has(r.code) :
         filter === 'milestones' ? r.isMilestone :
         r.activity?.status === 'in_progress');
     return treeRows.filter(keep);
-  }, [treeRows, filter]);
+  }, [treeRows, filter, lookaheadIds]);
 
   const bounds = useMemo(() => {
     const starts = activities.map((a) => parse(a.plannedStart)).filter(Number.isFinite);
@@ -71,6 +106,17 @@ export function GanttChart({
     if (starts.length === 0) return null;
     return { t0: addMonths(Math.min(...starts), 0), t1: addMonths(Math.max(...finishes), 1) };
   }, [activities]);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const measure = () => setViewportH(el.clientHeight);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Keep the pan slider and the actual scroll position in step.
   useEffect(() => {
@@ -108,6 +154,11 @@ export function GanttChart({
 
   const dataDateX = meta?.dataDate && Number.isFinite(parse(meta.dataDate)) ? x(parse(meta.dataDate)) : null;
 
+  // jsdom and the first paint report a height of 0; fall back to the CSS max so
+  // the chart is never blank.
+  const { first: firstRow, last: lastRow, padTop, padBottom } = rowWindow(scrollTop, viewportH || 560, rowH, rows.length);
+  const visible = rows.slice(firstRow, lastRow);
+
   // Selection: the chosen activity and the predecessors that drive it.
   const rowAt = new Map<string, number>();
   rows.forEach((r, i) => { if (r.kind === 'activity') rowAt.set(r.code, i); });
@@ -130,11 +181,9 @@ export function GanttChart({
     : [];
 
   function toggle(id: string) {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+    const next = new Set(collapsed);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setCollapsed(next);
   }
   const wbsIds = wbs.map((n) => n.id);
   const allCollapsed = wbsIds.length > 0 && wbsIds.every((id) => collapsed.has(id));
@@ -195,11 +244,13 @@ export function GanttChart({
         {selectedRow ? ` · selected ${selectedRow.code}${preds.length ? `, driven by ${preds.length} predecessor(s)` : ''}` : ' · click a bar to trace its logic'}
       </p>
 
-      <div className="gantt-wrap" role="img" aria-label="Gantt chart">
+      <div className="gantt-wrap" role="img" aria-label="Gantt chart" ref={wrapRef}
+        onScroll={(e) => setScrollTop((e.target as HTMLDivElement).scrollTop)}>
         <div className="gantt-panes">
           <div className="gantt-left" style={{ width: LABEL_W }}>
             <div className="gantt-head" style={{ height: HEADER_H }}>Activity</div>
-            {rows.map((r) => (
+            <div style={{ height: padTop }} aria-hidden />
+            {visible.map((r) => (
               <div
                 key={r.key}
                 className={`gantt-label${r.kind === 'wbs' ? ' is-wbs' : ''}${selected === r.code ? ' is-selected' : ''}`}
@@ -214,6 +265,7 @@ export function GanttChart({
                 <span className="gantt-label-text">{r.kind === 'wbs' ? r.name : `${r.code}  ${r.name}`}</span>
               </div>
             ))}
+            <div style={{ height: padBottom }} aria-hidden />
           </div>
 
           <div className="gantt-right" ref={scrollRef}>
@@ -243,9 +295,9 @@ export function GanttChart({
               </defs>
               {months.map((m, i) => (<line key={i} x1={x(m.t)} y1={0} x2={x(m.t)} y2={bodyH} stroke={c.grid} />))}
 
-              {rows.map((r, i) => (
+              {visible.map((r, i) => (
                 <GanttRow
-                  key={r.key} row={r} y={i * rowH} rowH={rowH} x={x} c={c}
+                  key={r.key} row={r} y={(firstRow + i) * rowH} rowH={rowH} x={x} c={c}
                   band={r.activity ? floatBand(r.activity) : 'unknown'}
                   base={showBaseline ? baseIdx.get(r.code) : undefined}
                   selected={selected === r.code}

@@ -362,6 +362,16 @@ export interface ScheduleMeta {
   /** JS weekday numbers (0 = Sunday) that are working days. */
   workingWeekdays?: number[];
   holidays?: string[];
+  /** Σ of activity budget costs, when the imported programme is cost-loaded. */
+  totalBudgetCost?: number;
+  /** Provenance of the imported file. A claim must be able to prove WHICH file
+   *  produced WHICH baseline, so the source is recorded with a content hash. */
+  sourceFileName?: string;
+  sourceFileBytes?: number;
+  sourceFileHash?: string;
+  /** Which algorithm produced sourceFileHash — never let the label lie. */
+  sourceHashAlgorithm?: 'sha-256' | 'fnv-1a';
+  importedAt?: string;
 }
 
 /** A frozen snapshot of the approved programme. Later imports become the
@@ -411,6 +421,8 @@ export interface ScheduleActivity {
   wbsPath?: string;            // readable WBS name path ("Construction › Zone 1")
   predecessors?: SchedulePredecessor[];
   resourceNames?: string[];
+  /** Σ of the activity's resource target costs, when the programme is cost-loaded. */
+  budgetCost?: number;
 }
 
 /** One point of the monthly cumulative S-curve. `actual` is null beyond now. */
@@ -1119,6 +1131,9 @@ export interface DataProvider {
   /** Upsert keyed by (boqItemId, activityId) — a BOQ item may map to many activities and vice versa. */
   setBoqWbs(projectId: string, link: BoqWbsLink): Promise<BoqWbsLink>;
   removeBoqWbs(projectId: string, boqItemId: string, activityId: string): Promise<BoqWbsLink[]>;
+  /** Carry every BOQ link (and its quantity allocation) from one activity code to
+   *  another — used when a re-imported programme renames an activity. */
+  remapBoqWbsActivity(projectId: string, fromActivityId: string, toActivityId: string): Promise<BoqWbsLink[]>;
   /** A BOQ item is a material COMPOSITION (e.g. concrete = cement + sand + crush + admixture): upsert keyed by (boqItemId, materialRef). */
   removeBoqMaterial(projectId: string, boqItemId: string, materialRef: string): Promise<BoqMaterialLink[]>;
   listBoqMaterial(projectId: string): Promise<BoqMaterialLink[]>;

@@ -32,14 +32,30 @@ export function tokens(text: string): Set<string> {
   return out;
 }
 
-/** Similarity 0..1 between a BOQ item and an activity (token Jaccard over name fields). */
+/** A token shared only via the item's bill/section is weak evidence: everything
+ *  in an "Earthworks" bill shares that word. Description matches carry full
+ *  weight, context matches a fraction, so a bill name alone can never trigger a
+ *  suggestion on its own. */
+const CONTEXT_WEIGHT = 0.4;
+
+/**
+ * Similarity 0..1 between a BOQ item and an activity. A P6 import gives us more
+ * than the activity name: the readable WBS path and the RESOURCE NAMES assigned
+ * to the activity ("Clearing & grubbing") are often a closer match to the BOQ
+ * description than the activity title is, so they all feed the activity's tokens.
+ */
 export function matchScore(item: BoqItem, act: ScheduleActivity): number {
-  const a = tokens(`${item.description} ${item.billName} ${item.section}`);
-  const b = tokens(`${act.name} ${act.wbs}`);
-  if (a.size === 0 || b.size === 0) return 0;
+  const desc = tokens(item.description);
+  const context = tokens(`${item.billName} ${item.section}`);
+  const b = tokens(`${act.name} ${act.wbs} ${act.wbsPath ?? ''} ${(act.resourceNames ?? []).join(' ')}`);
+  if ((desc.size === 0 && context.size === 0) || b.size === 0) return 0;
   let hit = 0;
-  for (const t of b) if (a.has(t)) hit += 1;
-  return hit / Math.min(a.size, b.size);
+  for (const t of b) {
+    if (desc.has(t)) hit += 1;
+    else if (context.has(t)) hit += CONTEXT_WEIGHT;
+  }
+  const denom = Math.min(desc.size + context.size, b.size);
+  return denom > 0 ? Math.min(1, hit / denom) : 0;
 }
 
 export interface WbsSuggestion {
@@ -78,4 +94,117 @@ export function suggestWbsLinks(
     }
   }
   return out.sort((a, b) => b.score - a.score);
+}
+
+// ---- Quantity-allocated suggestions ----
+
+export interface AllocationProposal {
+  activityId: string;
+  activityName: string;
+  score: number;
+  /** Proposed quantity of the item to execute under this activity. */
+  qty: number;
+}
+export interface ItemProposal {
+  boqItemId: string;
+  itemCode: string;
+  itemDescription: string;
+  unit: string;
+  /** Quantity that was available to allocate (the item's free quantity). */
+  availableQty: number;
+  allocations: AllocationProposal[];
+}
+
+/**
+ * Distribute `total` across `weights` so the parts sum EXACTLY to the total.
+ * Largest-remainder: floor each share to `dp` decimals, then hand the rounding
+ * crumbs to the biggest fractional parts. Without this, twelve activities each
+ * rounded down leave a phantom unallocated remainder that looks like an error.
+ */
+export function distribute(total: number, weights: number[], dp = 2): number[] {
+  const sum = weights.reduce((s, w) => s + w, 0);
+  if (sum <= 0 || weights.length === 0) return weights.map(() => 0);
+  const step = 10 ** dp;
+  const exact = weights.map((w) => (total * w) / sum);
+  const floors = exact.map((v) => Math.floor(v * step) / step);
+  let remainder = Math.round((total - floors.reduce((s, v) => s + v, 0)) * step);
+  const order = exact
+    .map((v, i) => ({ i, frac: v * step - Math.floor(v * step) }))
+    .sort((a, b) => b.frac - a.frac);
+  const out = [...floors];
+  for (let k = 0; remainder > 0 && k < order.length * 2; k++) {
+    out[order[k % order.length].i] = Math.round((out[order[k % order.length].i] + 1 / step) * step) / step;
+    remainder--;
+  }
+  return out;
+}
+
+export interface SuggestOptions {
+  /** Minimum similarity for an activity to be considered. */
+  threshold?: number;
+  /** Most activities one BOQ item may be split across. */
+  maxPerItem?: number;
+  /** Decimal places for allocated quantities. */
+  dp?: number;
+}
+
+/**
+ * Propose, for every unmapped BOQ item, WHICH activities consume it and HOW MUCH
+ * of it each one takes.
+ *
+ * The split is weighted by match score × activity duration: a thirty-day activity
+ * that mentions the item plausibly executes more of it than a three-day one. This
+ * is a starting point for a human, not a decision — every proposal is emitted as
+ * confidence:'auto' and takes no part in derived progress until a named user
+ * confirms it.
+ */
+export function suggestAllocations(
+  items: BoqItem[],
+  acts: ScheduleActivity[],
+  existing: BoqWbsLink[],
+  { threshold = 0.34, maxPerItem = 3, dp = 2 }: SuggestOptions = {},
+): ItemProposal[] {
+  const by = linksByItem(existing);
+  const candidates = acts.filter((a) => !a.isMilestone);
+  const out: ItemProposal[] = [];
+
+  for (const item of items) {
+    if (by.get(item.id)?.length) continue;   // never touch an item a human already mapped
+    if (item.qty <= 0) continue;
+
+    const scored = candidates
+      .map((a) => ({ act: a, score: matchScore(item, a) }))
+      .filter((c) => c.score >= threshold)
+      .sort((x, y) => y.score - x.score || x.act.activityId.localeCompare(y.act.activityId))
+      .slice(0, maxPerItem);
+    if (scored.length === 0) continue;
+
+    // Weight by confidence AND by how much work the activity represents.
+    const weights = scored.map((c) => c.score * Math.max(c.act.originalDurationDays ?? c.act.durationDays ?? 1, 1));
+    const qtys = distribute(item.qty, weights, dp);
+
+    out.push({
+      boqItemId: item.id,
+      itemCode: item.code,
+      itemDescription: item.description,
+      unit: item.unit,
+      availableQty: item.qty,
+      allocations: scored.map((c, i) => ({
+        activityId: c.act.activityId,
+        activityName: c.act.name,
+        score: +c.score.toFixed(2),
+        qty: qtys[i],
+      })).filter((a) => a.qty > 0),
+    });
+  }
+  return out.sort((a, b) => (b.allocations[0]?.score ?? 0) - (a.allocations[0]?.score ?? 0));
+}
+
+/** Flatten proposals into the auto links a review queue will confirm or reject. */
+export function proposalsToLinks(proposals: ItemProposal[], projectId: string): BoqWbsLink[] {
+  return proposals.flatMap((p) =>
+    p.allocations.map((a) => ({
+      boqItemId: p.boqItemId, projectId, activityId: a.activityId, confidence: 'auto' as const, qty: a.qty,
+    })),
+  );
 }

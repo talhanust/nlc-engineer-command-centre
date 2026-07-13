@@ -1839,3 +1839,205 @@ NLC Engineer Command Centre — work journal
   bands) and +2 UI (variance tab explains itself without a baseline; near-critical
   filter), with the two-revision UI test extended to assert the claim columns.
   Web 583 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Suggested BOQ↔activity QUANTITY allocations
+- Mapping 628 activities by hand was the bottleneck between this app and live
+  work. The suggester now proposes not just WHICH activities consume a BOQ item
+  but HOW MUCH of it each one takes.
+- matchScore() got the P6 data it was missing: alongside the activity name and
+  WBS code it now reads the readable WBS path and the assigned RESOURCE NAMES
+  ("Clearing & grubbing"), which are frequently a closer match to the BOQ
+  description than the activity title.
+- Scoring bug found by a test and fixed: bill/section tokens were counted as
+  full evidence, so any item sitting in an "Earthworks" bill matched every
+  earthwork activity regardless of its description. Description tokens now carry
+  full weight and bill/section context 0.4, so a bill name alone can never carry
+  a suggestion over the threshold.
+- suggestAllocations() splits each unmapped item across up to N candidate
+  activities, weighted by match score × activity duration — a thirty-day activity
+  plausibly executes more of an item than a three-day one. distribute() uses the
+  largest-remainder method so the parts sum EXACTLY to the item quantity; naive
+  rounding would leave a phantom unallocated remainder that reads as an error.
+  Items a human already mapped are never touched; milestones and zero-qty items
+  are skipped; output is deterministic for equal scores.
+- Everything lands as confidence:"auto" and takes no part in derived progress
+  until confirmed. The review queue now shows the proposed quantity per link, with
+  Confirm all / Reject all, and says plainly that a plausible name match is not
+  proof that an activity executes that work.
+- Against the real EMA-13 programme and the seeded 88-item BOQ: 14 items matched
+  → 35 proposed links. Example: "Asphaltic base course" 939,433 Cft split
+  313144.34 / 313144.33 / 313144.33 across the three zones — sums exactly. It also
+  pulls "wearing course" partly onto "base course" activities, which is exactly the
+  kind of plausible-but-wrong match the confirmation step exists to catch.
+- Tests: +15 domain (mappingSuggestQty.test.ts — exact distribution on awkward
+  decimals, duration weighting, cap, never re-proposing mapped items, resource/WBS
+  matching, determinism) and +2 UI (queue shows quantities and holds them; reject
+  all clears).
+  Web 600 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Export the variance & claim report to Excel
+- The claim table is the artifact that leaves the building; it could only be read
+  on screen. Export added, built on the existing components/xlsxExport helper.
+- INCIDENT, recorded honestly: I overwrote components/xlsxExport.ts, which six
+  modules already depended on (ExportMenu, HrAdminViews, CommandDashboard,
+  DistributionPlanner, DistributionsTab, AdvancesTab). Typecheck caught it
+  immediately. Restored verbatim from the uploaded archive rather than
+  reconstructed from memory, its 49 dependent tests re-run green, and the new
+  exporter conformed to the existing SheetSpec { name, aoa } shape instead of
+  imposing a second one. widthsFor() added as a non-breaking improvement so every
+  export gets readable columns rather than a wall of ####.
+- New domain/varianceExport.ts, pure and browser-free so the CONTENT is asserted
+  in tests rather than eyeballed in Excel. Two sheets: Summary (project, the two
+  programmes compared, headline figures, worst slips) and Variance (one row per
+  activity). Two rules govern the shape:
+    * variances are written as NUMBERS, not "+15d" — a reviewer will sort, filter
+      and total that column, and a string defeats all three;
+    * a missing baseline entry is a genuinely EMPTY cell, never 0. An activity
+      absent from the contract programme is new scope; printing 0 would claim it
+      was on time.
+  A probe showed empty STRINGS write text cells, which turn a numeric column to
+  text and break SUM — so Cell allows null and null writes a truly blank cell.
+  Verified by round-tripping the workbook through SheetJS: numbers read back as
+  numbers, the new-scope key is absent rather than zero.
+- baselineLabel() moved from components/BaselineSelector to domain/baselines so
+  both the UI and the export can name the programme they measured against, without
+  a domain module importing a component.
+- The workbook always carries EVERY activity, never the current screen filter — a
+  claim built from a filtered table is a claim with holes in it. Export appears
+  only once a baseline exists.
+- Demonstrated on the real EMA-13 programme with a contract baseline and a
+  simulated approved rev 1: +25d vs contract, +5d vs revision, 20d absorbed by the
+  amendment, 291 activities slipped (63 critical), 628 detail rows.
+- Tests: +17 domain (varianceExport.test.ts — numeric cells, blank new scope,
+  single-baseline column dropping, filename sanitising, column widths, SheetJS
+  round-trip) and +2 UI (export offered once baselined, absent before).
+  Web 618 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Rename detection: the last data-loss hole closed
+- A revised programme routinely RENUMBERS an activity rather than deleting it —
+  MAT-ASP-MIX becomes MAT-ASP-MIX-A. The diff saw a removal plus an addition, and
+  the BOQ links, with their quantity allocations, died with the removal. It warned;
+  it could not help.
+- similarity(): Dice coefficient over character bigrams. Chosen over token-set
+  measures because it works on CODES as well as prose — "MAT-ASP-MIX" vs
+  "MAT-ASP-MIX-A" scores > 0.85, which a token Jaccard would miss entirely.
+- detectRenames() pairs each ORPHANED removal (one that carries links, and so has
+  something to lose) with the added activity most likely to be the same work:
+  0.6 × name similarity + 0.4 × code similarity, plus bonuses for identical dates
+  and identical WBS. Greedy and one-to-one — the strongest pair wins and neither
+  side is offered twice, so two orphans cannot both claim one successor. Removals
+  with nothing mapped to them are ignored: there is nothing to rescue.
+  unrescuedOrphans() reports what is genuinely lost once the user has chosen.
+- Honesty fix caught while reading real output: the reason string said "same name"
+  for a name that merely resembled the original. "same" is now reserved for exact
+  equality; anything else reads "similar". A planner ticking these boxes has to be
+  able to trust the word.
+- provider.remapBoqWbsActivity() carries every link across, quantity intact. Where
+  the target already maps the same BOQ item the links MERGE rather than one being
+  dropped: quantities add (both describe work on the same item) and a confirmed
+  link is never demoted to auto by the merge.
+- BaselineImport now lists proposed remaps with checkboxes, pre-ticking those above
+  85% confidence and showing the link count, score and reason for each. The red
+  data-loss alert now names only the orphans with no successor selected, and turns
+  green when every mapped activity that disappears has one. Remaps run AFTER the
+  schedule is written, when the new activity codes exist.
+- On the real EMA-13 programme with two mapped activities renamed, one genuinely
+  deleted and an unrelated activity added: 3 orphans → 2 rescued at 100%, 1 lost
+  and named. The unrelated addition is never claimed as a successor.
+- Tests: +17 (similarity on codes/names/edge cases, one-to-one pairing, threshold,
+  no-links-no-rescue, remap merge semantics, confirmed never demoted, no-op cases)
+  and +1 UI proving the rescue end to end: map an item, re-import with the activity
+  renamed, see it pre-ticked, untick it and watch the honest loss warning return.
+  Web 636 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Gantt row virtualization + PDF claim export
+- Virtualization: only the rows inside the viewport, plus six of overscan each
+  side, are rendered. A 5,000-activity programme is 120,000px of DOM otherwise and
+  the zoom slider stutters on every frame. Spacer divs above and below preserve
+  the true scroll height, so the scrollbar never lies. Dependency arrows and the
+  data-date line are positioned absolutely in the SVG, so they still draw
+  correctly when an endpoint is scrolled out of view.
+- rowWindow() extracted as a pure function so the arithmetic is TESTED rather than
+  inferred from a screenshot. That immediately paid: a scroll position past the end
+  of the content (a stale scrollTop after a collapse) produced first > count,
+  rendering nothing behind a page-tall top spacer. `first` is now clamped to
+  `last`. jsdom and the first paint report clientHeight 0, so the window falls
+  back to the CSS max height rather than rendering a blank chart.
+- PDF export of the variance & claim report, on the existing branded tablePdf
+  helper. A PDF cannot be sorted or filtered, so the headline figures move up into
+  the meta block where a reader meets them before the table: finish vs contract,
+  finish vs revision, time absorbed by amendments, slipped and critical counts.
+  Numeric columns are right-aligned; blanks are empty strings because a PDF cell
+  has no null. Single-baseline reports drop the revision columns and meta rows,
+  as in the spreadsheet.
+- Both exports appear only once a baseline exists, and both always carry every
+  activity rather than the current screen filter.
+- Tests: +7 (rowWindow: viewport+overscan, scrolled window, height preservation,
+  end clamping, zero rows / zero height / negative scroll, row-height effect) and
+  +6 (variancePdf: headline in meta, project naming, right alignment, blank cells,
+  single-baseline column dropping, filename derivation), plus UI assertions for
+  both export buttons.
+  Web 649 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Derived S-curve, budget reconciliation, and .xer provenance
+- EMA-13 turns out to be fully COST-LOADED: 463 TASKRSRC assignments totalling
+  PKR 4,109,496,988. The parser was throwing that away, reading resource names
+  only. TASKRSRC.target_cost is now summed per activity (ScheduleActivity.
+  budgetCost) and per programme (ScheduleMeta.totalBudgetCost).
+- New domain/scurveFromSchedule.ts. Two sources of truth for one curve will drift,
+  and the drift is always found at the worst moment. The planned curve is now
+  COMPUTED from the programme: each activity budget spread across its WORKING days
+  — nothing is earned on a holiday — bucketed by month and accumulated. Milestones
+  carry no work and contribute nothing. Programmes without costs fall back to
+  duration weighting and SAY SO, because a duration-weighted curve asserts that
+  every day of work is worth the same, which is a claim about the project rather
+  than a fact about it. Actuals are left null: a derived plan asserts nothing about
+  what happened. The last point is pinned to exactly 100 — float accumulation
+  otherwise leaves it at 99.9.
+  On the real programme: 16 months, monotonic, 1.8% at Feb-26 → 100% at May-27,
+  zero activities skipped.
+- reconcileProgrammeCost(): a cost-loaded programme is an INDEPENDENT statement of
+  the contract value. If it disagrees with the BOQ beyond tolerance, a bill is
+  missing from the programme or a resource was never loaded. The import dialog now
+  reports the divergence instead of letting two totals sit side by side unnoticed.
+- Provenance: the uploaded .xer is hashed as bytes (SHA-256 via Web Crypto) and
+  the file name, size, hash and import timestamp travel with the schedule meta,
+  surfaced on the Activities header with the full digest in the tooltip. A claim
+  must be able to prove WHICH file produced WHICH baseline.
+  crypto.subtle is undefined on insecure origins — exactly where a hash silently
+  degrading would be most dangerous — so the fallback (FNV-1a) is always LABELLED.
+  The stored record names its own algorithm and never claims to be SHA-256 when it
+  is not. Verified against the known digest of "hello world".
+- Tests: +20 domain (curve spreading across month boundaries and non-working days,
+  monotonicity, exact-100 termination, milestone exclusion, duration fallback,
+  degenerate input, reconciliation tolerance, hash stability and labelling) and +1
+  UI proving the whole path: upload, provenance recorded, curve derived, budget
+  reconciled, provenance visible afterwards.
+  Web 670 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Allocation heat-map, shared collapse state, lookahead chip
+- AllocationBar: each BOQ item drawn as a stacked bar of its activity
+  allocations, with whatever is not yet allocated in grey. Scanning a column of
+  these finds the unmapped value in a second; scanning the rows takes minutes.
+  Unmapped items get a hatched track; OVER-allocated items are drawn as a full
+  red bar rather than a segment overflowing its track — a bar running past its
+  own end reads as a rendering bug, not as the accounting error it is.
+  Caught while wiring it: I had reached for a --amber CSS variable that does not
+  exist in theme.css. A missing var renders an INVISIBLE segment, silently
+  understating how much of an item is mapped. Now only variables that exist
+  (--primary, --info, --warning, --rag-green) are used.
+- Collapse state lifted into ExecutionTab and passed to both ActivityTable and
+  GanttChart. Collapsing a WBS branch in the table leaves it collapsed in the
+  Gantt, and back. Kept in memory rather than persisted — a planner who collapses
+  everything to skim does not expect that state back next week.
+- "Next 8 weeks" Gantt filter chip, built on the EXISTING domain/lookahead
+  function rather than a second window definition, so one screen cannot hold two
+  different ideas of what the next eight weeks means. It anchors on the P6 data
+  date when one was imported, otherwise today.
+- Tests: +2 mapping UI (unmapped hatch → allocation bar after confirming a
+  suggestion; over-allocation renders as the red full bar) and +2 execution UI
+  (collapse state shared in both directions; lookahead chip filters the Gantt).
+  Web 674 passing, server 9; typecheck clean; local + api builds green.
+- This clears every enhancement on the three suggestion lists except
+  drag-to-reschedule (proposed vs approved), which is deliberately held: its
+  shape depends on workflow answers only a planner can give.

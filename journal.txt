@@ -2041,3 +2041,51 @@ NLC Engineer Command Centre — work journal
 - This clears every enhancement on the three suggestion lists except
   drag-to-reschedule (proposed vs approved), which is deliberately held: its
   shape depends on workflow answers only a planner can give.
+
+2026-07-13 — Sublet / labor contract interface + seed removal
+- New feature: a proper interface to create a sublet or labor contract from the
+  subcontractor's own BOQ. Contractor details (existing or new), a per-item BOQ
+  (uploaded xlsx/csv OR entered by hand), a review with live contract value, then
+  create. On creation the contract is written, the subcontractor is created if
+  new, and each line LOCKS its quantity of the corresponding item in the
+  distribution planner.
+- Data model: Contract gained optional lines?:ContractLine[] (boqItemId, qty,
+  rate) and kind?:"sublet"|"labor". Value is DERIVED as Sigma(qty*rate), never a
+  typed figure that can drift from the quantities it is billed against.
+- domain/contractLocks.ts: itemLocks() gives locked vs unallocated qty per BOQ
+  item with the holding contracts; contractLineIssues() folds a proposed set of
+  lines onto everyone else's locks and reports over-commitment. Splitting one item
+  across several contractors is allowed; over-committing is a WARNING the user
+  acknowledges, not a hard block (a commercial decision, not an input error).
+  12 domain tests.
+- provider.createSubletContract() creates the sub when given details instead of an
+  id, derives scopeBills from the line items, numbers the contract NLC/<PID>/SC-NN
+  (or LC-NN for labor), and leaves it DRAFT (locked-but-editable) until awarded.
+  updateContractLines() only edits a draft — awarded lines are frozen (variations,
+  not silent edits, move committed quantities). Stubbed on the API provider.
+- Distribution planner: new Locked and Unallocated columns per item, with the
+  holding contracts in the tooltip and an over-commit flag.
+- SEED REMOVAL (requested): contractors, sublet contracts and variation orders are
+  no longer seeded. Every register that hangs off a subcontractor (RARs, the sub
+  bank-guarantee, sub-directed material issues and machinery hire) starts empty
+  too — a dangling RAR with no contractor is worse than none. Distributions now
+  start as NLC self-execution across the board. SEED_VERSION bumped to
+  2026-07-10.v13-no-contract-seeds so live stores purge and regenerate.
+- Latent bug found and fixed while seeding tests: setDistribution() read the
+  distributions list with an empty-array fallback while listDistributions() seeded
+  from the generator. Editing ANY distribution before the list had ever loaded
+  silently wiped the whole seeded set. Both now seed from gen(). Another: a test
+  used listSubcontractors() where it meant listSuppliers().
+- Test fallout handled honestly: 39 tests across 15 files assumed the old seeded
+  commercial spine. Rather than prop them up with fake fixtures, each now builds
+  its own precondition through the real provider flow (create contract/RAR/VO,
+  then act) — they are stronger integration tests for it. Added a shared
+  src/testSeed.ts helper (seedCommercial) that runs the seed reconciliation first
+  so the app boot does not purge what the test seeded, then creates a contractor +
+  contract (+ optional distributions, RARs at target statuses, executed progress,
+  variations). Seed-shape tests (commercialSeed, seedReconcile, seedConsistency,
+  NewProjectCleanSlate) were rewritten to assert the new empty-spine reality.
+- End-to-end: SubletContract.test.tsx proves create-from-hand-entered-BOQ →
+  contracts register → quantity locked in the planner, and the overlap warning
+  gating (blocked until acknowledged).
+  Web 687 passing (98 files), server 9; typecheck clean; local + api builds green.

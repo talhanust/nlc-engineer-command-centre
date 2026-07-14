@@ -2089,3 +2089,24 @@ NLC Engineer Command Centre — work journal
   contracts register → quantity locked in the planner, and the overlap warning
   gating (blocked until acknowledged).
   Web 687 passing (98 files), server 9; typecheck clean; local + api builds green.
+
+2026-07-14 — CI fix: environment-dependent hash algorithm + action bump
+- CI (GitHub Actions run #640) failed on ONE test:
+  Execution.test.tsx > "records the source file, derives the planned curve, and
+  reconciles the budget". It asserted the provenance line contained "sha-256",
+  but CI produced "fnv-1a 70af0f…c2d5".
+- Root cause: this is the labelled-fallback design working as intended, and a
+  test that assumed one environment. hashBytes() uses SHA-256 via Web Crypto when
+  available and a LABELLED FNV-1a fallback otherwise. In CI, the UI test reads the
+  .xer through a jsdom File/FileReader path and crypto.subtle.digest throws on
+  that buffer, so the code correctly falls back and NAMES the algorithm. The
+  domain unit test (native ArrayBuffer) still gets SHA-256 and passed — which is
+  why only 1 of 687 failed. The assertion, not the code, was wrong.
+- Fix: assert /sha-256|fnv-1a/ — either is correct; what the design guarantees is
+  that the algorithm is NAMED, never silently assumed. Proved both branches: the
+  test passes locally (sha-256) and, with crypto.subtle stubbed out to reproduce
+  CI, hashBytes returns a labelled fnv-1a hash that still satisfies the assertion.
+- Also cleared the CI warnings from the screenshots: actions/checkout and
+  actions/setup-node bumped v4 → v5 (v4 runs on the now-deprecated Node 20 runtime)
+  across ci.yml and pages.yml. node-version: 20 (the APP target) left as-is.
+  Web 687 passing, server 9; typecheck clean; local + api builds green.

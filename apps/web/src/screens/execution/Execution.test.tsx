@@ -248,7 +248,11 @@ describe('Phase 4 — execution', () => {
     // Provenance: the file is hashed as uploaded, and the algorithm is named.
     const prov = await within(summary).findByLabelText('Source provenance');
     expect(prov.textContent).toContain('EMA-13.xer');
-    expect(prov.textContent).toContain('sha-256');
+    // The hash algorithm is environment-dependent: SHA-256 via Web Crypto where a
+    // secure context is available, and a LABELLED FNV-1a fallback where it is not
+    // (e.g. CI's jsdom, which has no crypto.subtle). Either is correct — what
+    // matters is that the algorithm is named, never silently assumed.
+    expect(prov.textContent).toMatch(/sha-256|fnv-1a/);
 
     // The fixture is cost-loaded, so a planned curve can be derived from it.
     const derive = within(summary).getByLabelText('Derive planned S-curve from the programme');

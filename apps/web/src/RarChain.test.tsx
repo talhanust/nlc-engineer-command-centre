@@ -26,8 +26,8 @@ describe('RAR approval ladder (spec §5)', () => {
     setKvStore(memKv());
     const p = new LocalDataProvider();
     const F = 'proj-f14f15';
-    const subs = await p.listSubcontractors(F);
-    const draft = await p.createRar(F, { period: 'Jul-2026', subcontractorId: subs[0].id, gross: 5_000_000 });
+    const sub = await p.addSubcontractor(F, { name: 'RAR Co', trade: 'Earthworks' });
+    const draft = await p.createRar(F, { period: 'Jul-2026', subcontractorId: sub.id, gross: 5_000_000 });
     expect(draft.status).toBe('draft');
     let r = await p.submitRarApproval(F, draft.rarNo, 'SQS');
     expect(r.chain!.steps).toHaveLength(8);
@@ -45,8 +45,8 @@ describe('RAR approval ladder (spec §5)', () => {
     setKvStore(memKv());
     const p = new LocalDataProvider();
     const F = 'proj-f14f15';
-    const subs = await p.listSubcontractors(F);
-    const draft = await p.createRar(F, { period: 'Aug-2026', subcontractorId: subs[0].id, gross: 3_000_000 });
+    const sub = await p.addSubcontractor(F, { name: 'RAR Co', trade: 'Earthworks' });
+    const draft = await p.createRar(F, { period: 'Aug-2026', subcontractorId: sub.id, gross: 3_000_000 });
     let r = await p.submitRarApproval(F, draft.rarNo, 'SQS');
     for (const who of ['CE', 'DPM', 'SPM', 'MC-PD']) r = await p.actOnRar(F, draft.rarNo, who);
     r = await p.returnRar(F, draft.rarNo, 'Pre-Audit', 'Machinery recovery for grader hours missing');
@@ -72,8 +72,8 @@ describe('RAR register chain UI', () => {
     await screen.findByRole('tab', { name: 'RAR Register' });
     // draft AFTER boot (reconcileSeed clears entity keys on first run)
     const p = new LocalDataProvider();
-    const subs = await p.listSubcontractors('proj-f14f15');
-    const draft = await p.createRar('proj-f14f15', { period: 'Sep-2026', subcontractorId: subs[0].id, gross: 2_000_000 });
+    const sub = await p.addSubcontractor('proj-f14f15', { name: 'RAR Co', trade: 'Earthworks' });
+    const draft = await p.createRar('proj-f14f15', { period: 'Sep-2026', subcontractorId: sub.id, gross: 2_000_000 });
     await user.click(screen.getByRole('tab', { name: 'RAR Register' }));
     const reg = await screen.findByRole('table', { name: 'RAR register' });
     await user.click(within(reg).getByLabelText(`Submit ${draft.rarNo} for approval`));

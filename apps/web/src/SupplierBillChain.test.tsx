@@ -45,7 +45,7 @@ describe('supplier-bill ladders (spec §6)', () => {
 describe('supplier bill from CRVs (provider)', () => {
   async function seedPoCrv(p: LocalDataProvider, F: string, code: string, qty: number) {
     // demand → PO → CRV path, mirroring the procurement flow
-    const suppliers = await p.listSubcontractors(F);
+    const suppliers = await p.listSuppliers(F);
     const demand = await p.createDemand(F, { type: 'material', justification: 'execution plan', items: [{ code, description: code, qty, unit: 'unit', estimatedRate: 0 }] });
     // advance demand to allow PO (best-effort; PO creation may accept a demand id directly)
     const po = await p.createPurchaseOrder(F, { demandId: demand.id, supplierId: suppliers[0].id });
@@ -94,7 +94,7 @@ describe('supplier bills UI', () => {
     await screen.findByLabelText('Procurement KPIs');
     // seed a bill after boot
     const p = new LocalDataProvider();
-    const suppliers = await p.listSubcontractors('proj-f14f15');
+    const suppliers = await p.listSuppliers('proj-f14f15');
     const demand = await p.createDemand('proj-f14f15', { type: 'material', justification: 'execution plan', items: [{ code: 'CEM', description: 'Cement', qty: 200, unit: 'bag', estimatedRate: 0 }] });
     const po = await p.createPurchaseOrder('proj-f14f15', { demandId: demand.id, supplierId: suppliers[0].id });
     await p.createCrv('proj-f14f15', { poId: po.id, received: [{ code: 'CEM', qtyReceived: 200 }] });

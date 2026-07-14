@@ -3,6 +3,8 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import App from './App';
+import { seedCommercial } from './testSeed';
+import { LocalDataProvider } from './data/LocalDataProvider';
 import { machineryRecovery, usageValue } from './domain/machineryRecovery';
 import { contractCoverage } from './domain/allocations';
 import type { MachineryUsage, BoqItem } from './data/types';
@@ -47,6 +49,7 @@ describe('contract coverage domain', () => {
 describe('planner views', () => {
   beforeEach(() => localStorage.clear());
   it('shows the per-contract scope coverage panel', async () => {
+    await seedCommercial('proj-f14f15', { lines: 2 });
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
     await screen.findByText('BOQ lifecycle');
@@ -59,7 +62,12 @@ describe('planner views', () => {
 
 describe('machinery procurement register', () => {
   beforeEach(() => localStorage.clear());
-  it('lists seeded machinery hire with recovery balances', async () => {
+  it('lists machinery hire with recovery balances', async () => {
+    const p = new LocalDataProvider();
+    await p.listNodes();
+    const sub = await p.addSubcontractor('proj-f14f15', { name: 'Plant Hirer', trade: 'Plant' });
+    await p.createMachineryUsage('proj-f14f15', { dated: '2026-05-01', machineryCode: 'EXC-320', description: 'Excavator CAT 320 (hire)', hours: 420, rate: 6500, contractorId: sub.id, recovered: 200000 });
+    await p.createMachineryUsage('proj-f14f15', { dated: '2026-06-01', machineryCode: 'RLR-12T', description: '12T vibratory roller (hire)', hours: 260, rate: 4200, contractorId: sub.id, recovered: 0 });
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/procurement');
     await user.click(await screen.findByRole('tab', { name: 'Machinery hire' }));

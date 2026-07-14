@@ -48,9 +48,9 @@ describe('setDistribution enforcement (provider)', () => {
     const p = new LocalDataProvider();
     const F = 'proj-f14f15';
     const items = await p.listBoq(F);
-    const subs = await p.listSubcontractors(F);
     const target = items[0];
-    const sub = subs.find((s) => s.kind === 'sublet') ?? subs[0];
+    const sub = await p.addSubcontractor(F, { name: 'Sublet A Co', trade: 'Earthworks' });
+    await p.updateSubcontractor(F, sub.id, { kind: 'sublet' });
 
     // award a contract to `sub` and distribute part of the item to them
     const c = await p.createContract(F, { title: 'Sublet A', subcontractorId: sub.id, scopeBills: [target.billNo], value: 5_000_000, awardDate: '2026-07-01' });

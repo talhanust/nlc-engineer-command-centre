@@ -51,8 +51,8 @@ describe('contract approval ladder (spec §4)', () => {
     setKvStore(memKv());
     const p = new LocalDataProvider();
     const F = 'proj-f14f15';
-    const subs = await p.listSubcontractors(F);
-    const labour = subs.find((s) => s.kind === 'labor')!;
+    const labour = await p.addSubcontractor(F, { name: 'Kerb Labour Co', trade: 'Kerbstone' });
+    await p.updateSubcontractor(F, labour.id, { kind: 'labor' });
     const draft = await p.createContract(F, { title: 'Kerbstone works P2', subcontractorId: labour.id, scopeBills: ['2'], value: 12_000_000 });
     expect(draft.status).toBe('draft');
     let c = await p.submitContractApproval(F, draft.id, 'Contract Engineer');
@@ -74,8 +74,8 @@ describe('contracts register chain UI', () => {
     await screen.findByRole('tab', { name: 'Contracts' });
     // create the draft AFTER the app booted (reconcileSeed clears entity keys on first run)
     const p = new LocalDataProvider();
-    const subs = await p.listSubcontractors('proj-f14f15');
-    const labour = subs.find((s) => s.kind === 'labor')!;
+    const labour = await p.addSubcontractor('proj-f14f15', { name: 'Drain Labour Co', trade: 'Drainage' });
+    await p.updateSubcontractor('proj-f14f15', labour.id, { kind: 'labor' });
     const draft = await p.createContract('proj-f14f15', { title: 'Drainage works P9', subcontractorId: labour.id, scopeBills: ['3'], value: 9_000_000 });
     await user.click(screen.getByRole('tab', { name: 'Contracts' }));
     const reg = await screen.findByRole('table', { name: 'Contracts register' });

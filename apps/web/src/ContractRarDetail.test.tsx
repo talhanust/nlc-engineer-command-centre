@@ -3,12 +3,16 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import App from './App';
+import { seedCommercial } from './testSeed';
 
 function renderAt(path: string) {
   return render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
 }
 
 async function gotoSub(name: string) {
+  // Seed a contractor + contract (3 BOQ lines) and two RARs so the detail views
+  // and register have something to open.
+  await seedCommercial('proj-f14f15', { lines: 3, rarStatuses: ['submitted', 'verified'] });
   const user = userEvent.setup();
   renderAt('/node/proj-f14f15/commercial');
   await screen.findByText('BOQ lifecycle');

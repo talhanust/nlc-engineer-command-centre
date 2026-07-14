@@ -31,10 +31,10 @@ describe('plant production runs (spec §6)', () => {
     setKvStore(memKv());
     const p = new LocalDataProvider();
     const F = 'proj-f14f15';
-    const subs = await p.listSubcontractors(F);
-    const run = await p.recordPlantRun(F, { dated: '2026-06-17', mixDesignId: 'AC-WEARING', plantAssetId: 'ma-ap-120', outputQty: 100, destination: 'contractor', contractorId: subs[0].id });
+    const sub = await p.addSubcontractor(F, { name: 'Plant Buyer', trade: 'Asphalt' });
+    const run = await p.recordPlantRun(F, { dated: '2026-06-17', mixDesignId: 'AC-WEARING', plantAssetId: 'ma-ap-120', outputQty: 100, destination: 'contractor', contractorId: sub.id });
     expect(run.destination).toBe('contractor');
-    expect(run.contractorId).toBe(subs[0].id);
+    expect(run.contractorId).toBe(sub.id);
     // AC-WEARING bitumen coeff 0.045 × 100 = 4.5
     expect(run.consumption?.find((c) => c.materialCode === 'BITUMEN')?.qty).toBe(4.5);
   });

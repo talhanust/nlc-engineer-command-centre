@@ -34,6 +34,10 @@ describe('material issues register (prototype parity)', () => {
   beforeEach(() => localStorage.clear());
 
   it('records an issue against a contractor and shows its recovery balance', async () => {
+    const { LocalDataProvider } = await import('./data/LocalDataProvider');
+    const seedP = new LocalDataProvider();
+    await seedP.listNodes();
+    await seedP.addSubcontractor('proj-f14f15', { name: 'Issue Receiver Co', trade: 'Civil' });
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/procurement');
     await screen.findByLabelText('Procurement KPIs');

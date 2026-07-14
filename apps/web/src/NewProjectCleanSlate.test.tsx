@@ -41,12 +41,14 @@ describe('new project is a clean slate (no seed leakage)', () => {
     expect(salients[0].value).toBe('12.5 km');
   });
 
-  it('the flagship still has its generated data (seed profiles unaffected)', async () => {
+  it('the flagship keeps its generated BOQ/IPCs but no seeded contracts or RARs', async () => {
     setKvStore(memKv());
     const p = new LocalDataProvider();
-    expect((await p.listRars('proj-f14f15')).length).toBeGreaterThan(0);
-    expect((await p.listContracts('proj-f14f15')).length).toBeGreaterThan(0);
     expect((await p.listBoq('proj-f14f15')).length).toBeGreaterThan(0);
+    expect((await p.listIpcs('proj-f14f15')).length).toBeGreaterThan(0);
+    // Contractors, contracts and RARs are user-created, so they start empty.
+    expect(await p.listContracts('proj-f14f15')).toHaveLength(0);
+    expect(await p.listRars('proj-f14f15')).toHaveLength(0);
   });
 });
 

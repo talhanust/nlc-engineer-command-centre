@@ -38,6 +38,15 @@ describe('RAR recovery persistence', () => {
   beforeEach(() => { setKvStore(memKv()); p = new LocalDataProvider(); });
 
   it('persists recoveries and recomputes net payable', async () => {
+    const boq = await p.listBoq(F);
+    const c = await p.createSubletContract(F, {
+      title: 'T', kind: 'sublet', subcontractor: { name: 'Recovery Co', trade: 'Earthworks' },
+      lines: [{ boqItemId: boq[0].id, qty: 100, rate: 90 }],
+    });
+    await p.createRar(F, {
+      period: 'M1', subcontractorId: c.subcontractorId, contractId: c.id, gross: 5_000_000,
+      lines: [{ boqItemId: boq[0].id, qty: 100, rate: 90, amount: 9000 }],
+    });
     const rars = await p.listRars(F);
     const r = rars[0];
     const before = r.netPayable;

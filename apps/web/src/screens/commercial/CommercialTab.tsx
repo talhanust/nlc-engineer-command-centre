@@ -17,6 +17,7 @@ import { AlertCentre } from './AlertCentre';
 import { CommercialDashboard } from './CommercialDashboard';
 import { VariationsTab } from './VariationsTab';
 import { EvmTab } from './EvmTab';
+import { NewSubletContract } from './NewSubletContract';
 import { ContractsRegister } from './ContractsRegister';
 import { CommercialConfigTab } from './CommercialConfigTab';
 import { RevenueComposition } from './RevenueComposition';
@@ -41,6 +42,7 @@ const SUBS = [
   ['epc', 'Escalation'],
   ['subs', 'Contractors'],
   ['contracts', 'Contracts'],
+  ['newsublet', 'New sublet contract'],
   ['config', 'Deductions & retention'],
   ['planner', 'Distribution planner'],
   ['exectrack', 'Execution tracker'],
@@ -86,6 +88,7 @@ export function CommercialTab({ projectId }: { projectId: string }) {
       {sub === 'epc' && <EscalationTab projectId={projectId} />}
       {sub === 'subs' && <ContractorProfiles projectId={projectId} />}
       {sub === 'contracts' && <ContractsRegister projectId={projectId} />}
+      {sub === 'newsublet' && <NewSubletContract projectId={projectId} onCreated={() => setSub('contracts')} />}
       {sub === 'config' && <CommercialConfigTab projectId={projectId} />}
       {sub === 'planner' && <DistributionPlanner projectId={projectId} />}
       {sub === 'exectrack' && <ExecutionTracker projectId={projectId} onManageDistribution={() => setSub('dist')} />}

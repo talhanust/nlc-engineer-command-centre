@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { useToast } from '../../components/Toast';
 import { downloadWorkbook } from '../../components/xlsxExport';
+import { itemLocks } from '../../domain/contractLocks';
 import { formatMoney } from '../../domain/money';
 import { ROLE_LABEL } from '../../domain/chains';
 import {
@@ -44,6 +45,8 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
   const margin = boqMargin(items, allocs);
   const summaries = contractSummaries(items, allocs);
   const coverage = contractCoverage(regContracts, items, allocs);
+  // Contract-committed (locked) quantity per item, from sublet/labor contracts.
+  const locks = useMemo(() => itemLocks(items, regContracts), [items, regContracts]);
   const statusOf = (key: string) => contracts.find((c) => c.key === key)?.status ?? 'draft';
 
   const billNos = useMemo(() => Array.from(new Set(items.map((i) => i.billNo))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), [items]);
@@ -136,6 +139,8 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
                 <tr>
                   <th>Code</th><th>Description</th><th>Unit</th>
                   <th className="num">Contract qty</th><th className="num">Rate</th><th className="num">Amount</th>
+                  <th className="num" title="Quantity committed to sublet/labor contracts">Locked</th>
+                  <th className="num" title="Quantity not yet committed to any contract">Unallocated</th>
                   <th>Mode</th><th>Allocation</th>
                   <th className="num">S/C cost</th><th className="num">L/O cost</th><th className="num">Margin %</th><th></th>
                 </tr>
@@ -143,6 +148,7 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
               <tbody>
                 {filtered.map((item) => {
                   const lines = allocs.filter((a) => a.boqItemId === item.id);
+                  const lock = locks.get(item.id);
                   const over = isOverAllocated(item, allocs);
                   const open = openItem === item.id;
                   const pct = item.qty > 0 ? Math.min(1, allocatedQty(allocs, item.id) / item.qty) : 0;
@@ -157,6 +163,11 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
                         <td className="num">{num(item.qty)}</td>
                         <td className="num">{num(item.rate)}</td>
                         <td className="num">{formatMoney(item.amount)}</td>
+                        <td className={`num small ${lock && lock.overCommitted ? 'neg' : ''}`}
+                          title={lock && lock.holders.length ? lock.holders.map((h) => `${h.contractNo}: ${h.qty.toLocaleString('en-PK')}`).join('\n') : 'Not committed to any contract'}>
+                          {lock && lock.lockedQty > 0 ? `${lock.lockedQty.toLocaleString('en-PK')}${lock.overCommitted ? ' ⚠' : ''}` : '—'}
+                        </td>
+                        <td className="num small">{lock ? lock.unallocatedQty.toLocaleString('en-PK') : num(item.qty)}</td>
                         <td><span className={`mode-badge ${MODE_CLASS[mode]}`}>{mode === 'Unassigned' ? '⚠ ' : ''}{mode}</span></td>
                         <td>
                           <div className="boq-status" title={`${Math.round(pct * 100)}% allocated`}>
@@ -171,7 +182,7 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
                       </tr>
                       {open && (
                         <tr key={`${item.id}-detail`}>
-                          <td colSpan={12}>
+                          <td colSpan={14}>
                             <table className="data-table" aria-label={`Allocations for ${item.code}`}>
                               <thead><tr><th>Execution</th><th>Contractor</th><th>Contract</th><th className="num">Qty</th><th className="num">Rate</th><th className="num">Value</th><th></th></tr></thead>
                               <tbody>

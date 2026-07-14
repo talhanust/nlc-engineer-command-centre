@@ -14,6 +14,65 @@ function renderAt(path: string) {
 
 beforeEach(() => localStorage.clear());
 
+// Contractors, contracts, RARs and variations are no longer seeded — the app
+// starts each project as NLC self-execution and the user creates commercial
+// records through the real flows. These tests exercise the DOWNSTREAM registers
+// (RAR pipeline, VO approval, contracts list), so each builds its own
+// precondition through the provider first, exactly as a user would create it.
+// This makes them true integration tests rather than assertions about a fixture.
+// Walk a freshly-created (draft) RAR up to a target status through the real
+// transition actions, so the register shows the right stage and action button.
+const RAR_WALK: Record<string, string[]> = {
+  draft: [], submitted: ['submit'], verified: ['submit', 'verify'],
+  approved: ['submit', 'verify', 'approve'],
+  marked_payment: ['submit', 'verify', 'approve', 'mark_payment'],
+  paid: ['submit', 'verify', 'approve', 'mark_payment', 'pay'],
+};
+async function seedCommercial(projectId: string, opts: { rars?: number; rarStatuses?: string[]; variation?: boolean } = {}) {
+  const { LocalDataProvider } = await import('../../data/LocalDataProvider');
+  const p = new LocalDataProvider();
+  // Run the one-per-version seed reconciliation NOW (it purges cached entities
+  // for seeded projects and stamps the version), so the app's own boot later
+  // finds the version already set and leaves the records we seed below intact.
+  await p.listNodes();
+  const boq = await p.listBoq(projectId);
+  const first = boq[0];
+  const lineQty = Math.max(1, Math.floor(first.qty * 0.4));
+  const lineRate = Math.round(first.rate * 0.88);
+  const contract = await p.createSubletContract(projectId, {
+    title: 'Earthworks — Zone 1', kind: 'sublet',
+    subcontractor: { name: 'Husnain Cotex', trade: 'Earthworks', pecCategory: 'C-3' },
+    lines: [{ boqItemId: first.id, qty: lineQty, rate: lineRate }],
+  });
+  // Mirror the committed line as a sublet DISTRIBUTION for this contractor, so
+  // the Generate-RAR screen (which bills from distributed work) has eligible work.
+  await p.setDistribution(projectId, { boqItemId: first.id, projectId, mode: 'sublet', subcontractorId: contract.subcontractorId, allocatedQty: lineQty });
+  const rars: string[] = [];
+  const statuses = opts.rarStatuses ?? Array.from({ length: opts.rars ?? 0 }, () => 'submitted');
+  for (let i = 0; i < (opts.rars ?? statuses.length); i++) {
+    const gross = Math.round(first.qty * 0.1 * first.rate);
+    const rar = await p.createRar(projectId, {
+      period: `Month ${i + 1}`, subcontractorId: contract.subcontractorId, contractId: contract.id, gross,
+      lines: [{ boqItemId: first.id, qty: Math.floor(first.qty * 0.1), rate: Math.round(first.rate * 0.88), amount: gross }],
+    });
+    for (const action of RAR_WALK[statuses[i] ?? 'submitted'] ?? ['submit']) {
+      await p.transitionRar(projectId, rar.rarNo, action);
+    }
+    rars.push(rar.rarNo);
+  }
+  if (opts.variation) {
+    // VO-01 approved, VO-02 recommended (PD gate), VO-03 submitted — the mix the
+    // variation-register tests advance from.
+    const vo1 = await p.createVariation(projectId, { title: 'Additional culvert at major crossing', type: 'addition', amount: 5_000_000 });
+    for (const a of ['submit', 'recommend', 'approve']) await p.transitionVariation(projectId, vo1.voNo, a);
+    const vo2 = await p.createVariation(projectId, { title: 'Omission of secondary drain reach', type: 'omission', amount: -1_000_000 });
+    for (const a of ['submit', 'recommend']) await p.transitionVariation(projectId, vo2.voNo, a);
+    const vo3 = await p.createVariation(projectId, { title: 'Rate revision — bitumen escalation', type: 'rate_change', amount: 3_000_000 });
+    await p.transitionVariation(projectId, vo3.voNo, 'submit'); // draft → submitted
+  }
+  return { contract, rars };
+}
+
 describe('Phase 3 — Commercial tab', () => {
   it('deep-links to the commercial tab and shows the seeded BOQ', async () => {
     renderAt('/node/proj-f14f15/commercial');
@@ -84,6 +143,7 @@ describe('Phase 3 — Commercial tab', () => {
   });
 
   it('opens the RAR detail modal', async () => {
+    await seedCommercial('proj-f14f15', { rars: 1 });
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
     await screen.findByRole('heading', { name: 'Bill of Quantities' });
@@ -100,6 +160,7 @@ describe('Phase 3 — Commercial tab', () => {
   });
 
   it('allocates BOQ qty in the distribution planner and approves a contract', async () => {
+    await seedCommercial('proj-f14f15');
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
     await screen.findByText('BOQ lifecycle');
@@ -127,6 +188,7 @@ describe('Phase 3 — Commercial tab', () => {
   });
 
   it('records executed quantities in the execution tracker', async () => {
+    await seedCommercial('proj-f14f15');
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
     await screen.findByText('BOQ lifecycle');
@@ -217,6 +279,7 @@ describe('Phase 3 — Commercial tab', () => {
   });
 
   it('shows the three reconciliation views and auto-links RARs', async () => {
+    await seedCommercial('proj-f14f15', { rars: 1 });
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
     await screen.findByText('BOQ lifecycle');
@@ -247,19 +310,22 @@ describe('Phase 3 — Commercial tab', () => {
   });
 
   it('gates RAR steps by role — PM-only verify blocked, finance step allowed', async () => {
+    // RAR-01 submitted (needs PM to Verify); RAR-02 approved (needs FM to pay).
+    await seedCommercial('proj-f14f15', { rarStatuses: ['submitted', 'approved'] });
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
     await screen.findByText('BOQ lifecycle');
     await user.selectOptions(screen.getAllByLabelText('Switch acting role')[0], 'fm');
     await user.click(screen.getByRole('tab', { name: 'RAR Register' }));
     const table = await screen.findByRole('table', { name: 'RAR register' });
-    const r3 = within(table).getByText('RAR-03').closest('tr')! as HTMLElement; // submitted → Verify (PM)
-    expect(within(r3).getByRole('button', { name: 'Verify' })).toBeDisabled();
+    const r1 = within(table).getByText('RAR-01').closest('tr')! as HTMLElement; // submitted → Verify (PM)
+    expect(within(r1).getByRole('button', { name: 'Verify' })).toBeDisabled();
     const r2 = within(table).getByText('RAR-02').closest('tr')! as HTMLElement; // approved → Mark for payment (FM)
     expect(within(r2).getByRole('button', { name: 'Mark for payment' })).toBeEnabled();
   });
 
   it('gates variation approval to the Project Director', async () => {
+    await seedCommercial('proj-f14f15', { variation: true });
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
     await screen.findByText('BOQ lifecycle');
@@ -271,6 +337,7 @@ describe('Phase 3 — Commercial tab', () => {
   });
 
   it('shows the contracts register with unique contract numbers', async () => {
+    await seedCommercial('proj-f14f15');
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
     await screen.findByText('BOQ lifecycle');
@@ -342,6 +409,7 @@ describe('Phase 3 — Commercial tab', () => {
   });
 
   it('shows the variations register and revises the contract value on approval', async () => {
+    await seedCommercial('proj-f14f15', { variation: true });
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
     await screen.findByText('BOQ lifecycle');
@@ -458,17 +526,19 @@ describe('Phase 3 #11/#12 — RAR, subs, recovery, EPC, advances, distributions,
   }
 
   it('generates a RAR for a contractor from distributed work', async () => {
+    const { contract } = await seedCommercial('proj-f14f15');
     const user = await gotoSub('Generate RAR');
     expect(await screen.findByRole('heading', { name: 'Generate Running Account Receipt (RAR)' })).toBeInTheDocument();
     expect(screen.getByText('Select a contractor to begin')).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('Select contract'), 'ctr-proj-f14f15-1');
+    await user.selectOptions(screen.getByLabelText('Select contract'), contract.id);
     const table = await screen.findByRole('table', { name: 'Generate RAR' });
-    await user.click(within(table).getByLabelText('Select 1-01'));
+    await user.click(within(table).getAllByRole('checkbox')[0]);
     await user.click(screen.getByRole('button', { name: 'Generate RAR' }));
     expect(await screen.findByText(/generated/)).toBeInTheDocument();
   });
 
-  it('shows the seeded RAR register with subcontractor names', async () => {
+  it('shows a created RAR in the register with its subcontractor name', async () => {
+    await seedCommercial('proj-f14f15', { rars: 1 });
     await gotoSub('RAR Register');
     const table = await screen.findByRole('table', { name: 'RAR register' });
     expect(within(table).getByText('RAR-01')).toBeInTheDocument();
@@ -476,9 +546,10 @@ describe('Phase 3 #11/#12 — RAR, subs, recovery, EPC, advances, distributions,
   });
 
   it('advances a RAR through its pipeline', async () => {
+    await seedCommercial('proj-f14f15', { rars: 1 }); // RAR-01, submitted
     const user = await gotoSub('RAR Register');
     const table = await screen.findByRole('table', { name: 'RAR register' });
-    const row = within(table).getByText('RAR-03').closest('tr')! as HTMLElement; // submitted -> verify
+    const row = within(table).getByText('RAR-01').closest('tr')! as HTMLElement; // submitted -> verify
     await user.click(within(row).getByRole('button', { name: 'Verify' }));
     await waitFor(() => expect(within(row).getByText('Verified')).toBeInTheDocument());
   });

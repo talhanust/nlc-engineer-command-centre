@@ -1,8 +1,8 @@
-import type { BoqItem, Distribution, ProgressUpdate, Ipc, IpcLine, Rar, RarLine, RarRecovery, Variation, BankGuarantee, Subcontractor, ScheduleActivity, Resource, OverheadLine, FinancialReceipt, FinancialPayment, FinancialLiability, Supplier, Demand, Salient, ProductionRun, MaterialIssue, MachineryUsage, BoqMaterialLink, MaterialMaster, InventoryItem, PolRecord, FixedAsset, Contract } from '../types';
+import type { BoqItem, Distribution, ProgressUpdate, Ipc, IpcLine, Rar, Variation, BankGuarantee, Subcontractor, ScheduleActivity, Resource, OverheadLine, FinancialReceipt, FinancialPayment, FinancialLiability, Supplier, Demand, Salient, ProductionRun, MaterialIssue, MachineryUsage, BoqMaterialLink, MaterialMaster, InventoryItem, PolRecord, FixedAsset, Contract } from '../types';
 import type { EscalationComponent } from '../../domain/escalation';
 import { DEFAULT_PBS_COMPONENTS } from '../../domain/escalation';
 import { computeNet } from '../../domain/ipc';
-import { BILLS, SUB_PROFILES, SUB_NAMES, RESOURCE_POOL, OVERHEAD_CATEGORIES } from './catalog';
+import { BILLS, RESOURCE_POOL, OVERHEAD_CATEGORIES } from './catalog';
 
 export interface SeedProfile {
   id: string;
@@ -87,22 +87,17 @@ function build(profile: SeedProfile): GeneratedSeed {
   }
 
   // --- Subcontractors ------------------------------------------------------
-  const subs: Subcontractor[] = SUB_PROFILES.map((sp, i) => ({
-    id: `sub-${pid}-${i + 1}`, projectId: pid, name: SUB_NAMES[(Math.floor(r() * 1000) + i) % SUB_NAMES.length],
-    trade: sp.trade, kind: sp.kind, pecCategory: sp.pec, enlistment: `NLC/EN/${String(100 + i).padStart(3, '0')}`,
-    performanceSecurity: round(profile.cv * 0.002 * (1 + r())),
-  }));
-  const subForBill = (billNo: string) => subs.find((_, i) => SUB_PROFILES[i].bills.includes(billNo));
+  // Contractors, sublet contracts and variation orders are no longer seeded:
+  // they are created by the user through the Sublet-contract interface. Every
+  // register that hangs off a subcontractor (RARs, sub bank-guarantees, sub
+  // material issues) therefore starts empty too — a dangling RAR with no
+  // contractor would be worse than none.
+  const subs: Subcontractor[] = [];
 
-  // --- Distributions: bills with a matching sub are sublet, else self ------
-  const distributions: Distribution[] = boq.map((item) => {
-    const sub = subForBill(item.billNo);
-    const sublet = !!sub && r() < 0.8; // most matched bills are sublet
-    return {
-      boqItemId: item.id, projectId: pid,
-      mode: sublet ? 'sublet' : 'self', subcontractorId: sublet ? sub!.id : undefined, allocatedQty: item.qty,
-    };
-  });
+  // --- Distributions: everything starts as NLC self-execution --------------
+  const distributions: Distribution[] = boq.map((item) => ({
+    boqItemId: item.id, projectId: pid, mode: 'self' as const, subcontractorId: undefined, allocatedQty: item.qty,
+  }));
 
   // --- Progress: executed ≈ actual% of qty, with mild per-item jitter ------
   const frac = profile.actualPct / 100;
@@ -140,66 +135,22 @@ function build(profile: SeedProfile): GeneratedSeed {
     });
   }
 
-  // --- Contracts (one package per sublet subcontractor) --------------------
+  // --- Contracts -----------------------------------------------------------
   const contracts: Contract[] = [];
-  subs.forEach((sub, idx) => {
-    const sp = SUB_PROFILES[idx];
-    if (!sp || sp.kind !== 'sublet') return;
-    const subItems = boq.filter((it) => distributions.find((d) => d.boqItemId === it.id)?.subcontractorId === sub.id);
-    const value = subItems.reduce((s, it) => s + Math.round(it.amount * 0.88), 0);
-    if (value <= 0) return;
-    const seq = contracts.length + 1;
-    contracts.push({
-      id: `ctr-${pid}-${seq}`, projectId: pid, contractNo: `NLC/${pid.replace('proj-', '').toUpperCase()}/SC-${String(seq).padStart(2, '0')}`,
-      title: `${sp.trade} package`, subcontractorId: sub.id, scopeBills: sp.bills, value, awardDate: addMonths(profile.start, 1),
-      status: seq === 1 ? 'in_progress' : 'awarded',
-    });
-  });
-  const contractOf = (subId: string) => contracts.find((c) => c.subcontractorId === subId)?.id;
+  const contractOf = (_subId: string): string | undefined => undefined;
 
-  // --- RARs (subcontractor billing) with itemwise lines --------------------
+  // --- RARs (subcontractor billing) ----------------------------------------
+  // No subcontractors seeded → no RARs. Created via the contract + RAR flow.
   const rars: Rar[] = [];
-  const subletItems = boq.filter((it) => distributions.find((d) => d.boqItemId === it.id)?.mode === 'sublet');
-  const rarStatuses: Rar['status'][] = ['paid', 'approved', 'submitted', 'verified'];
-  let rarSeq = 0;
-  subs.filter((s) => SUB_PROFILES[subs.indexOf(s)]?.kind === 'sublet').forEach((sub) => {
-    const items = subletItems.filter((it) => distributions.find((d) => d.boqItemId === it.id)?.subcontractorId === sub.id);
-    if (items.length === 0) return;
-    rarSeq++;
-    const lines: RarLine[] = items.slice(0, 6).map((it) => {
-      const exec = executedOf.get(it.id) ?? 0;
-      const qty = Math.max(1, round(exec * (0.4 + 0.3 * r())));
-      // sublet rate ~88% of BoQ rate (NLC margin)
-      const rate = round(it.rate * 0.88);
-      return { boqItemId: it.id, qty, rate, amount: money(qty, rate) };
-    });
-    const gross = lines.reduce((s, l) => s + l.amount, 0);
-    // Recoveries: NLC-issued material consumed (+ machinery on alternate RARs). Sublet only.
-    const recoveries: RarRecovery[] = [
-      { id: `rec-${pid}-${rarSeq}-mat`, kind: 'material', description: 'NLC-issued cement & steel consumed', amount: round(gross * 0.10 * (0.8 + 0.4 * r())) },
-    ];
-    if (rarSeq % 2 === 1) recoveries.push({ id: `rec-${pid}-${rarSeq}-mch`, kind: 'machinery', description: 'NLC excavator & roller hire', amount: round(gross * 0.03) });
-    const recoveryTotal = recoveries.reduce((s, x) => s + x.amount, 0);
-    // net = gross − contract retention (5%) − RAR income tax (7%) − recoveries
-    const netPayable = computeNet(gross, { retentionPct: 5, incomeTaxPct: 7, gstPct: 0 }) - recoveryTotal;
-    rars.push({
-      id: `rar-${pid}-${rarSeq}`, projectId: pid, rarNo: `RAR-${String(rarSeq).padStart(2, '0')}`, seq: rarSeq,
-      period: monthLabel(addMonths(profile.start, 4 + rarSeq)), date: addMonths(profile.start, 4 + rarSeq),
-      status: rarStatuses[(rarSeq - 1) % rarStatuses.length], subcontractorId: sub.id, contractId: contractOf(sub.id), gross, netPayable, lines, recoveries,
-    });
-  });
+  void contractOf;
 
   // --- Variations ----------------------------------------------------------
-  const variations: Variation[] = [
-    { id: `vo-${pid}-1`, projectId: pid, voNo: 'VO-01', seq: 1, title: 'Additional culvert at major crossing', type: 'addition', amount: round(profile.cv * 0.009), status: 'approved', date: addMonths(profile.start, 6) },
-    { id: `vo-${pid}-2`, projectId: pid, voNo: 'VO-02', seq: 2, title: 'Omission of secondary drain reach', type: 'omission', amount: -round(profile.cv * 0.002), status: 'recommended', date: addMonths(profile.start, 8) },
-    { id: `vo-${pid}-3`, projectId: pid, voNo: 'VO-03', seq: 3, title: 'Rate revision — bitumen escalation', type: 'rate_change', amount: round(profile.cv * 0.005), status: 'submitted', date: addMonths(profile.start, 9) },
-  ];
+  // Variation orders are user-created, not seeded.
+  const variations: Variation[] = [];
 
   // --- Bank guarantees -----------------------------------------------------
   const bgs: BankGuarantee[] = [
     { id: `bg-${pid}-1`, projectId: pid, kind: 'mob', party: 'client', bgNo: `BG/MOB/${pid.slice(-4)}`, bank: 'National Bank of Pakistan', amount: round(profile.cv * 0.10), issued: profile.start, expires: addMonths(profile.start, 18), status: 'active' },
-    { id: `bg-${pid}-2`, projectId: pid, kind: 'secure', party: 'sub', subcontractorId: subs[0]?.id, bgNo: `BG/SEC/${pid.slice(-4)}`, bank: 'Habib Bank Ltd', amount: round(profile.cv * 0.05), issued: addMonths(profile.start, 1), expires: addMonths(profile.start, 14), status: 'active' },
   ];
 
   // --- Escalation indices (PBS basket) -------------------------------------
@@ -295,15 +246,15 @@ function build(profile: SeedProfile): GeneratedSeed {
 
   // --- Material issues (with recovery linkage) -----------------------------
   const issues: MaterialIssue[] = [
-    { id: `iss-${pid}-1`, projectId: pid, dated: addMonths(profile.start, 6), materialCode: 'M-CEM', qty: round(6000 * scale), issuedTo: 'Bill 2 — Culverts', contractorId: subs[2]?.id, rate: 1250, recovered: round(6000 * scale * 1250 * 0.4) },
-    { id: `iss-${pid}-2`, projectId: pid, dated: addMonths(profile.start, 7), materialCode: 'M-STL', qty: round(45000 * scale), issuedTo: 'Bill 4 — Storm water drain', contractorId: subs[3]?.id, rate: 245, recovered: round(45000 * scale * 245 * 0.3) },
+    { id: `iss-${pid}-1`, projectId: pid, dated: addMonths(profile.start, 6), materialCode: 'M-CEM', qty: round(6000 * scale), issuedTo: 'Bill 2 — Culverts', rate: 1250, recovered: round(6000 * scale * 1250 * 0.4) },
+    { id: `iss-${pid}-2`, projectId: pid, dated: addMonths(profile.start, 7), materialCode: 'M-STL', qty: round(45000 * scale), issuedTo: 'Bill 4 — Storm water drain', rate: 245, recovered: round(45000 * scale * 245 * 0.3) },
     { id: `iss-${pid}-3`, projectId: pid, dated: addMonths(profile.start, 8), materialCode: 'M-BIT', qty: round(80000 * scale), issuedTo: 'Bill 1 — Surfacing', rate: 285 },
   ];
 
   // --- Machinery usage (NLC plant hired to contractors, recovery linkage) --
   const machinery: MachineryUsage[] = [
-    { id: `mu-${pid}-1`, projectId: pid, dated: addMonths(profile.start, 5), machineryCode: 'EXC-320', description: 'Excavator CAT 320 (hire)', hours: round(420 * scale), rate: 6500, contractorId: subs[2]?.id, recovered: round(420 * scale * 6500 * 0.35) },
-    { id: `mu-${pid}-2`, projectId: pid, dated: addMonths(profile.start, 7), machineryCode: 'RLR-12T', description: '12T vibratory roller (hire)', hours: round(260 * scale), rate: 4200, contractorId: subs[3]?.id, recovered: 0 },
+    { id: `mu-${pid}-1`, projectId: pid, dated: addMonths(profile.start, 5), machineryCode: 'EXC-320', description: 'Excavator CAT 320 (hire)', hours: round(420 * scale), rate: 6500, recovered: round(420 * scale * 6500 * 0.35) },
+    { id: `mu-${pid}-2`, projectId: pid, dated: addMonths(profile.start, 7), machineryCode: 'RLR-12T', description: '12T vibratory roller (hire)', hours: round(260 * scale), rate: 4200, recovered: 0 },
     // Overhead-class running (booked to Overheads, not direct cost — spec §6):
     { id: `mu-${pid}-3`, projectId: pid, dated: addMonths(profile.start, 6), machineryCode: 'VEH-PK01', description: 'Project pickup (light vehicle)', hours: round(900 * scale), rate: 350, recovered: 0 },
     { id: `mu-${pid}-4`, projectId: pid, dated: addMonths(profile.start, 6), machineryCode: 'GEN-100', description: '100 kVA site generator', hours: round(1200 * scale), rate: 220, recovered: 0 },

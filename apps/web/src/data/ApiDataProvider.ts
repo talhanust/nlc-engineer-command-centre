@@ -257,6 +257,12 @@ export class ApiDataProvider implements DataProvider {
   async createContract(projectId: string, input: { title: string; subcontractorId: string; scopeBills: string[]; value: number; awardDate?: string; retentionPct?: number }): Promise<Contract> {
     return this.send<Contract>(`/api/projects/${projectId}/contracts`, 'POST', input);
   }
+  async createSubletContract(projectId: string, input: Parameters<DataProvider['createSubletContract']>[1]): Promise<Contract> {
+    return this.send<Contract>(`/api/projects/${projectId}/contracts/sublet`, 'POST', input);
+  }
+  async updateContractLines(projectId: string, contractId: string, lines: import('./types').ContractLine[]): Promise<Contract> {
+    return this.send<Contract>(`/api/projects/${projectId}/contracts/${contractId}/lines`, 'PUT', { lines });
+  }
   async setContractStatus(projectId: string, contractId: string, status: ContractStatus): Promise<void> {
     await this.send(`/api/projects/${projectId}/contracts/${contractId}/status`, 'POST', { status });
   }

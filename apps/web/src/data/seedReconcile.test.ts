@@ -43,7 +43,7 @@ describe('seed reconcile', () => {
     const pid = 'proj-dha-ph8';
     expect((await p.listBoq(pid)).length).toBeGreaterThan(40);
     expect((await p.listIpcs(pid)).every((i) => (i.lines?.length ?? 0) > 0)).toBe(true);
-    expect((await p.listDistributions(pid)).some((d) => d.mode === 'sublet')).toBe(true);
+    expect((await p.listDistributions(pid)).every((d) => d.mode === 'self')).toBe(true);
     expect((await p.listResources(pid)).length).toBeGreaterThan(0);
     expect((await p.listOverheads(pid)).length).toBeGreaterThan(0);
   });
@@ -62,9 +62,9 @@ describe('seed reconcile', () => {
     expect((await p.listInventory(pid)).length).toBeGreaterThan(0);
     expect((await p.listPol(pid)).length).toBeGreaterThan(0);
     expect((await p.listFixedAssets(pid)).length).toBeGreaterThan(0);
-    const contracts = await p.listContracts(pid);
-    expect(contracts.length).toBeGreaterThan(0);
-    const rars = await p.listRars(pid);
-    expect(rars.every((r) => contracts.some((c) => c.id === r.contractId))).toBe(true);
+    // Contracts and RARs are no longer seeded — they start empty and are created
+    // through the sublet-contract and RAR flows.
+    expect(await p.listContracts(pid)).toHaveLength(0);
+    expect(await p.listRars(pid)).toHaveLength(0);
   });
 });

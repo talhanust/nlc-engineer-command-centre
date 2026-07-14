@@ -784,6 +784,64 @@ export class LocalDataProvider implements DataProvider {
     audit(projectId, 'create', 'Contract', c.contractNo, `PKR ${Math.round(c.value).toLocaleString('en-PK')} · retention ${c.retentionPct}%`);
     return c;
   }
+  async createSubletContract(projectId: string, input: {
+    title: string;
+    kind: import('./types').ContractKind;
+    subcontractorId?: string;
+    subcontractor?: { name: string; trade: string; kind?: 'labor' | 'sublet' | 'epc'; owner?: string; cnic?: string; pecCategory?: string; contact?: string };
+    lines: import('./types').ContractLine[];
+    awardDate?: string;
+    retentionPct?: number;
+  }): Promise<Contract> {
+    // Create the subcontractor if the caller gave details instead of an id.
+    let subcontractorId = input.subcontractorId;
+    if (!subcontractorId && input.subcontractor) {
+      const sub = await this.addSubcontractor(projectId, { name: input.subcontractor.name, trade: input.subcontractor.trade });
+      await this.updateSubcontractor(projectId, sub.id, {
+        kind: input.subcontractor.kind ?? input.kind, owner: input.subcontractor.owner, cnic: input.subcontractor.cnic,
+        pecCategory: input.subcontractor.pecCategory, contact: input.subcontractor.contact,
+      });
+      subcontractorId = sub.id;
+    }
+    if (!subcontractorId) throw new Error('A subcontractor is required.');
+
+    const lines = input.lines.filter((l) => l.qty > 0 && l.rate >= 0);
+    if (lines.length === 0) throw new Error('A contract needs at least one BOQ line.');
+    const value = lines.reduce((t, l) => t + l.qty * l.rate, 0);
+
+    const all = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? [])));
+    const seq = all.reduce((m, c) => Math.max(m, Number(c.contractNo.split('-').pop()) || 0), 0) + 1;
+    const scopeBills = [...new Set(lines.map((l) => {
+      const item = readJson<import('./types').BoqItem[]>(boqKey(projectId), () => ((gen(projectId)?.boq ?? []))).find((i) => i.id === l.boqItemId);
+      return item?.billNo ?? '';
+    }).filter(Boolean))];
+    const c: Contract = {
+      id: `ctr-${projectId}-${seq}`, projectId,
+      contractNo: `NLC/${projectId.replace('proj-', '').toUpperCase()}/${input.kind === 'labor' ? 'LC' : 'SC'}-${String(seq).padStart(2, '0')}`,
+      title: sanitize(input.title), subcontractorId, scopeBills, lines, kind: input.kind, value,
+      // Locked-on-creation-but-editable: a draft's lines already lock in the
+      // planner (they show as committed), and approval later freezes them.
+      awardDate: input.awardDate, status: input.awardDate ? 'awarded' : 'draft',
+      retentionPct: input.retentionPct ?? DEFAULT_CONTRACT_RETENTION_PCT,
+    };
+    all.push(c);
+    writeJson(contractsRegKey(projectId), all);
+    audit(projectId, 'create', 'Contract', c.contractNo, `${lines.length} lines · PKR ${Math.round(value).toLocaleString('en-PK')}`);
+    return c;
+  }
+  async updateContractLines(projectId: string, contractId: string, lines: import('./types').ContractLine[]): Promise<Contract> {
+    const all = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? [])));
+    const c = all.find((x) => x.id === contractId);
+    if (!c) throw new Error('Contract not found.');
+    // Once a contract is awarded/in-progress its lines are frozen — variations,
+    // not silent edits, change committed quantities.
+    if (c.status !== 'draft') throw new Error('Only a draft contract can have its lines edited.');
+    c.lines = lines.filter((l) => l.qty > 0 && l.rate >= 0);
+    c.value = c.lines.reduce((t, l) => t + l.qty * l.rate, 0);
+    writeJson(contractsRegKey(projectId), all);
+    audit(projectId, 'update', 'Contract', c.contractNo, `${c.lines.length} lines · PKR ${Math.round(c.value).toLocaleString('en-PK')}`);
+    return c;
+  }
   async setContractStatus(projectId: string, contractId: string, status: Contract['status']): Promise<void> {
     const all = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? [])));
     const c = all.find((x) => x.id === contractId);
@@ -860,7 +918,10 @@ export class LocalDataProvider implements DataProvider {
     return readJson(distKey(projectId), () => ((gen(projectId)?.distributions ?? [])));
   }
   async setDistribution(projectId: string, dist: Distribution): Promise<Distribution> {
-    const all = readJson<Distribution[]>(distKey(projectId), () => []);
+    // Seed from the generator (as listDistributions does), NOT from []. Reading
+    // with an empty fallback here would drop the whole seeded distribution set the
+    // first time a distribution is edited before the list was ever loaded.
+    const all = readJson<Distribution[]>(distKey(projectId), () => ((gen(projectId)?.distributions ?? [])));
     const prev = all.find((d) => d.boqItemId === dist.boqItemId);
     // Distribution freeze (spec §4): block changes to quantity locked by an awarded contract.
     const [items, contracts] = await Promise.all([this.listBoq(projectId), this.listContracts(projectId)]);
@@ -2401,7 +2462,7 @@ const ENTITY_KEYS = [
 // pick up newly-seeded projects and nodes without losing user-created data.
 // v12 (clean-slate): the delivered app ships no demo portfolio, so this upgrade
 // also PURGES any previously-seeded demo projects from an existing store.
-const SEED_VERSION = '2026-07-08.v12-clean-slate';
+const SEED_VERSION = '2026-07-10.v13-no-contract-seeds';
 
 /** Merge any newly-seeded projects/nodes into an already-persisted store and
  *  backfill date/coordinate fields on seeded projects. Runs once per version. */

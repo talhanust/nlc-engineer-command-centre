@@ -209,6 +209,17 @@ export interface Variation {
 
 export type ContractStatus = 'draft' | 'awarded' | 'in_progress' | 'completed' | 'closed';
 /** A subcontract package with a unique number; RARs bill against a contract. */
+/** One line of a sublet/labor contract's own BOQ: an agreed quantity of a main
+ *  BOQ item at the subcontractor's rate. Σ(qty×rate) is the contract value, and
+ *  each line's qty is what LOCKS in the distribution planner. */
+export interface ContractLine {
+  boqItemId: string;
+  qty: number;
+  rate: number;
+}
+
+export type ContractKind = 'sublet' | 'labor';
+
 export interface Contract {
   id: string;
   projectId: string;
@@ -216,6 +227,10 @@ export interface Contract {
   title: string;
   subcontractorId: string;
   scopeBills: string[];
+  /** The subcontractor's BOQ. Present on contracts created via the sublet flow;
+   *  absent on legacy/scope-only contracts, which fall back to scopeBills. */
+  lines?: ContractLine[];
+  kind?: ContractKind;
   value: number;
   awardDate?: string;
   completionDate?: string;
@@ -1083,6 +1098,19 @@ export interface DataProvider {
   transitionVariation(projectId: string, voNo: string, action: string): Promise<Variation>;
   listContracts(projectId: string): Promise<Contract[]>;
   createContract(projectId: string, input: { title: string; subcontractorId: string; scopeBills: string[]; value: number; awardDate?: string; retentionPct?: number }): Promise<Contract>;
+  /** Create a sublet/labor contract from a subcontractor BOQ. Creates the
+   *  subcontractor when `subcontractor` is given instead of `subcontractorId`,
+   *  writes the contract lines, and seeds planner allocations from them. */
+  createSubletContract(projectId: string, input: {
+    title: string;
+    kind: ContractKind;
+    subcontractorId?: string;
+    subcontractor?: { name: string; trade: string; kind?: 'labor' | 'sublet' | 'epc'; owner?: string; cnic?: string; pecCategory?: string; contact?: string };
+    lines: ContractLine[];
+    awardDate?: string;
+    retentionPct?: number;
+  }): Promise<Contract>;
+  updateContractLines(projectId: string, contractId: string, lines: ContractLine[]): Promise<Contract>;
   setContractStatus(projectId: string, contractId: string, status: ContractStatus): Promise<void>;
   setContractRetention(projectId: string, contractId: string, retentionPct: number): Promise<void>;
   getCommercialConfig(projectId: string): Promise<CommercialConfig>;

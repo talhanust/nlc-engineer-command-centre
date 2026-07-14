@@ -21,9 +21,16 @@ describe('commercial config & retention/tax', () => {
     expect(await p.getCommercialConfig(F)).toEqual(saved);
   });
 
+  async function seedContract() {
+    const boq = await p.listBoq(F);
+    return p.createSubletContract(F, {
+      title: 'Cfg contract', kind: 'sublet', subcontractor: { name: 'Cfg Co', trade: 'Earthworks' },
+      lines: [{ boqItemId: boq[0].id, qty: 100, rate: 90 }],
+    });
+  }
+
   it('caps subcontractor retention at 5% of contract value', async () => {
-    const contracts = await p.listContracts(F);
-    const c = contracts[0];
+    const c = await seedContract();
     await p.setContractRetention(F, c.id, 12); // request 12%
     const after = (await p.listContracts(F)).find((x) => x.id === c.id)!;
     expect(after.retentionPct).toBe(5); // capped
@@ -31,11 +38,9 @@ describe('commercial config & retention/tax', () => {
 
   it('applies contract retention + project taxes to a generated RAR net', async () => {
     await p.setCommercialConfig(F, { ipcRetentionPct: 10, incomeTaxPct: 7, gstPct: 0, rarIncomeTaxPct: 7, rarGstPct: 1 });
-    const contracts = await p.listContracts(F);
-    const c = contracts[0];
+    const c = await seedContract();
     await p.setContractRetention(F, c.id, 4);
-    const subs = await p.listSubcontractors(F);
-    const rar = await p.createRar(F, { period: 'Jun-2026', subcontractorId: subs[0].id, contractId: c.id, gross: 1_000_000 });
+    const rar = await p.createRar(F, { period: 'Jun-2026', subcontractorId: c.subcontractorId, contractId: c.id, gross: 1_000_000 });
     // 1,000,000 − 4% retention − 7% income tax − 1% gst = 880,000
     expect(Math.round(rar.netPayable)).toBe(880_000);
   });

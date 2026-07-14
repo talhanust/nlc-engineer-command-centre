@@ -16,7 +16,16 @@ describe('RAR recoveries-first gate', () => {
   beforeEach(() => { localStorage.clear(); p = new LocalDataProvider(); });
 
   it('blocks the FM pay step until due recoveries are netted', async () => {
-    // seeded RAR-02 on the flagship; give its subcontractor an outstanding advance
+    // Create a contract + RAR, then give its subcontractor an outstanding advance.
+    const boq = await p.listBoq('proj-f14f15');
+    const c = await p.createSubletContract('proj-f14f15', {
+      title: 'T', kind: 'sublet', subcontractor: { name: 'Netting Co', trade: 'Earthworks' },
+      lines: [{ boqItemId: boq[0].id, qty: 100, rate: 90 }],
+    });
+    await p.createRar('proj-f14f15', {
+      period: 'M1', subcontractorId: c.subcontractorId, contractId: c.id, gross: 5_000_000,
+      lines: [{ boqItemId: boq[0].id, qty: 100, rate: 90, amount: 9000 }],
+    });
     const rars = await p.listRars('proj-f14f15');
     const rar = rars[0];
     await p.addAdvance('proj-f14f15', {

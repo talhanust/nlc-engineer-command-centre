@@ -2110,3 +2110,36 @@ NLC Engineer Command Centre — work journal
   actions/setup-node bumped v4 → v5 (v4 runs on the now-deprecated Node 20 runtime)
   across ci.yml and pages.yml. node-version: 20 (the APP target) left as-is.
   Web 687 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-14 (b) — v14: purge stale seeds from USER-CREATED projects
+- REPORT: deployed site still showed 3 contractors (FWO, Sardar & Sons, Reliable
+  Construction), 3 contracts NLC/F14F15/SC-01..03, RARs (Rs 5,350 Mn booked) and
+  VOs on proj-extension-of-margalla-ro (P0295). "RAR seeds shall also be removed."
+- DIAGNOSIS: the code was already correct. Verified by scanning all 20 seeded
+  projects: zero contractors/contracts/RARs/VOs generated. gen() returns null for
+  any project not in SEED_PROFILES, so user-created projects get NO generated seed.
+  The names in the screenshots live in data/seed/catalog.ts as unused catalog
+  constants (SUB_PROFILES/SUB_NAMES) that commercialSeed.ts no longer imports.
+  proj-extension-of-margalla-ro is USER-CREATED (the seeded one is
+  proj-margalla-rd). The records were OLD-SEED RESIDUE persisted in the browser
+  localStorage by a PREVIOUS build — and reconcileSeed only purged
+  Object.keys(SEED_PROFILES) + LEGACY_SEED_IDS, deliberately skipping user-created
+  projects to protect user data. So the residue survived every upgrade.
+- FIX (v14 migration): after the seeded-project purge, sweep the commercial spine
+  (subs, contractsreg, rars, rarlinks, variations) from EVERY persisted project
+  that is not a seeded one, and reset any non-self distribution back to
+  mode:self/subcontractorId:undefined (rewriting only the mode, so a user BOQ or
+  allocation edit is preserved). SEED_VERSION → 2026-07-14.v14-purge-user-project-
+  contract-seeds.
+- SAFETY: this runs exactly ONCE, at a version that postdates BOTH the seed
+  removal AND the sublet-creation feature — so any spine data present at that
+  instant is old-seed residue by definition (a user could not have created a
+  contract through the new flow before the version existed). The version is
+  stamped afterwards, so it never runs again and genuinely user-created contracts
+  are untouched. The user PROJECT itself is never deleted.
+- Tests: data/seedMigrationV14.test.ts (4) — clears the spine from a user project;
+  resets stale sublet dists to self; keeps the project row; and proves a contract
+  created AFTER the migration survives a reload (the migration does not re-run).
+  Reproduced the reported store exactly (3 subs / 3 contracts / RAR / VO on P0295)
+  → all zero after boot, project intact.
+  Web 691 passing (99 files), server 9; typecheck clean; local + api builds green.

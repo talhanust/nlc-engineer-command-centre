@@ -2462,7 +2462,7 @@ const ENTITY_KEYS = [
 // pick up newly-seeded projects and nodes without losing user-created data.
 // v12 (clean-slate): the delivered app ships no demo portfolio, so this upgrade
 // also PURGES any previously-seeded demo projects from an existing store.
-const SEED_VERSION = '2026-07-10.v13-no-contract-seeds';
+const SEED_VERSION = '2026-07-14.v14-purge-user-project-contract-seeds';
 
 /** Merge any newly-seeded projects/nodes into an already-persisted store and
  *  backfill date/coordinate fields on seeded projects. Runs once per version. */
@@ -2547,6 +2547,34 @@ function reconcileSeed(): void {
       }
       if (synced) writeJson(projectsKey, proj2);
     } catch { /* ignore */ }
+
+    // One-time migration (v14): earlier builds seeded contractors, sublet
+    // contracts, RARs and variations into EVERY project the user opened — including
+    // projects the user created themselves, which the seeded-purge above skips.
+    // Now that this commercial spine is user-created (never seeded), that old
+    // residue must be swept from user projects too, or a stale contract survives
+    // forever in a browser's localStorage. This runs exactly once, at the version
+    // bump that postdates BOTH the seed removal AND the sublet-creation feature, so
+    // any spine data present now is old-seed residue by definition — a user could
+    // not have created a contract through the new flow before this version existed.
+    // After the version is stamped below it never runs again, so genuinely
+    // user-created contracts created on this build onward are untouched.
+    try {
+      const COMMERCIAL_SPINE_KEYS = ['subs', 'contractsreg', 'rars', 'rarlinks', 'variations'];
+      const allProjects = readJson<Project[]>(projectsKey, () => []);
+      for (const pr of allProjects) {
+        if (SEED_PROFILES[pr.id]) continue; // seeded projects already cleared above
+        for (const k of COMMERCIAL_SPINE_KEYS) store.removeItem(`nlc-ecc.${k}.${pr.id}`);
+        // Reset any distributions the old seed marked sublet back to self-execution,
+        // preserving a user's own BOQ/allocation edits by only rewriting mode.
+        const distKeyId = `nlc-ecc.dists.${pr.id}`;
+        const dists = readJson<Distribution[]>(distKeyId, () => []);
+        if (dists.some((d) => d.mode !== 'self' || d.subcontractorId)) {
+          writeJson(distKeyId, dists.map((d) => ({ ...d, mode: 'self' as const, subcontractorId: undefined })));
+        }
+      }
+    } catch { /* ignore */ }
+
 
     writeJson(seedVersionKey, SEED_VERSION);
   } catch { /* ignore */ }

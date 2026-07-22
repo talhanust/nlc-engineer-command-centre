@@ -58,11 +58,16 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
   const lines: ContractLine[] = rows
     .map((r) => ({ boqItemId: r.boqItemId, qty: num(r.qty), rate: num(r.rate) }))
     .filter((l) => l.boqItemId && l.qty > 0);
-  const value = contractValue(lines);
+  // A line without a sublet rate is incomplete, not free: it is excluded from the
+  // value and the margin (counting it would read as 100% margin) and it blocks
+  // creation until priced.
+  const pricedLines = lines.filter((l) => l.rate > 0);
+  const unpriced = lines.length - pricedLines.length;
+  const value = contractValue(pricedLines);
   const issues = useMemo(() => contractLineIssues(lines, items, contracts), [lines, items, contracts]);
   // Margin is worked out against the ORIGINAL BOQ: the sublet BOQ is only what we
   // pay, the project's own rate is what we earn.
-  const margin = useMemo(() => contractMargin(lines, items), [lines, items]);
+  const margin = useMemo(() => contractMargin(pricedLines, items), [pricedLines, items]);
 
   async function onUpload(file: File) {
     setError(''); setImportNote('');
@@ -101,9 +106,9 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
 
       const res = matchSubletRows(uploaded, items);
       if (res.matched.length === 0) { setError('No rows matched a BOQ item. Check the code (and bill) columns against the project BOQ.'); return; }
+      // A missing rate stays EMPTY — never backfilled from the client rate.
       setRows(res.matched.map((m) => ({
-        boqItemId: m.boqItemId, qty: String(m.qty),
-        rate: String(m.rate || itemById.get(m.boqItemId)?.rate || 0),
+        boqItemId: m.boqItemId, qty: String(m.qty), rate: m.rate > 0 ? String(m.rate) : '',
       })));
 
       // Report honestly: an ambiguous code is NOT guessed at, it is reported, because
@@ -127,15 +132,16 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
   function setRow(i: number, patch: Partial<Draft>) {
     setRows((r) => r.map((row, j) => {
       if (j !== i) return row;
-      const next = { ...row, ...patch };
-      // Default the rate to the BOQ rate when an item is first chosen.
-      if (patch.boqItemId && !row.rate) next.rate = String(itemById.get(patch.boqItemId)?.rate ?? '');
-      return next;
+      // The rate here is what the SUBCONTRACTOR is paid. It is never defaulted from
+      // the BOQ (client) rate: pre-filling it would silently produce a contract that
+      // pays away the whole client rate — zero margin — while looking like a
+      // deliberately negotiated figure. It must be entered or uploaded.
+      return { ...row, ...patch };
     }));
   }
   function removeRow(i: number) { setRows((r) => r.filter((_, j) => j !== i)); }
 
-  const canSubmit = lines.length > 0 && title.trim() && (existingSubId || name.trim()) && (issues.length === 0 || ackOverlap);
+  const canSubmit = pricedLines.length > 0 && unpriced === 0 && title.trim() && (existingSubId || name.trim()) && (issues.length === 0 || ackOverlap);
 
   async function create() {
     setBusy(true); setError('');
@@ -145,7 +151,7 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
         kind,
         subcontractorId: existingSubId || undefined,
         subcontractor: existingSubId ? undefined : { name: name.trim(), trade: trade.trim() || 'General', kind, owner: owner.trim() || undefined, cnic: cnic.trim() || undefined, pecCategory: pec.trim() || undefined, contact: contact.trim() || undefined },
-        lines,
+        lines: pricedLines,
         retentionPct: num(retention),
       });
       onCreated?.(c);
@@ -219,16 +225,16 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
           sheet (xlsx/csv) with columns <strong>bill, code, qty, rate</strong>, or add lines by hand; any other columns are
           ignored, so your own working sheet is fine. <strong>bill</strong> matters: the same code (e.g. 401f lean concrete)
           is priced under several bills, so bill+code is what identifies the item — add <strong>description</strong> too if a
-          code repeats within one bill. Margin is worked out for you against the original BOQ; leaving the rate at the BOQ
-          rate means zero margin.
+          code repeats within one bill. The rate you enter is the <strong>sublet rate</strong> — what this subcontractor is paid. It is never pre-filled from
+          the client rate; margin is then worked out for you against the original BOQ.
         </p>
 
         {rows.length > 0 && (
           <table className="data-table" aria-label="Contract BOQ">
             <thead><tr>
               <th>BOQ item</th><th className="num">Sublet qty</th><th className="num">BOQ qty</th><th className="num">Unallocated</th>
-              <th className="num" title="The original BOQ rate — what NLC earns">BOQ rate</th>
-              <th className="num" title="What the subcontractor is paid">Sublet rate</th>
+              <th className="num muted" title="Reference only — the original BOQ (client) rate NLC is paid. Not editable here.">Client rate (ref)</th>
+              <th className="num" title="What THIS subcontractor is paid — the contract rate">Sublet rate *</th>
               <th className="num">Amount</th>
               <th className="num" title="(BOQ rate − sublet rate) × sublet qty">Margin</th>
               <th></th>
@@ -254,7 +260,11 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
                     <td className="num small muted">{item ? `${item.qty.toLocaleString('en-PK')} ${item.unit}` : '—'}</td>
                     <td className={`num small ${over ? 'neg' : ''}`}>{item ? `${free.toLocaleString('en-PK')} ${item.unit}` : '—'}</td>
                     <td className="num small muted">{item ? item.rate.toLocaleString('en-PK', { maximumFractionDigits: 2 }) : '—'}</td>
-                    <td className="num"><input className="qty-input" style={{ width: 80 }} aria-label={`Rate ${i}`} value={row.rate} onChange={(e) => setRow(i, { rate: e.target.value })} /></td>
+                    <td className="num">
+                      <input className={`qty-input ${num(row.rate) <= 0 && row.boqItemId ? 'input-flag' : ''}`} style={{ width: 90 }}
+                        aria-label={`Sublet rate ${i}`} placeholder="sublet rate" value={row.rate}
+                        onChange={(e) => setRow(i, { rate: e.target.value })} />
+                    </td>
                     <td className="num">{formatMoney(qty * num(row.rate))}</td>
                     <td className={`num small ${lineM && lineM.negative ? 'neg' : ''}`}
                       title={lineM ? `${formatMoney(lineM.revenue)} at BOQ rate − ${formatMoney(lineM.cost)} sublet` : ''}>
@@ -275,6 +285,16 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
           </table>
         )}
       </div>
+
+      {unpriced > 0 && (
+        <div className="card" style={{ marginTop: 12, borderColor: 'var(--danger)' }} aria-label="Unpriced lines">
+          <strong className="neg">{unpriced} line(s) have no sublet rate.</strong>
+          <div className="muted small">
+            Enter the rate agreed with this subcontractor for each. It is deliberately not pre-filled from the client rate —
+            paying the client rate would leave no margin.
+          </div>
+        </div>
+      )}
 
       {lines.length > 0 && (
         <div className="card" style={{ marginTop: 12 }} aria-label="Contract margin">

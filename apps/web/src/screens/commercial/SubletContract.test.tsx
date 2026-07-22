@@ -35,6 +35,9 @@ describe('Sublet contract creation', () => {
     // A modest quantity every seeded BOQ item comfortably holds.
     const qty = 100;
     await user.type(within(table).getByLabelText('Qty 0'), String(qty));
+    // The sublet rate is NOT pre-filled from the client rate — it must be entered.
+    expect((within(table).getByLabelText('Sublet rate 0') as HTMLInputElement).value).toBe('');
+    await user.type(within(table).getByLabelText('Sublet rate 0'), '90');
 
     await user.click(screen.getByRole('button', { name: /Create contract/ }));
 
@@ -61,8 +64,9 @@ describe('Sublet contract creation', () => {
     await user.selectOptions(sel, within(sel).getAllByRole('option')[1]);
     const boqQty = Number((within(table).getAllByRole('cell')[2].textContent ?? '').replace(/[^\d]/g, ''));
 
-    // Commit more than the BOQ holds.
+    // Commit more than the BOQ holds, at an agreed sublet rate.
     await user.type(within(table).getByLabelText('Qty 0'), String(boqQty + 1000));
+    await user.type(within(table).getByLabelText('Sublet rate 0'), '90');
 
     const warning = await screen.findByLabelText('Overlap warning');
     expect(warning).toBeInTheDocument();
@@ -74,7 +78,7 @@ describe('Sublet contract creation', () => {
 });
 
 describe('Sublet contract margin — against the original BOQ', () => {
-  it('shows revenue at BOQ rates, the contract value, and the margin between them', async () => {
+  it('does not pre-fill the client rate, and blocks creation until a sublet rate is given', async () => {
     const user = userEvent.setup();
     await openNewSublet(user);
     await user.type(screen.getByLabelText('Contractor name'), 'Margin Co');
@@ -83,19 +87,53 @@ describe('Sublet contract margin — against the original BOQ', () => {
     const table = await screen.findByRole('table', { name: 'Contract BOQ' });
     const sel = within(table).getByLabelText('Item 0') as HTMLSelectElement;
     await user.selectOptions(sel, within(sel).getAllByRole('option')[1]);
-
-    // Rate defaults to the BOQ rate → zero margin, and that is flagged.
     await user.type(within(table).getByLabelText('Qty 0'), '100');
+
+    // The client rate is shown for reference but never copied into the sublet rate.
+    const clientRate = Number((within(table).getAllByRole('cell')[4].textContent ?? '0').replace(/,/g, ''));
+    expect(clientRate).toBeGreaterThan(0);
+    expect((within(table).getByLabelText('Sublet rate 0') as HTMLInputElement).value).toBe('');
+
+    // An unpriced line blocks creation rather than becoming a zero-value contract.
+    expect(await screen.findByLabelText('Unpriced lines')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Create contract/ })).toBeDisabled();
+  });
+
+  it('earns the difference between the client rate and the sublet rate', async () => {
+    const user = userEvent.setup();
+    await openNewSublet(user);
+    await user.type(screen.getByLabelText('Contractor name'), 'Margin Co');
+    await user.type(screen.getByLabelText('Contract title'), 'Margin test');
+    await user.click(screen.getByRole('button', { name: '+ add line' }));
+    const table = await screen.findByRole('table', { name: 'Contract BOQ' });
+    const sel = within(table).getByLabelText('Item 0') as HTMLSelectElement;
+    await user.selectOptions(sel, within(sel).getAllByRole('option')[1]);
+    await user.type(within(table).getByLabelText('Qty 0'), '100');
+
+    const clientRate = Number((within(table).getAllByRole('cell')[4].textContent ?? '0').replace(/,/g, ''));
+    // Sublet at half the client rate → 50% margin.
+    await user.type(within(table).getByLabelText('Sublet rate 0'), String(clientRate / 2));
+
     const panel = await screen.findByLabelText('Contract margin');
-    expect(within(panel).getByText(/priced at or above the BOQ rate/)).toBeInTheDocument();
+    await waitFor(() => expect(within(panel).getByText(/50\.00% of revenue/)).toBeInTheDocument());
+    expect(within(panel).queryByText(/priced at or above the BOQ rate/)).toBeNull();
+    expect(screen.getByRole('button', { name: /Create contract/ })).toBeEnabled();
+  });
 
-    // Drop the sublet rate to 50% of the BOQ rate → 50% margin, warning clears.
-    const boqRate = Number((within(table).getAllByRole('cell')[4].textContent ?? '0').replace(/,/g, ''));
-    const rate = within(table).getByLabelText('Rate 0');
-    await user.clear(rate);
-    await user.type(rate, String(boqRate / 2));
+  it('flags a sublet rate at or above the client rate as earning nothing', async () => {
+    const user = userEvent.setup();
+    await openNewSublet(user);
+    await user.type(screen.getByLabelText('Contractor name'), 'Margin Co');
+    await user.type(screen.getByLabelText('Contract title'), 'Margin test');
+    await user.click(screen.getByRole('button', { name: '+ add line' }));
+    const table = await screen.findByRole('table', { name: 'Contract BOQ' });
+    const sel = within(table).getByLabelText('Item 0') as HTMLSelectElement;
+    await user.selectOptions(sel, within(sel).getAllByRole('option')[1]);
+    await user.type(within(table).getByLabelText('Qty 0'), '100');
+    const clientRate = Number((within(table).getAllByRole('cell')[4].textContent ?? '0').replace(/,/g, ''));
+    await user.type(within(table).getByLabelText('Sublet rate 0'), String(clientRate));
 
-    await waitFor(() => expect(within(panel).queryByText(/priced at or above the BOQ rate/)).toBeNull());
-    expect(within(panel).getByText(/50\.00% of revenue/)).toBeInTheDocument();
+    const panel = await screen.findByLabelText('Contract margin');
+    await waitFor(() => expect(within(panel).getByText(/priced at or above the BOQ rate/)).toBeInTheDocument());
   });
 });

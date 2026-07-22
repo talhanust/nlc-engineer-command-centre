@@ -2143,3 +2143,84 @@ NLC Engineer Command Centre — work journal
   Reproduced the reported store exactly (3 subs / 3 contracts / RAR / VO on P0295)
   → all zero after boot, project intact.
   Web 691 passing (99 files), server 9; typecheck clean; local + api builds green.
+
+2026-07-15 — CSV import templates + bill/code matching (from the real WKC BOQ)
+- User supplied WKC_BOQ.xlsx (M/S Wali Khan, Anx J, Margalla Avenue) and asked for
+  a sample CSV to upload it, plus a sample CSV offered inside the import tabs.
+- READING THE FILE: single sheet, 3-row merged header. A=Sr, B=Item No, C=Desc,
+  D=Unit, E=CA qty, F=CA rate, G=reduced CA rate (F×0.97849 — G is the operative
+  one, E×G=H), H=CA amount. J2:O3 merged "M/S Wali Khan Contractor" spans TWO
+  blocks: J/K/L and M/N/O (qty/rate/amount each). P (Total) = L + O, so BOTH are
+  contractor scope: 20 Bill-4d bridge items at individually negotiated rates
+  (0.45–0.90 of CA) and 89 items at a flat 12% below CA (N = G×0.88 exactly).
+  Extraction ties out to the sheet G.TOTAL to the paisa: PKR 3,266,285,816.30.
+  Bill 6A Toll Plaza is a PKR 176 Mn provisional sum (qty 0, unit PS) that the
+  sheet itself excludes from P — excluded here too, flagged to the user.
+- KEY FINDING — a BOQ code is NOT unique. 109 rows carry only 77 distinct codes:
+  401f (lean concrete) is priced under 7 bills, 107a under 5. The sublet importer
+  matched on CODE ALONE, so uploading a real BOQ would silently collapse 7 lines
+  onto 1 item. The unique key is BILL + CODE.
+- Worse, bill+code is not unique either: the sheet has two mis-keyed rows —
+  row 94 (bill 4e) codes "Concrete A3 (Elevated)" as 401a3ii when 4c prices
+  Elevated as 401a3iii; row 132 (bill 6) codes "Gantry Sign Type-II" as 608j2,
+  which is Pavement Marking (row 127). Reported to the user rather than guessed at.
+- NEW domain/subletImport.ts — matchSubletRows(rows, items): keys on bill+code,
+  falls back to code alone only when unambiguous, breaks a repeated bill+code by
+  exact (normalised) description, and never matches by ELIMINATION — if a stated
+  description contradicts the last free candidate that is a discrepancy to report,
+  not a line to commit. An item can be claimed by only one row. Everything it
+  cannot place is returned as ambiguous/unmatched and surfaced in the UI, because
+  a wrong quantity here becomes a wrong commitment. Both lookup maps hold LISTS —
+  a last-one-wins overwrite is the exact bug this module exists to prevent.
+  12 tests, including the two real mis-keyed cases.
+- NEW domain/csvTemplates.ts + "Sample CSV" buttons in Bill of Quantities → Import
+  and New sublet contract, reusing the existing toCsv/downloadText helpers. Sample
+  rows are real Margalla items chosen to demonstrate that bill disambiguates a
+  repeated code (401f under 4a and 4b). Both importers ignore extra columns, so a
+  user can upload their own working sheet unchanged.
+- NewSubletContract now reads bill + description columns, carries the bill down
+  (BOQs group rows under a bill header) and reports ambiguous/unmatched rows.
+- Verified end-to-end through the REAL importers, not by assumption: the generated
+  contractor CSV → 108 uploaded, 108 matched, 0 ambiguous, 0 unmatched, 108
+  DISTINCT BOQ items (nothing collapsed), value PKR 3,266,285,816.30 exact.
+  Web 703 passing (100 files), server 9; typecheck clean; local + api builds green.
+
+2026-07-15 (b) — margin at award, worked out against the ORIGINAL BOQ
+- USER CORRECTION: "in Subcontractor BOQ only quantities and items subletted will
+  be present alongwith sublet rate. Margin shall be worked out against Original
+  BOQ." My earlier advice to import margalla-BOQ-import.csv over the live BOQ was
+  WRONG — that would have replaced the 122-item / Rs 4,109.5 Mn original with the
+  annexure subset (108 items / Rs 3,816.0 Mn) and destroyed the very baseline the
+  margin is measured against. Retracted; that file is now boq-import-sample.csv,
+  a FORMAT reference only.
+- The model, stated properly: the subcontractor BOQ is a COST document only — the
+  items sublet, the sublet quantity, the sublet rate. It never states revenue.
+  Revenue is the project original BOQ rate for the same item. Margin is derived:
+      revenue = sublet qty x ORIGINAL BOQ rate
+      cost    = sublet qty x sublet rate
+      margin  = revenue - cost
+  An item not sublet simply does not appear; a partly-sublet item appears with only
+  the quantity awarded (the planner already tracks locked vs unallocated).
+- NEW domain/contractMargin.ts — contractMargin(lines, items): per-line and total
+  revenue/cost/margin/margin%, against the original BOQ. Distinct from the existing
+  domain/marginanalytics.ts, which measures margin on work EXECUTED: this one is
+  the decision taken at award, that one is the outturn. Both matter.
+  A sublet rate AT or ABOVE the BOQ rate earns nothing or loses money and is
+  flagged per line and listed in negativeLines — never buried in a favourable
+  total (tested: a healthy line must not hide a loss-making one). Lines whose item
+  is not in the BOQ are ignored rather than priced by guess; a zero BOQ rate never
+  divides by zero. 8 tests.
+- New sublet contract screen now shows, per line, the BOQ rate beside the sublet
+  rate and the resulting margin + %, with a ⚠ on any non-earning line; plus a
+  margin card (revenue at BOQ rates / contract value / margin %) and an explicit
+  alert naming the codes priced at or above the BOQ rate. Footer totals both
+  revenue-at-BOQ and margin. 1 new UI test (defaulting the rate to the BOQ rate
+  → zero margin → warning; halving it → 50.00% → warning clears).
+- Deliverables regenerated from WKC_BOQ.xlsx: WKC-sublet-contract-BOQ.csv = 108
+  sublet lines (bill, code, description, unit, sublet qty, sublet rate),
+  cost PKR 3,266,285,816.30 (ties to the sheet G.TOTAL exactly); revenue at the
+  annexure CA rates PKR 3,816,046,981.48 → margin PKR 549,761,165.18 (14.41%) —
+  the blend of a flat 12% on 89 items and the negotiated Bill-4d bridge rates.
+  NOTE the app computes margin against the PROJECT original BOQ, which may differ
+  slightly from the annexure CA column — that is the point of the correction.
+  Web 712 passing (101 files), server 9; typecheck clean; local + api builds green.

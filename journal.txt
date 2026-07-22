@@ -2224,3 +2224,30 @@ NLC Engineer Command Centre — work journal
   NOTE the app computes margin against the PROJECT original BOQ, which may differ
   slightly from the annexure CA column — that is the point of the correction.
   Web 712 passing (101 files), server 9; typecheck clean; local + api builds green.
+
+2026-07-15 (c) — the sublet rate is never pre-filled from the client rate
+- USER: "Why in Contractor Bill of Quantity Client rate is shown. It shall be the
+  sublet rate." Correct, and this was a real defect, not a labelling one.
+- TWO LEAKS of the client rate into the contract rate:
+  1. picking a BOQ item pre-filled the Rate box with the ORIGINAL BOQ (client)
+     rate; 2. on upload, a missing rate column fell back to the client rate.
+  Either way a contract could be created paying the subcontractor the entire
+  client rate — zero margin — while looking like a deliberately negotiated
+  figure. Both removed: the sublet rate is now only ever entered or uploaded.
+- An unpriced line is now treated as INCOMPLETE, not free. It is excluded from the
+  contract value and from the margin (counting a blank rate would have read as
+  100% margin, equally misleading), the input is flagged, a card names how many
+  lines still need a rate, and creation is blocked until they are priced. Only
+  priced lines are submitted.
+- The client rate is retained as a clearly subordinate REFERENCE column ("Client
+  rate (ref)", muted, not editable) beside "Sublet rate *", because the margin is
+  the difference between the two and hiding one of them would make the number
+  unverifiable at the point of decision. Offered to drop the column entirely if
+  the contractor BOQ should show sublet rates alone.
+- Tests: 5 in SubletContract.test.tsx. The pre-existing create + overlap tests had
+  silently relied on the auto-fill and now fail without an explicit rate — exactly
+  the behaviour wanted, so both were updated to enter one. New: the client rate is
+  shown but the sublet input stays EMPTY; an unpriced line blocks creation; half
+  the client rate → 50.00% margin; equal to the client rate → flagged as earning
+  nothing.
+  Web 714 passing (101 files), server 9; typecheck clean; local + api builds green.

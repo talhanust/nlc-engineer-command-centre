@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { parseBoqPaste, itemAmount, type ParsedRow } from '../../domain/boq';
+import { BOQ_TEMPLATE_AOA, BOQ_TEMPLATE_FILENAME } from '../../domain/csvTemplates';
+import { downloadText, toCsv } from '../../components/hrExport';
 import { readWorkbook, detectHeaderRow, autoMapColumns, gridToRows, mapIsValid, MAP_FIELDS, type Workbook, type ColumnMap } from '../../domain/xlsxImport';
 import { formatMoney } from '../../domain/money';
 import type { BoqItem } from '../../data/types';
@@ -77,7 +79,11 @@ export function BoqImport({ projectId, onClose, onImported }: {
       <div className="modal" style={{ maxWidth: 760 }}>
         <div className="section-head">
           <h3>Import BOQ</h3>
-          <button className="btn-ghost" onClick={onClose} aria-label="Close">✕</button>
+          <div className="head-tools">
+            <button className="btn-ghost btn-mini"
+              onClick={() => downloadText(BOQ_TEMPLATE_FILENAME, toCsv(BOQ_TEMPLATE_AOA), 'text/csv')}>Sample CSV</button>
+            <button className="btn-ghost" onClick={onClose} aria-label="Close">✕</button>
+          </div>
         </div>
 
         <div className="seg" role="tablist" aria-label="Import mode" style={{ marginBottom: 12 }}>
@@ -87,7 +93,13 @@ export function BoqImport({ projectId, onClose, onImported }: {
 
         {mode === 'file' ? (
           <>
-            <p className="muted small">Upload a real BOQ workbook. The header row and columns are detected automatically — review the mapping below and adjust if needed.</p>
+            <p className="muted small">
+              Upload a real BOQ workbook. The header row and columns are detected automatically — review the mapping below
+              and adjust if needed. Columns: <strong>bill, code, description, unit, qty, rate</strong> (description, qty and
+              rate are required). Keep a <strong>bill</strong> column — the same code is often priced under several bills,
+              and bill+code is what identifies an item later when a contractor BOQ is matched to it. Download the
+              <strong> Sample CSV</strong> for the exact shape.
+            </p>
             <div className="create-row" style={{ marginBottom: 10 }}>
               <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" aria-label="BOQ file" style={{ display: 'none' }} onChange={(e) => onFile(e.target.files?.[0])} />
               <button className="btn" disabled={busy} onClick={() => fileRef.current?.click()}>{busy ? 'Reading…' : '⬆ Choose file'}</button>

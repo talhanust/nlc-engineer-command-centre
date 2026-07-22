@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, it, expect } from 'vitest';
@@ -70,5 +70,32 @@ describe('Sublet contract creation', () => {
     expect(screen.getByRole('button', { name: /Create contract/ })).toBeDisabled();
     await user.click(screen.getByLabelText('Acknowledge overlap'));
     expect(screen.getByRole('button', { name: /Create contract/ })).toBeEnabled();
+  });
+});
+
+describe('Sublet contract margin — against the original BOQ', () => {
+  it('shows revenue at BOQ rates, the contract value, and the margin between them', async () => {
+    const user = userEvent.setup();
+    await openNewSublet(user);
+    await user.type(screen.getByLabelText('Contractor name'), 'Margin Co');
+    await user.type(screen.getByLabelText('Contract title'), 'Margin test');
+    await user.click(screen.getByRole('button', { name: '+ add line' }));
+    const table = await screen.findByRole('table', { name: 'Contract BOQ' });
+    const sel = within(table).getByLabelText('Item 0') as HTMLSelectElement;
+    await user.selectOptions(sel, within(sel).getAllByRole('option')[1]);
+
+    // Rate defaults to the BOQ rate → zero margin, and that is flagged.
+    await user.type(within(table).getByLabelText('Qty 0'), '100');
+    const panel = await screen.findByLabelText('Contract margin');
+    expect(within(panel).getByText(/priced at or above the BOQ rate/)).toBeInTheDocument();
+
+    // Drop the sublet rate to 50% of the BOQ rate → 50% margin, warning clears.
+    const boqRate = Number((within(table).getAllByRole('cell')[4].textContent ?? '0').replace(/,/g, ''));
+    const rate = within(table).getByLabelText('Rate 0');
+    await user.clear(rate);
+    await user.type(rate, String(boqRate / 2));
+
+    await waitFor(() => expect(within(panel).queryByText(/priced at or above the BOQ rate/)).toBeNull());
+    expect(within(panel).getByText(/50\.00% of revenue/)).toBeInTheDocument();
   });
 });

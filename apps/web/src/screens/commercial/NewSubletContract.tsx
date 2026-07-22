@@ -3,6 +3,10 @@ import { useData } from '../../data/DataContext';
 import { formatMoney } from '../../domain/money';
 import { readWorkbook } from '../../domain/xlsxImport';
 import { itemLocks, contractLineIssues, contractValue } from '../../domain/contractLocks';
+import { matchSubletRows, type SubletImportRow } from '../../domain/subletImport';
+import { contractMargin } from '../../domain/contractMargin';
+import { SUBLET_TEMPLATE_AOA, SUBLET_TEMPLATE_FILENAME } from '../../domain/csvTemplates';
+import { downloadText, toCsv } from '../../components/hrExport';
 import type { BoqItem, Contract, ContractKind, ContractLine, Subcontractor } from '../../data/types';
 
 type Draft = { boqItemId: string; qty: string; rate: string };
@@ -48,7 +52,6 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
     return () => { alive = false; };
   }, [provider, projectId]);
 
-  const itemByCode = useMemo(() => new Map(items.map((i) => [i.code.toLowerCase(), i])), [items]);
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const locks = useMemo(() => itemLocks(items, contracts), [items, contracts]);
 
@@ -57,6 +60,9 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
     .filter((l) => l.boqItemId && l.qty > 0);
   const value = contractValue(lines);
   const issues = useMemo(() => contractLineIssues(lines, items, contracts), [lines, items, contracts]);
+  // Margin is worked out against the ORIGINAL BOQ: the sublet BOQ is only what we
+  // pay, the project's own rate is what we earn.
+  const margin = useMemo(() => contractMargin(lines, items), [lines, items]);
 
   async function onUpload(file: File) {
     setError(''); setImportNote('');
@@ -74,22 +80,44 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
       const cCode = col('code', 'item');
       const cQty = col('qty', 'quantity');
       const cRate = col('rate', 'price');
+      const cBill = col('bill');
+      const cDesc = col('description', 'desc', 'particulars');
       if (cCode < 0 || cQty < 0) { setError('Could not find "code" and "quantity" columns in that file.'); return; }
 
-      const parsed: Draft[] = [];
-      let matched = 0;
-      let unmatched = 0;
+      // A BOQ groups rows under a bill header, so carry the last bill down.
+      let currentBill = '';
+      const uploaded: SubletImportRow[] = [];
       for (const g of grid.slice(headerRow + 1)) {
+        if (cBill >= 0 && String(g[cBill] ?? '').trim()) currentBill = String(g[cBill]).trim();
         const code = String(g[cCode] ?? '').trim();
         if (!code) continue;
-        const item = itemByCode.get(code.toLowerCase());
-        if (!item) { unmatched++; continue; }
-        matched++;
-        parsed.push({ boqItemId: item.id, qty: String(num(String(g[cQty] ?? ''))), rate: cRate >= 0 ? String(num(String(g[cRate] ?? ''))) : String(item.rate) });
+        uploaded.push({
+          bill: currentBill, code,
+          qty: num(String(g[cQty] ?? '')),
+          rate: cRate >= 0 ? num(String(g[cRate] ?? '')) : 0,
+          description: cDesc >= 0 ? String(g[cDesc] ?? '').trim() : undefined,
+        });
       }
-      if (parsed.length === 0) { setError('No rows matched a BOQ item code.'); return; }
-      setRows(parsed);
-      setImportNote(`Imported ${matched} line(s)${unmatched > 0 ? `; ${unmatched} row(s) had no matching BOQ code and were skipped` : ''}.`);
+
+      const res = matchSubletRows(uploaded, items);
+      if (res.matched.length === 0) { setError('No rows matched a BOQ item. Check the code (and bill) columns against the project BOQ.'); return; }
+      setRows(res.matched.map((m) => ({
+        boqItemId: m.boqItemId, qty: String(m.qty),
+        rate: String(m.rate || itemById.get(m.boqItemId)?.rate || 0),
+      })));
+
+      // Report honestly: an ambiguous code is NOT guessed at, it is reported, because
+      // the wrong item here becomes the wrong commitment.
+      const notes = [`Imported ${res.matched.length} line(s).`];
+      if (res.ambiguous.length) {
+        const list = [...new Set(res.ambiguous.map((a) => a.code))].slice(0, 5).join(', ');
+        notes.push(`${res.ambiguous.length} row(s) skipped — the code matches more than one BOQ item and neither the bill nor the description tells them apart (${list}). Add a "bill" column, or correct the code in your sheet.`);
+      }
+      if (res.unmatched.length) {
+        const list = [...new Set(res.unmatched.map((u) => u.code))].slice(0, 5).join(', ');
+        notes.push(`${res.unmatched.length} row(s) skipped — no such item in this project's BOQ (${list}).`);
+      }
+      setImportNote(notes.join(' '));
     } catch {
       setError('Could not read that spreadsheet.');
     }
@@ -181,19 +209,35 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
               <input type="file" accept=".xlsx,.xls,.csv" aria-label="Upload subcontractor BOQ" style={{ display: 'none' }}
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) void onUpload(f); e.target.value = ''; }} />
             </label>
+            <button className="btn-ghost btn-mini" onClick={() => downloadText(SUBLET_TEMPLATE_FILENAME, toCsv(SUBLET_TEMPLATE_AOA), 'text/csv')}>Sample CSV</button>
             <button className="btn-ghost btn-mini" onClick={addRow}>+ add line</button>
           </div>
         </div>
         {importNote && <p className="muted small" style={{ marginTop: 0 }}>{importNote}</p>}
-        <p className="muted small" style={{ marginTop: 0 }}>Upload a sheet with columns for item code, quantity and rate — or add lines by hand. Rates default to the BOQ rate.</p>
+        <p className="muted small" style={{ marginTop: 0 }}>
+          Only what is sublet goes here — the items, the sublet quantity and the <strong>sublet rate</strong>. Upload a
+          sheet (xlsx/csv) with columns <strong>bill, code, qty, rate</strong>, or add lines by hand; any other columns are
+          ignored, so your own working sheet is fine. <strong>bill</strong> matters: the same code (e.g. 401f lean concrete)
+          is priced under several bills, so bill+code is what identifies the item — add <strong>description</strong> too if a
+          code repeats within one bill. Margin is worked out for you against the original BOQ; leaving the rate at the BOQ
+          rate means zero margin.
+        </p>
 
         {rows.length > 0 && (
           <table className="data-table" aria-label="Contract BOQ">
-            <thead><tr><th>BOQ item</th><th className="num">Contract qty</th><th className="num">BOQ qty</th><th className="num">Unallocated</th><th className="num">Rate</th><th className="num">Amount</th><th></th></tr></thead>
+            <thead><tr>
+              <th>BOQ item</th><th className="num">Sublet qty</th><th className="num">BOQ qty</th><th className="num">Unallocated</th>
+              <th className="num" title="The original BOQ rate — what NLC earns">BOQ rate</th>
+              <th className="num" title="What the subcontractor is paid">Sublet rate</th>
+              <th className="num">Amount</th>
+              <th className="num" title="(BOQ rate − sublet rate) × sublet qty">Margin</th>
+              <th></th>
+            </tr></thead>
             <tbody>
               {rows.map((row, i) => {
                 const item = itemById.get(row.boqItemId);
                 const lock = row.boqItemId ? locks.get(row.boqItemId) : undefined;
+                const lineM = margin.lines.find((x) => x.boqItemId === row.boqItemId);
                 const qty = num(row.qty);
                 // How much is free for THIS contract = BOQ qty minus what OTHER contracts hold.
                 const free = lock ? lock.unallocatedQty : (item?.qty ?? 0);
@@ -209,17 +253,45 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
                     <td className="num"><input className="qty-input" style={{ width: 90 }} aria-label={`Qty ${i}`} value={row.qty} onChange={(e) => setRow(i, { qty: e.target.value })} /></td>
                     <td className="num small muted">{item ? `${item.qty.toLocaleString('en-PK')} ${item.unit}` : '—'}</td>
                     <td className={`num small ${over ? 'neg' : ''}`}>{item ? `${free.toLocaleString('en-PK')} ${item.unit}` : '—'}</td>
+                    <td className="num small muted">{item ? item.rate.toLocaleString('en-PK', { maximumFractionDigits: 2 }) : '—'}</td>
                     <td className="num"><input className="qty-input" style={{ width: 80 }} aria-label={`Rate ${i}`} value={row.rate} onChange={(e) => setRow(i, { rate: e.target.value })} /></td>
                     <td className="num">{formatMoney(qty * num(row.rate))}</td>
+                    <td className={`num small ${lineM && lineM.negative ? 'neg' : ''}`}
+                      title={lineM ? `${formatMoney(lineM.revenue)} at BOQ rate − ${formatMoney(lineM.cost)} sublet` : ''}>
+                      {lineM ? `${formatMoney(lineM.margin)} (${lineM.marginPct.toFixed(1)}%)${lineM.negative ? ' ⚠' : ''}` : '—'}
+                    </td>
                     <td><button className="link-btn" aria-label={`Remove line ${i}`} onClick={() => removeRow(i)}>×</button></td>
                   </tr>
                 );
               })}
             </tbody>
-            <tfoot><tr><th>Contract value</th><th /><th /><th /><th /><th className="num">{formatMoney(value)}</th><th /></tr></tfoot>
+            <tfoot><tr>
+              <th>Contract value</th><th /><th /><th /><th />
+              <th className="num muted small">{formatMoney(margin.revenue)} at BOQ</th>
+              <th className="num">{formatMoney(value)}</th>
+              <th className={`num ${margin.margin < 0 ? 'neg' : ''}`}>{formatMoney(margin.margin)} ({margin.marginPct.toFixed(1)}%)</th>
+              <th />
+            </tr></tfoot>
           </table>
         )}
       </div>
+
+      {lines.length > 0 && (
+        <div className="card" style={{ marginTop: 12 }} aria-label="Contract margin">
+          <div className="kpi-row">
+            <div className="kpi"><div className="kpi-label">Revenue at BOQ rates</div><div className="kpi-value">{formatMoney(margin.revenue)}</div><div className="muted small">original BOQ × sublet qty</div></div>
+            <div className="kpi"><div className="kpi-label">Contract value</div><div className="kpi-value">{formatMoney(margin.cost)}</div><div className="muted small">sublet rate × sublet qty</div></div>
+            <div className="kpi"><div className="kpi-label">Margin</div><div className={`kpi-value ${margin.margin < 0 ? 'neg' : ''}`}>{formatMoney(margin.margin)}</div><div className="muted small">{margin.marginPct.toFixed(2)}% of revenue</div></div>
+          </div>
+          {margin.negativeLines.length > 0 && (
+            <p className="neg small" style={{ marginBottom: 0 }} role="alert">
+              ⚠ {margin.negativeLines.length} line(s) priced at or above the BOQ rate — they earn nothing or lose money:{' '}
+              {margin.negativeLines.slice(0, 6).map((l) => l.code).join(', ')}
+              {margin.negativeLines.length > 6 ? ` +${margin.negativeLines.length - 6} more` : ''}.
+            </p>
+          )}
+        </div>
+      )}
 
       {issues.length > 0 && (
         <div className="card" style={{ marginTop: 12, borderColor: 'var(--warning)' }} aria-label="Overlap warning">

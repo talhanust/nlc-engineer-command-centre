@@ -1166,3 +1166,6 @@ code { font-family: var(--font-mono); font-size: .9em; }
   color-mix(in srgb, var(--muted) 22%, transparent) 0 4px,
   color-mix(in srgb, var(--muted) 10%, transparent) 4px 8px); }
 .alloc-over { background: var(--danger); }
+
+/* An input that still needs a value before the record can be created. */
+.qty-input.input-flag { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 6%, transparent); }

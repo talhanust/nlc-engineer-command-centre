@@ -1,0 +1,2226 @@
+NLC Engineer Command Centre — work journal
+(Newest entries first. Prose, commit-style.)
+
+2026-07-07 — CA/BOQ/VO model made coherent: BOQ Value revises with approved VOs; phantom VO explained
+- User's two correct objections: (1) "I didn't add a VO — why did it show revised?" The seed
+  generator creates three variations per project incl. VO-01 status 'approved' (amount cv×0.009 ≈
+  191.7 Mn on Margalla) — so the 21,491.7 Mn was award 21,300 + seeded approved VO, never
+  user-added. (2) "If a VO is approved the BOQ Value must also revise." Correct — an approved
+  variation revises the bill of quantities, so BOQ Value and Contract Value are the SAME quantity.
+- domain/variations.ts: revisedBoqItems(boq, variations) applies every APPROVED variation to the
+  BOQ — line-based VOs edit/add/omit specific items (via applyVariationToBoq); amount-based VOs
+  (no lines, like the seed's) append a single LS summary line carrying the net amount so totals
+  reconcile. revisedBoqValue() = the one authoritative figure.
+- CommercialDashboard: Contract Value AND BOQ Value now both derive from revisedBoqValue(boq,
+  vos) — identical numbers. Base BOQ is shown in the sub-lines ("revised · base X" / "N items ·
+  incl. approved VOs") only when an approved VO exists; otherwise "per BOQ" / "N items". Verified
+  on Margalla: base 21,297.9 Mn + approved VO 191.7 Mn → both tiles 21,489.6 Mn. Other tabs
+  (Retention, Calendar, EVM) already compute revisedContractValue(storedCV, vos); since stored CV
+  == base BOQ, they match the dashboard — one figure everywhere.
+- Tests: RevisedBoq.test — submitted VO doesn't revise; approved amount-based VO revises + adds
+  summary line; approved line-based qty VO edits items; omission reduces. Suite 473 (83 files,
+  shard 293+180); server 9; both builds green; whole-project typecheck clean.
+
+2026-07-07 — FINAL fix for CA≠BOQ: reconcileSeed only cleared the flagship's stale cache
+- User screenshot (Margalla Avenue Extension): Contract Value 21,491.7 Mn vs BOQ Value 4,109.7 Mn,
+  122 BOQ items — a >5× mismatch. Previous CA=BOQ work reconciled correctly in a FRESH store, so
+  why did it persist? Root cause: reconcileSeed()'s stale-cache purge cleared entity keys for the
+  FLAGSHIP ONLY ('proj-f14f15'). Every OTHER seeded project (Margalla, Attock, Thar, I-11) kept
+  its previous-session cached BOQ (e.g. 122 items @ 4,109 Mn) while the project RECORD carried the
+  raw seed cv (21,300 Mn) — the two never met. So the reconciled PROJECTS array (CV-from-BOQ) had
+  no effect on an already-populated browser.
+- Fix: reconcileSeed now (1) clears stale entity caches for ALL seeded projects (loop over
+  SEED_PROFILES, not just the flagship), and (2) RE-SYNCS each seeded project's contractValue to
+  its freshly-regenerated BOQ total — so on a seed-version bump both the BOQ and the CV reconcile,
+  not only in a brand-new store. Bumped SEED_VERSION → 2026-07-07.v11-ca-boq-reconcile to trigger
+  it for every existing user.
+- Verified: simulating a stale old-version session (single-item stale BOQ + 21,300 Mn stored CV)
+  → after upgrade the BOQ regenerates (88 items) AND contractValue re-syncs to the exact BOQ total
+  (21,297.9 Mn). CommercialDashboard's Contract Value (= original + approved VOs) now sits on a
+  base 'original' that equals BOQ value; the "revised · award" sub-line shows the base award only
+  when VOs exist — the correct construction relationship.
+- Test: NewProjectCleanSlate.test gains an upgrade-path case (stale cache cleared + CV re-synced).
+  Suite 469 (82 files, shard 293+176); server 9; both builds green; whole-project typecheck clean.
+
+2026-07-04 — Data-integrity fixes: new-project seed leakage, CA Value = BOQ Amount, salients persistence
+- ROOT-CAUSE BUG (user-reported): a newly created project showed non-zero executed/vetted/
+  receivables and flagship contracts/RARs/subs. Cause: ~55 provider list/mutate call sites fell
+  back to hard-coded flagship SEED_* constants (SEED_RARS, SEED_CONTRACTS, SEED_SUBS,
+  SEED_VARIATIONS, SEED_BGS, SEED_DISTRIBUTIONS, SEED_SCHEDULE, SEED_OVERHEADS, SEED_RESOURCES,
+  SEED_SALIENTS, SEED_RECEIPTS, SEED_PAYMENTS, SEED_LIABILITIES, SEED_SUPPLIERS, SEED_DEMANDS,
+  SEED_INVENTORY, SEED_POL, SEED_FA, SEED_PRODUCTION, SEED_ISSUES) whenever a project had no
+  stored value. For any project WITHOUT a seed profile (i.e. every user-created project) this
+  leaked the flagship's data. Fixed: every fallback is now `gen(projectId)?.<field> ?? []` — a
+  seeded project gets its generated data, any other project gets EMPTY. Deleted all 20 now-dead
+  SEED_ constants (SEED_RECEIPTS retained: still used). A fresh project is a true clean slate:
+  billed/received '0', planned/actual 0, and every list empty (regression-tested).
+- SALIENTS PERSISTENCE (user-reported "salients not saved"): same leak — upsertSalient read
+  SEED_SALIENTS, appended, and wrote the flagship's salients back mixed with the user's. Now a
+  new salient persists alone.
+- CA VALUE = BOQ AMOUNT (user-reported "different CA at different locations"): (1) seeded
+  projects had contractValue from the profile cv, which drifted ~2M from the generated BOQ total
+  (rounding) — now every seeded Project's contractValue is DERIVED from its generated BOQ total,
+  so flagship + all three lifecycle projects match to the rupee; (2) replaceBoq() now syncs the
+  project's contractValue to the BOQ total on every import — one figure everywhere, and a revised
+  BOQ re-syncs. (Had to relocate the PROJECTS const below gen()/SEED_PROFILES to avoid a TDZ
+  ReferenceError.)
+- Per-section map panes: confirmed already present (SectionMapPane, Table/Map toggle) and
+  section-agnostic, so the new Recovery/HR sections get maps automatically; reverted a redundant
+  NodeMap import.
+- Tests: new NewProjectCleanSlate.test.tsx — fresh project all-empty, salient persists alone,
+  flagship intact, CA=BOQ on import + re-sync, and every seeded project CA==BOQ (no drift). Suite
+  468 (82 files, shard 293+175); server 9; both builds green; whole-project typecheck clean.
+
+2026-07-04 — Data-integrity fixes: new-project clean slate, CA = BOQ, salients persist; + per-section map panes
+- ROOT-CAUSE FIX (major): ~55 provider list/mutate call sites fell back to `gen(projectId)?.X ??
+  SEED_X` — flagship seed constants (SEED_RARS/CONTRACTS/SUBS/SALIENTS/RECEIPTS/PAYMENTS/…). A
+  brand-new project (no seed profile, gen()→null) therefore inherited the FLAGSHIP's RARs,
+  contracts, salients etc., so receivables/executed/vetted were non-zero and salients looked
+  unsaved (buried among seeded ones). Swept every `?? SEED_X` → `?? []` (55 sites) and deleted
+  the 20 now-dead SEED_ constants. A fresh project is now a genuine clean slate: all lists empty,
+  billed/received/planned/actual = 0. Regression test NewProjectCleanSlate covers 18 lists + the
+  salient-persists-alone case + flagship-unaffected.
+- CA VALUE = BOQ AMOUNT (single source of truth): replaceBoq() now syncs the project's
+  contractValue to the BOQ total (import/enter BOQ → CA updates everywhere at once, audited).
+  Seeded projects reconciled too — PROJECTS now derives contractValue from each project's
+  GENERATED BOQ total instead of the profile's approximate cv, killing the CV/BOQ drift (flagship
+  was 19,284,461,163 stated vs 19,282,383,253 BOQ → now identical). Relocated the PROJECTS const
+  below SEED_PROFILES/gen to avoid a TDZ ReferenceError. Tests cover BOQ-import sync + re-sync.
+- PER-SECTION MAP PANES: new screens/SectionMapPane.tsx (reuses MapView) plotting the section's
+  projects as clickable markers colour-coded by alarm state (red = flagged); SectionDashboards
+  gains a Table/Map view toggle. Deep-links to the project node on click. Test toggles to map and
+  asserts the pane renders.
+- Full suite 467 (82 files, shard 293+174); server 9; both builds green; whole-project typecheck
+  clean.
+
+2026-07-04 — EPC subcontractor RAR parity (spec §5, A7)
+- Subcontractor.kind gains 'epc' (labor | sublet | epc); ContractorProfiles kind selector offers
+  EPC. The RAR ladder is deliberately CONTRACTOR-KIND AGNOSTIC — rarApprovalChain() takes no kind
+  argument, so labor, sublet and EPC subcontractors all walk the SAME eight-step Pre-Audit chain
+  (Contract Engr → DPM → SPM → Manager Contracts HQ PD → Pre-Audit → DPD → PD → SM Finance),
+  which is exactly what A7 requires ("byte-identical incl. Pre-Audit"). EPC contract packages
+  route on the sublet ceiling band for award approval.
+- Tests: the chain is byte-identical across calls and pins the eight appointments incl. Pre-Audit
+  at index 4; an EPC subcontractor's RAR submits to the identical ladder and walks all eight acts
+  to PAID (unchanged from labor/sublet). Suite 461 (81 files, shard 293+168); server 9; both
+  builds green; whole-project typecheck clean.
+
+2026-07-04 — Overhead sub-head auto-booking: vehicles, generators, maintenance & POL (spec §6)
+- domain/overheadBooking.ts: deriveOverheadSubheads(machinery, pol) posts non-direct running
+  costs to standard Overheads sub-heads — VEHICLE RUNNING and GENERATOR RUNNING split from
+  machinery-usage logs (works plant like EXC/RLR is excluded; only VEH*/LV-*/GEN* and
+  pickup/car/jeep/generator descriptions count), VEHICLE & PLANT MAINTENANCE as a % of running
+  (default 12%), and POL from issued litres × fuel rate (diesel 285 / petrol 290). plannedBy
+  Subhead() classifies planned overhead lines (maintenance checked before generator so "generator
+  maintenance" books correctly). One running-log or POL entry updates the overhead position with
+  no re-entry — same live-derivation pattern as HR manpower.
+- OverheadsTab now loads machinery usage + POL and renders an "Auto-booked overhead sub-heads"
+  card (sub-head → amount, derived total) above the HR manpower posting. Seeded overhead-class
+  running on every generated project (VEH-PK01 pickup + GEN-100 generator; bumped SEED_VERSION →
+  v10-overhead-vehicles so machinery regenerates).
+- Tests: vehicle/generator split + maintenance + POL derivation with works-plant exclusion;
+  empty result when only works plant present; planned-line classification incl. the
+  generator-maintenance ordering fix; UI card from seeded vehicles. Suite 459 (80 files, shard
+  293+166); server 9; both builds green; whole-project typecheck clean.
+
+2026-07-04 — Recovery + HR staff-section dashboards; per-section alarms-only filter
+- SectionDashboards gained two sections (now seven): RECOVERY SEC rolls up physically-completed
+  projects — % collected, receivable (billed−received), open DLP defects, TOC date — alarming on
+  outstanding receivable and open defects; HR SEC rolls up authorisation status per project — HR
+  pending/approved, key-appointment seats (Σ auth across approved proposals), proposals in chain,
+  total proposals — alarming when HR isn't yet approved or proposals sit in the ladder. Both
+  deep-link to the project screen.
+- Every section dashboard now has an "Alarms only" filter (focus on exceptions — matches the
+  no-noise requirement) and an "Open ↗" per-row action to jump to the project node. Recovery Sec
+  only lists physically_completed projects; the others are unchanged.
+- Tests: all seven section buttons present; Recovery Sec lists the completed project with its
+  receivable/DLP columns; HR Sec shows authorisation status; Alarms-only narrows the table to
+  flagged rows only. Suite 455 (79 files, shard 293+162); server 9; both builds green; whole-
+  project typecheck clean.
+
+2026-07-04 — Plant production runs consuming mix designs (spec §6)
+- ProductionRun extended with plant-production fields (mixDesignId, plantAssetId, constituent
+  consumption[], destination self|contractor, contractorId) alongside the existing free-form
+  fields. Provider recordPlantRun() looks up the mix design, computes constituent consumption via
+  runConsumption(design, outputQty), and writes a run tagged to the plant; plantMaterialBalance()
+  aggregates consumption per constituent across a plant's runs. Audited; Api stubs.
+- screens/execution/PlantProductionPanel.tsx on the Production & materials sub-tab: only shows
+  when a batching/asphalt plant is BOOKED to the project (ties into the machinery-transfer asset
+  model). Pick plant + mix-design grade + output qty + destination (self-execution, or contractor
+  with a recovery target for the RAR), live "will consume" preview, a per-plant material-
+  consumption table, and the plant-runs log showing grade, output, destination and constituents.
+- Tests: consumption math (C30 cement 8.4×50=420, balance accrual 840 over two runs), contractor-
+  recovery destination (AC-WEARING bitumen 0.045×100=4.5), unknown-design rejection, and a full
+  UI flow — transfer BP-30 in, then record a C20 run through the form. Suite 451 (78 files, shard
+  293+158); server 9; both builds green; whole-project typecheck clean.
+
+2026-07-04 — Machinery inter-project transfer with lock + booking (spec §6)
+- machineryTransferChain() on the engine: SM Procurement (HQ PD) initiates → DPD recommends → PD
+  recommends → SM Procurement (HQ Engrs) approves. New integral-asset model: MachineryAsset
+  (code, description, category plant/equipment/vehicle/batching_plant/asphalt_plant, current
+  ProjectId booking, locked flag) and MachineryTransfer (asset, from/to project, technical
+  justification, chain, status in_chain→approved/returned). Seeded a global asset pool
+  (EXC-320 & RLR-12T booked to the flagship, AP-120 to Attock, BP-30 & GRD-14 in HQ pool).
+- Provider (global keys nlc-ecc.machineryassets / .machinerytransfers): initiateMachineryTransfer
+  LOCKS the asset (rejects if already in flight); actOnMachineryTransfer walks the ladder and on
+  final approval BOOKS the asset to the receiving project and unlocks; returnMachineryTransfer
+  releases the lock without booking (asset stays put). All audited; Api stubs.
+- New Procurement → "Machinery transfer" tab: integral machinery booked here, a pool picker of
+  transferable assets (not booked here, not locked) with a mandatory technical justification vs
+  BOQ quantities (SM Proc PD / admin only), and the transfers register with the shared chain
+  controls. Asset shows "transfer in flight" while locked.
+- Tests: ladder shape + pure-engine approval; provider lock-on-initiate, second-transfer
+  rejection, book-on-approval, return-releases-lock; UI tab with booked asset + initiate control
+  under the SM Proc PD login. Full suite 447 (77 files); server 9; both builds green; whole-
+  project typecheck clean.
+
+2026-07-04 — Lock enforcement (BOQ/mapping) + distribution-freeze enforcement at award (spec §3, §4)
+- Baseline lock now ENFORCES. BoqRegister: the baseline lock banner drives a baselineLocked flag
+  (kept separate from the legacy workflow-strip lock; effective locked = either), disabling the
+  BOQ Import button with a "raise a variation order" hint. MappingTab threads a mapLocked flag
+  into WbsMapping + MaterialMapping: every mutator (setBoqWbs link add/remove, weight, confirm,
+  accept-all, composition upsert/remove) early-returns when locked, and the Add-material row is
+  replaced by a "locked" marker.
+- Distribution freeze (spec §4). New domain/distributionFreeze.ts: itemFreezes(items, contracts,
+  dists) computes, per BOQ item, the quantity frozen by AWARDED contracts (awarded/in_progress/
+  completed/closed) with remaining distributable qty and holding contractors; distributionChange
+  Blocked(next, prev, freeze) returns null or a reason — blocks reducing/reassigning a frozen
+  allocation and over-allocating an item beyond what awarded contracts left. Enforced inside
+  LocalDataProvider.setDistribution (throws on a blocked change); provider.listItemFreezes()
+  exposes the frozen map (+ interface + Api stub).
+- DistributionsTab surfaces it: a "🔒 N frozen · M left" line per affected item, and update()
+  now try/catches the setter — a blocked change reverts the optimistic edit and toasts the reason.
+- Tests: freeze math (only awarded contractors freeze; remainder awardable; over-allocation
+  blocked), provider setDistribution throwing on a frozen reduction, and a lock-enforcement UI
+  test (locking the BOQ disables Import). Full suite 442 (76 files); server 9; both builds green;
+  whole-project typecheck clean.
+
+2026-07-04 — Baseline lock ladders: BOQ / Schedule / Mapping validate→lock + Comd-Engrs revision (spec §3)
+- baselineLockChain(kind) + baselineRevisionChain(kind) on the engine. BOQ: Planning Engr → DPM →
+  SPM validate → Manager Plans (HQ PD) LOCKS. Schedule: DPM → SPM → SM/Manager Plans locks.
+  Mapping: Planning Engr + Procurement Mgr + DPM + SPM validate → SM Procurement reviews →
+  SM/Manager Plans locks. Revision (any register): SPM requests → SM Plans reviews → COMD ENGRS
+  authorises.
+- BaselineLock state (per project × kind: open→locking→locked→revising, chain, lockedBy/At,
+  revisionNo) with provider get/submit/act/return/requestRevision (key nlc-ecc.baselinelocks.
+  <pid>; a locking chain that completes sets locked; a revising chain that completes re-locks and
+  BUMPS revisionNo; audited; Api stubs).
+- components/BaselineLockBanner.tsx atop the BOQ (BoqRegister), Schedule (ExecutionTab schedule
+  sub) and Mapping (MappingTab) tabs: shows state (Draft / Locking / Locked · rev N by … /
+  Revision in progress), Submit-for-lock (SQS/Planning Engr/SPM/admin), Request-revision after
+  lock (SPM/admin), and the shared act/return/resubmit controls gated to the current appointment;
+  exposes onChange(locked) so hosts can disable editing next.
+- Tests: three ladder shapes + revision-to-Comd; provider submit→lock→revision→re-lock bumping
+  revisionNo, return holding 'locking'; pure-engine mapping approval; UI banner submit flow. Full
+  unsharded suite 438 (75 files); server 9; both builds green; whole-project typecheck clean.
+
+2026-07-04 — Supplier-bill chains: central (CFO) & local (PD), generated from CRVs (spec §6)
+- supplierBillChain(kind) on the engine: Procurement Engineer generates → SPM verifies → SM
+  Procurement (HQ PD) reviews → PRE-AUDIT audits → SM Finance (HQ PD) processes → DPD recommends
+  → then LOCAL: PD approves → SM Finance pays; CENTRAL: PD recommends → SM Proc (HQ Engrs) → Dy
+  Comd → Comd Engrs endorses → Dir Sp reviews → CFO pays. CENTRAL_MATERIALS = Cement/Steel/
+  Bitumen; isCentralMaterial() drives the routing.
+- SupplierBill entity (billNo, supplierId, poIds, priced lines, amount, kind central|local,
+  status draft→in_chain→paid, chain). Provider generateSupplierBillFromCrvs() sums CRV received
+  qtys across the selected POs' CRVs and prices them at MATERIAL MASTER rates (bill-from-CRV,
+  spec §6), classifies central-vs-local from the lines, then submit/act/return/resubmit on the
+  shared engine — final act pays. Per-project key nlc-ecc.supplierbills.<pid>; audited; Api stubs.
+- New Procurement → "Supplier bills" tab: Procurement Engineer picks POs-with-CRVs and generates;
+  the register shows class (central → "→ CFO" hint), amount, chain position, and the shared
+  Submit/act/return/resubmit controls gated to the current appointment holder.
+- Reinforced the gate discipline from the CI fix: caught a repeat unused-import (waitFor) via the
+  WHOLE-PROJECT typecheck before packaging. Full unsharded suite 430 (74 files); server 9; both
+  builds green.
+
+2026-07-04 — CI fix: unused import in HrLadderGenesis.test.tsx (tsc --noEmit is whole-project)
+- CI Web job failed typecheck: HrLadderGenesis.test.tsx imported waitFor unused (TS6133). Root
+  cause: this session's suite outgrew the 175 s tool window so I'd been gating via SHARDED test
+  runs, and I added that test file without re-running the WHOLE-PROJECT `tsc --noEmit` (which,
+  unlike the sharded vitest runs, compiles every file including tests). Removed the unused import.
+- Re-verified the way CI does: `npm run typecheck` 0 errors across the whole project; full
+  UNSHARDED `npm run test` completed 424 passing (the earlier need to shard was tool-window
+  timing, not a suite failure); both builds green; server 9. GATE DISCIPLINE going forward: after
+  any file add/change, always run the full `run typecheck` (never rely on sharded test runs to
+  catch type errors — they don't compile unreferenced files the same way).
+
+2026-07-04 — HR authorisation ladder with grade delegation (A3) + project-genesis staff gate
+- hrApprovalChain(scope) on the chain engine (spec §2 step 4, §9 A3): PD recommends → SM HR
+  (HQ Engrs) reviews → then by DELEGATION — grades 1–16 terminate at COMD ENGRS (approve);
+  grade 17+ and the overall TOHR continue Comd endorses → Dir HR reviews → DG NLC approves.
+- HrProposal entity (kind key_appointments|tohr, entries title/grade/auth, chain, status
+  draft→in_chain→approved) with provider create/submit/act/return/resubmit (per-project key
+  nlc-ecc.hrproposals.<pid>; submission computes the ladder from the MAX GRADE in the proposal;
+  audited; Api stubs). Final act flips the PROJECT's new hrApproved flag — spec §2 step 5.
+- Genesis gate: createProject now sets hrApproved: false (legacy/seeded projects stay undefined =
+  open). ProjectView LOCKS an unapproved project for signed-in PROJECT-LEVEL appointments
+  ("Project not yet opened" notice); HQ appointments and dev mode see it normally and get the new
+  HR AUTHORISATION card on the Executive tab: Manager HR (HQ PD) drafts entries (title, grade,
+  auth, TOHR toggle) with a live routing hint ("routes to DG NLC / Comd Engineers (delegated)"),
+  submits, and the proposal walks the ladder via the shared ApptChainControls.
+- Tests: delegation routing (16 vs 17 vs TOHR), genesis walk — Gr-18 proposal builds the 5-step
+  DG ladder, hrApproved stays false through Dir HR and flips ONLY on DG's act; Gr-12 proposal
+  approves in three acts under delegation; UI lock as Site Engineer on a fresh project. Sharded
+  suite: 293 + 131 = 424 (73 files); server 9; both builds green.
+
+2026-07-04 — RAR appointment ladder with PRE-AUDIT on the chain engine; shared chain controls
+- rarApprovalChain() (spec §5, A7 — EPC byte-identical): Contract Engineer reviews → DPM endorses
+  → SPM endorses → Manager Contracts (HQ PD) reviews → PRE-AUDIT AUDITS → DPD recommends → PD
+  approves → SM/Manager Finance pays & issues cheque. Rar gains chain?: ApptChainState; provider
+  submitRarApproval / actOnRar / returnRar / resubmitRar (final act lands the RAR at PAID —
+  transitionRar carries no side-effects so the coupling is safe; all audited; Api stubs).
+- components/ApptChainControls.tsx: ChainStatus ("with <appointment> · step k/n" / returned-with-
+  remarks / chain complete) + ChainControls (act button labelled by step action incl. "Audit ✓",
+  Return… modal with mandatory remarks, Resubmit for originator appointments; buttons render only
+  for the signed-in holder of the current appointment, admin may act any step). ContractsRegister
+  REFACTORED onto the shared components (bespoke ChainCell/ChainActions deleted); RarRegister
+  wired: Submit (chain) on draft RARs, chain status beside the legacy pill, legacy quick-advance
+  retained for un-chained RARs until migration completes; row updates patch local state.
+- Tests: ladder shape (Pre-Audit at step 5, Finance last), provider walk — 8 acts land PAID and
+  status stays draft until Finance acts; Pre-Audit return ("machinery recovery missing") +
+  resubmission restart; pure-engine approval; UI submit → "with Contract Engineer · step 1/8".
+  Sharded suite: 293 + 127 = 420 (72 files); server 9; both builds green.
+
+2026-07-04 — Appointment chain engine + contract approval ladder (spec §4, A2/A4/A5)
+- domain/apptchain.ts: the generic appointment chain engine. Serializable ApptChainState
+  (steps · currentIndex · status in_progress/returned/approved · full event history). Every step
+  is a NAMED APPOINTMENT that formally acts (A2); act() advances and the last step's act
+  approves; returnForCorrection(by, remarks) sends the file back (A5); resubmit() restarts the
+  chain and may REBUILD the steps — so a revised contract value re-routes to the new competent
+  authority (A4). contractApprovalChain(kind, value) encodes spec §4 verbatim: DPM validate →
+  SPM validate → SM Contracts (HQ PD) review → DPD recommend → then by band: PD approves (labour
+  ≤15 Mn / sublet ≤150 Mn); or PD recommends → SM Contracts (HQ Engrs) → Dy Comd → Comd Engrs
+  approves (15–30 / 150–300 Mn); or Comd endorses → Dir Ops reviews → COO Ops recommends → DG
+  approves (above).
+- Contract carries chain?: ApptChainState. Provider: submitContractApproval (derives labour/
+  sublet from the CONTRACTOR's kind, builds the value-routed ladder), actOnContract (final act
+  flips draft → AWARDED — the §4 freeze point), returnContract (remarks required), resubmit
+  Contract (ladder rebuilt at the CURRENT value). All audited; Api endpoints stubbed.
+- FIXED a latent defect the spec exposed: createContract hard-coded status 'awarded' — contracts
+  were never draftable. Now DRAFT unless an awardDate is passed (the register's direct-award form
+  passes today's date, so legacy behaviour is preserved).
+- ContractsRegister UI: chain cell ("with <appointment> · step k/n", returned-with-remarks in
+  red, chain complete), Submit-for-approval on drafts, act button labelled by the step's action,
+  Return… modal (remarks mandatory), Resubmit for originators — action buttons appear only for
+  the signed-in holder of the CURRENT appointment (admin may act any step).
+- Tests: ladder routing across all three bands for both types; act-to-approval history;
+  return → resubmit at 16 Mn re-routing from PD to Comd band; provider round-trip incl. the
+  kind-from-contractor derivation and award-on-final-act; full UI walk (submit → DPM validates →
+  SPM returns with remarks) across real appointment logins. Suite runs SHARDED (>175 s window):
+  domain/data/screens/components 293 + root tsx 122 = 415 (71 files); server 9; builds green.
+
+2026-07-04 — Clarifications A1–A9 implemented: per-appointment logins, Mark-Input with acknowledgement, mix-design library
+- Spec updated: docs/REQUIREMENTS_V2_ORG_WORKFLOWS.md §9 now records all nine ANSWERS
+  (individual logins for all; intermediates formally act; HR delegation by grade — Gr 17+ & TOHR
+  → DG, Gr 1–16 → Comd Engrs; ceilings per contract w/ variations re-routing at revised value;
+  Pre-Audit HQ PD only + return-for-correction everywhere; mix-design library; EPC identical
+  chain; legacy mapping CONFIRMED; Mark-Input requires acknowledgement). §2 HR ladder carries the
+  grade delegation.
+- Individual logins (A1): AppUser gains appointmentId; SEED_USERS now seeds ONE LOGIN PER
+  APPOINTMENT from the catalogue (project staff scoped to the flagship, PD staff to PD North,
+  HQ staff to their HQs) with acting roles via new legacyRoleFor() (spm/dpm→pm, sqs→qs,
+  finance+pre_audit+cfo→fm, contracts→manager_contracts, command tier→admin, staff default by
+  level). Role state + header switcher carry appointmentId through sign-in.
+- Mark-Input (A9): new MarkInput model (fromUser/appointment, toAppointmentId, node/project,
+  text, sent→acknowledged w/ ackBy/ackAt) with provider list/create/acknowledge (global key
+  nlc-ecc.markinputs; audited; second ack is a no-op). MarkInputPanel: compose to your IMMEDIATE
+  SUPERIOR computed from properChannel(appointment) — placeholder names the superior — plus
+  "Awaiting your acknowledgement" queue (if you hold the recipient appointment) and "Your inputs"
+  with ack status. Wired as a dashboard card AND onto the project Executive tab (project staff
+  are the primary senders). Pending acknowledgements flow into the superior's work-list/bell via
+  inputAckWorklist (new WorkItem kind 'Input').
+- Mix-design library (A6): domain/mixdesigns.ts — C15/C20/C30 + AC-BASE/AC-WEARING with
+  constituent coefficients over material-master codes, runConsumption(design, qty) →
+  per-material demand; provider listMixDesigns/upsertMixDesign (per-project key, DEFAULT
+  fallback; Api stubs). Plant-production wiring is the next phase.
+- Fixed a JSX fragment-nesting bug inserting the panel into ProjectView's executive tab. NOTE:
+  the full suite now exceeds the 175 s tool window — run it in shards (src/domain src/data
+  src/screens · root *.test.tsx · src/components). Web 410 (70 files) all green across shards;
+  server 9; both builds green.
+
+2026-07-04 — Requirements v2 continuation package: polished org/workflow spec + appointment catalogue
+- The user supplied the full organisational requirements: four command levels (~40 appointments
+  incl. Pre-Audit, Dir Sp, CFO, Dir LAR), project genesis (creation authorisation → salients →
+  HR approval ladder to DG NLC → visibility gates), baseline validate→lock→authorised-revision
+  ladders for BOQ/XER/mapping, value-routed contract approvals (labour 15/30 Mn, sublet
+  150/300 Mn → PD/Comd Engrs/DG), IPC/RAR flows with Pre-Audit and cheque booking, central-vs-
+  local procurement chains topping at Dir Sp/CFO, machinery transfer/hire, plant mix designs,
+  overhead sub-head bookings, and per-section dashboards (incl. Recovery + HR) at every HQ level
+  with Mark-Input upward and directives downward.
+- Delivered docs/REQUIREMENTS_V2_ORG_WORKFLOWS.md: the POLISHED SPEC with logical enhancements
+  (return-for-correction loops, freeze enforcement, lock banners), a 24-row GAP MATRIX against
+  the app as built, a 7-phase implementation plan, and 9 blocking clarification questions
+  (appointment granularity, proper-channel semantics, DG HR delegation, ceiling scope, Pre-Audit
+  loops, mix-design library, EPC parity, legacy-role migration, Mark-Input semantics). This file
+  + journal is the continuation package for any new session.
+- Shipped Phase-1 foundation risk-free: domain/appointments.ts — the appointment catalogue as
+  data (id/title/level/reportsTo/section for all four levels), properChannel() walking the
+  reporting line, CONTRACT_CEILINGS + contractApprover(kind, value) implementing the 15/30 &
+  150/300 Mn routing, and LEGACY_ROLE_MAP as the interim bridge. Unreferenced by UI yet — zero
+  behavioural change. Tests: level/reporting integrity, SQS→DG channel walk, value routing.
+  Web 404 (69 files); server 9; both builds green.
+
+2026-07-04 — Stage-aware analytics; monthly command brief print upgrade
+- Stage-aware analytics. portfolioEvm now scores ONGOING works only — physically-completed and
+  closed projects sit at 100/100 and were flattering portfolio SPI/PV/EV; they're excluded at the
+  domain level so every EVM consumer inherits the correction. The dashboard breakdown's Score
+  column is stage-aware: ongoing → composite health score as before; physically_completed →
+  "recv N%" pill (received/billed — the recovery position, which is the only health that matters
+  after TOC); financially_closed → "closed" pill. The Monitoring Sec staff dashboard applies the
+  same rule, alarming "N% receivable outstanding" for completed projects instead of meaningless
+  schedule health.
+- Monthly command brief. The dashboard's print flow is now a formal brief: a print-only header
+  block — "MONTHLY COMMAND BRIEF — <NODE>", ECC byline, as-at date, prepared-for (signed-in user),
+  projects-under-command count, rule lines — plus print CSS that hides all interactive chrome
+  (buttons, bell, switchers) and forces collapsed cards open, so one Ctrl+P from any HQ/PD node
+  yields the complete brief: lifecycle totals, breakdown, directives, staff sections, manpower
+  roll-up. Button renamed "Print command brief".
+- Branding test made robust to the new print-only header (getAllByText). Web 401 (68 files);
+  server 9; both builds green.
+
+2026-07-04 — DLP defect register + final-bill reconciliation (the work between TOC and close)
+- DLP defects. New DlpDefect model (raised date, description, location, severity minor/major,
+  status open/rectified + rectifiedDate) with provider list/create/setStatus (key
+  nlc-ecc.dlpdefects.<pid>; every raise/rectify/reopen audited; Api stubs). Seed: Attock carries
+  one OPEN major defect (shoulder erosion RD 4+300) and one rectified; Thar is clear — both
+  states demo out of the box.
+- Close gate extended. readyToClose(p, liabilities, openDefects) — a project may financially
+  close only when receivable, liabilities AND open DLP defects are ALL zero. The Recovery
+  register gained a "DLP defects" column (open count in red / "all rectified" / "none"), the
+  Ready cell explains "defects open", and the close button tooltip states the full rule.
+- Recovery detail modal (click the defects cell): the DLP DEFECT REGISTER (raise with
+  location + severity, mark rectified, reopen) and the FINAL-BILL RECONCILIATION — new
+  domain/finalbill.ts compares AUTHORISED quantities (BOQ + approved variation deltas via
+  approvedVariationQtyByItem) against quantities CLAIMED through IPC lines, per item, with
+  variance qty/value, over-claim flags, and totals (over-claimed items/value, unclaimed balance,
+  clean verdict) — the QS check before closure, sorted worst-first.
+- Tests: defect lifecycle incl. seeded register, close gate blocked by an open defect, recon math
+  with VO-adjusted authorised qty + over/under totals + clean case, and the full UI flow (count →
+  modal → rectify → row unblocks). One test-isolation fix: restore the real KV store after
+  provider tests swap in a memory store. Web 397 (67 files); server 9; both builds green.
+
+2026-07-04 — Material master + rate analysis; retention release in Recovery
+- Material master (controlled catalogue). New MaterialMaster type (code · name · unit · spec ·
+  standard rate · lead days) with provider list/upsert/delete (key nlc-ecc.matmaster.<pid>;
+  generator seeds a realistic catalogue — Cement OPC 53 PS-232, Lawrencepur sand, Margalla crush
+  10/20 mm, admixture ASTM C494, bitumen 60/70 AASHTO M20, aggregates, Gr-60 steel — with rates
+  and lead days; Api stubs). New Procurement sub-tab "Material master" (register + inline rate
+  edit). Compositions and issues now draw from it: the composition editor's material input offers
+  the catalogue via datalist; the Material-issues form DEFAULTS the issue rate from the master
+  when a known code is entered.
+- Rate analysis (estimator's build-up). domain/rateanalysis.ts: material cost per unit of a BOQ
+  item = Σ coeff × master rate; share of the BOQ rate; balance left for labour/plant/OH&P;
+  LOSS-RATE flag when material alone exceeds the rate; missing-master-rate list. Rendered as a
+  summary line under every composed item in the Mapping composition table.
+- Retention release in Recovery. The Recovery register now computes retention held per completed
+  project (Σ IPC gross × configured retention %) and applies the release rule — ½ releasable on
+  TOC, ½ after the 12-month Defect Liability Period — showing Releasable-now and the DLP due date
+  ("DLP expired — release due" once past).
+- Tests: master seed/upsert/delete, rate-analysis math incl. loss-rate + missing rates, master UI
+  add flow, Recovery retention columns. Web 392 (66 files); server 9; both builds green.
+
+2026-07-04 — Project lifecycle (Ongoing → TOC/Recovery → Financially Closed); consumption variance; directive escalation
+- Project lifecycle stages (civil-works practice). ProjectStage = ongoing | physically_completed |
+  financially_closed with tocDate / financialCloseDate on Project; provider setProjectStage
+  (audits toc / fin_close / reopen; Api stub). domain/lifecycle.ts: stageTotals (ALL total PLUS a
+  separate total per stage — count, CV, billed, received, RECEIVABLE = billed − received),
+  receivable(), readyToClose(p, liabilities) — a project may financially close only when the
+  receivable is collected AND liabilities are zero.
+- Dashboard: new lifecycle STRIP — four clickable total cards (All / Ongoing / Physically
+  completed (Recovery) / Financially closed); clicking DRILLS the whole dashboard (breakdown,
+  KPIs, roll-up) to that stage. LifecyclePanel per stage: ongoing → "Issue TOC…" (gated at 100%
+  physical; moves the project into Recovery); physically_completed → the RECOVERY register (TOC
+  date, billed, received, receivable, liabilities, ready-✅ gate, "Mark financially closed"
+  disabled until receivable+liabilities are zero); financially_closed → the closed archive with
+  admin Reopen. Commander roles (PD/FM/admin) act; every transition audited.
+- Seed v9: Attock Bypass + Thar Coalfield staged physically_completed (100% physical, receivables
+  1.6bn / 0.8bn to recover, TOC dates) and I-11 financially_closed (received == billed == CV);
+  reconcileSeed backfills stages + completed figures into existing sessions once.
+- Consumption variance (professional improvement): domain/consumption.ts — theoretical = Σ
+  executed qty × composition coeff per material vs actually issued; wastage % flagged beyond ±5%.
+  Table added to Procurement → Material issues.
+- Directive escalation: overdue directives now raise CRITICAL alerts in the Alert centre, routed
+  to the assignee role (Alert gains optional owner override honoured by mergeAlertStates).
+- Tests: stage totals/gates/provider transitions + seeded stages, dashboard strip → Recovery drill
+  with disabled close gate, consumption wastage math, escalation routing. Legacy suites unaffected
+  by the re-staged seed projects. Web 387 (65 files); server 9; both builds green.
+
+2026-07-04 — Multi-material BOQ compositions; command directives; staff-section HQ dashboards
+- Multi-material composition (civil practice: concrete = cement + sand + crush gradations +
+  admixture). Fixed the model: setBoqMaterial now upserts by (boqItemId, materialRef) — it
+  previously REPLACED by item, silently limiting every BOQ item to ONE material; added
+  removeBoqMaterial (types + Local + Api). The Mapping "BOQ → Material composition" page is now a
+  composition editor: per item, multiple material rows with editable coeff, the DERIVED TAKE-OFF
+  (item qty × coeff) per material, remove ×, an add-material row, plus search and
+  All/Composed/No-composition pills. The generator seeds realistic compositions (concrete-class →
+  CEM 7.2/SAND 16/CRUSH-10 9/CRUSH-20 18/ADMIX 1.1 with lead days; surfacing → BITUMEN/AGG-ASPHALT;
+  base → AGG-BASE); seed v8 clears stale flagship boqmat/machinery caches. Downstream flows
+  unchanged and now composition-aware for free: lead-time planner aggregates per material across
+  items, procurement dashboard, issues/recovery, RAR netting.
+- Command directives (issue → act → respond). New Directive model (title, detail, issuedBy,
+  assignee role + scope node, optional project, due date, status issued → acknowledged →
+  in_progress → complied → closed, response thread) with provider
+  list/create/respond/setStatus (global key nlc-ecc.directives; Api stubs; every step audited).
+  DirectivesPanel card on the command dashboard: commanders (PD/FM/admin) issue instructions
+  scoped to any node/project under them; assignees respond (auto-acknowledge), mark complied,
+  issuer closes; OVERDUE rows alarm (⛔ + count pill). Pending directives flow into the assignee's
+  My-Approvals worklist + bell via directiveWorklist (overdue flagged in the action) — the
+  "timely response" enforcement.
+- Staff-section dashboards at HQ levels. New SectionDashboards card (non-project nodes):
+  Monitoring / Planning / Procurement / Finance / CONTRACTS sections, each rolling its OWN domain
+  across every under-command project, PD-wise → project-wise with a PD filter and per-row alarms,
+  every row deep-linking to the screen where the section acts. Contracts Sec shows CAs count,
+  contractors, CA value, RAR billed and TO-RECOVER (material+machinery) with unrecovered alarms;
+  Procurement Sec: demands/pending-in-chain/committed/paid; Finance Sec: receipts/payments/net/
+  liabilities; Planning Sec: planned/actual/slippage + diverging-activity count; Monitoring Sec:
+  health score components. Command Section = the dashboard itself + directives register.
+- Fixed a TDZ bug (underCommand read `node` before destructuring). Tests: composition upsert/
+  remove + seeded concrete recipe + editor add-material; directive lifecycle + worklist routing +
+  dashboard issue flow; contracts/finance section render with PD filter. Web 381 (64 files);
+  server 9; both builds green.
+
+2026-07-04 — Prototype-parity gap closure: procurement dashboard + material issues, mapping smart filters, financial Planned-vs-Actual
+- Audited the Unified Control prototype (v1.43, 27k lines) tab-by-tab against the app: Execution
+  already exceeds it (schedule, look-ahead, S-curve, progress, period-map, overheads, production,
+  resources); Store/Plant/Equipment live under Procurement by design. Four genuine gaps closed:
+- Procurement Dashboard (new default sub): committed → incurred → paid pipeline KPIs — pending
+  approvals, demands raised, committed (POs), paid to suppliers, MATERIAL TO RECOVER, MACHINERY TO
+  RECOVER, lead-times at risk — every card click-drills into its sub-tab.
+- Material Issues register (screens/procurement/MaterialIssuesTab.tsx): issue material to site or
+  a contractor (code, qty, rate, issued-to), edit recovered-to-date, per-contractor recovery
+  summary. Contractor issues feed RAR material recovery; consumption reduces lead-time stock.
+- Pending-count subtab badges on Procurement (inbox = demands+payments in chain; per-tab counts),
+  refreshed live on 'nlc:audit'.
+- Mapping smart filtering (prototype parity + modern-app ask): free-text search across
+  code/description/bill/section, bill dropdown, and status pills All / Unmapped / Auto (pending) /
+  Confirmed with an N-of-M count — replaces the lone unmapped checkbox.
+- Financial "Planned vs Actual" sub: monthly planned outflow (budgeted overheads + auto-booked HR
+  manpower) vs actual payments, variance + cumulative variance, future months dimmed.
+- Legacy procurement tests updated for the new default sub and badge-suffixed tab names. Web 373
+  (63 files); server 9; typecheck clean; both builds green.
+
+2026-07-03 — Unified approver work-list with bell notification; BOQ references on payments
+- Unified work-list (closes the last 3h(4) partial). New domain/worklist.ts projectWorklist():
+  every record whose NEXT approval step belongs to the acting role, across modules — IPCs (status
+  transition map), RARs (status transition map), procurement demands and payments (chain
+  pendingStage) — each with the pending step's label, amount and a deep link. New /worklist screen
+  "My approvals" lists the queue across every project in the signed-in user's SCOPE (nodeInScope),
+  and a header BELL with a count badge is the notification — it refreshes live on the provider's
+  'nlc:audit' event, so acting anywhere updates every approver's count without reload.
+- BOQ references on payments (closes 3e(3)). FinancialPayment gains optional boqItemId; the
+  Financial → Payments form offers a "BOQ ref (optional)" select and the ledger shows the item
+  code — payments now carry project AND item references so planned / committed / incurred / paid
+  compare at BOQ-item level.
+- Tests: worklist routing math per role (PM vs FM vs PD queues), bell + queue navigation, PM queue
+  after role switch, and payment-with-BOQ-ref ledger round-trip. Web 368 (62 files); server 9;
+  typecheck clean; both builds green.
+
+2026-07-03 — Integration seams 6·8·10: HR cost auto-posting + four-level rule, configurable dashboard, per-user access scoping
+- HR cost auto-posting + roll-up rule (req 3d(1)(2)). New domain/hrrollup.ts: unitMonthly (held
+  seats × pay band), nodeOwnHrMonthly, and hrCostRollup applying the organisation's rule exactly —
+  project = own HR; HQ-PD includes its own; HQ-Engrs includes its own; TOP HQ shown but EXCLUDING
+  its own HR (children only). The Overheads tab now books "Manpower (HR establishment)" into
+  project cost AUTOMATICALLY: monthly cost derived live from the project's establishment × months
+  elapsed, included in the planned total — update HR and it re-books with no re-entry. The command
+  dashboard gained a "Manpower cost roll-up (monthly)" card: own / from children / reported total
+  for the node and each child, with the rule annotated.
+- Configurable dashboard (req 3g(4)). New state/dashPrefs.ts persists PER-ROLE metric selection
+  (contract, billed, received, planned, actual, slippage, score, manpower card). "⚙ Customize"
+  popover on the breakdown card toggles columns live; a PD's view no longer affects the CFO's.
+  RAG thresholds remain configurable via the existing filter-bar control.
+- Per-user access scoping (req 3j(3), preps 3j(4)). New AppUser model (name, appointment role,
+  organisational scope nodeId) with provider listUsers/upsertUser/deleteUser (global key
+  nlc-ecc.users; seed: System Admin, GM Monitoring, PD North, PM F-14/F-15, Manager Contracts;
+  Api stubs). RoleProvider gains user/setUser — signing in from the new header user switcher sets
+  role AND scope together (persisted). domain/access.ts nodeInScope() walks the org tree; the
+  command dashboard blocks nodes outside the signed-in user's subtree with an "Outside your scope"
+  notice + jump to their own dashboard — directorate and project users see their own data, HQ sees
+  the roll-up. Settings gained a "Users & scope" admin card (add/remove users, role + node scope);
+  the dev role switcher is retained for acting-as. SSO/directory binding attaches to this model.
+- Tests: four-level rule math, auto-posted overheads banner (proj-rwp-ring establishment), scope
+  walking + PD sign-in blocked at HQ node + jump home, per-role column customize. Web 364
+  (61 files); server 9; typecheck clean; both builds green.
+
+2026-07-03 — Integration seams 4·5·7·9: alert centre lifecycle, lead-time planner, health score, margin basis
+- Alert centre with lifecycle (req 3i). New commercial sub-tab "Alert centre": every computed
+  exception in one queue, ROUTED to a responsible role (ALERT_OWNER: recon→PM, aging→PD, adv→FM,
+  planner→PM, rar→Manager Contracts, procurement→PM) and TRACKABLE open → acknowledged → resolved,
+  or muted with a mandatory reason (both write the audit trail). Detection stays computed — an
+  alert re-raises while its condition holds; triage state persists per stable alert id via new
+  AlertState + provider listAlertStates/setAlertState (key nlc-ecc.alertstates.<pid>; Api stubs).
+  Only the owner role (or admin) may act. The banner now hides resolved/muted alerts. Added the
+  missing exception types: unrecovered material and unrecovered machinery balances (sub 'rar').
+- Procurement lead-time planner (req 3c(6)). BoqMaterialLink gains leadDays (default 30). New
+  domain/leadtime.ts materialLeadPlan(): requirement = remaining BOQ qty × consumption coeff per
+  material; stock on hand (CRV received − issued) offsets it; need-by = earliest planned start of
+  the mapped (BOQ↔WBS, confirmed) unfinished activities; order-by = need-by − lead. Status
+  ok / order_now / late with leadTimeAlerts feeding the alert centre (late = critical). New
+  Procurement sub-tab "Lead times" with an editable lead-days column (writes back to the links).
+- Composite health score (req 3f(4)). domain/health.ts: 0–100 weighted schedule 40% (slippage) ·
+  billing alignment 30% (billed%-of-CV vs physical %, divergence either way erodes it) ·
+  collection 30% (received/billed); bands ≥75 green / ≥50 amber / red. Command dashboard breakdown
+  gained a Score column (chip with component tooltip) beside the RAG badge.
+- Documented margin basis (req 3e(2)). The Margin tab now carries a "How profitability is
+  computed" panel: revenue basis (IPC+EPC net of deductions, RARs never netted), direct-cost basis
+  (allocation rates), and the treatment of centrally procured recovered material/machinery.
+- Tests: lifecycle merge/routing, recovery alerts, lead-plan derivation + late/order-now, health
+  bands, and an end-to-end ack→resolve UI flow. Web 358 (60 files); server 9; both builds green.
+
+2026-07-03 — Integration seams 1–3: mapping workbench, progress→planning push, over-claim gate
+- Mapping workbench (reqs 3a(1)(2)(3)). BOQ↔WBS is now many-to-many: BoqWbsLink gains an optional
+  weight (value share, even split by default); setBoqWbs upserts by (item, activity) and
+  removeBoqWbs deletes one link. New domain/mappingSuggest.ts scores unmapped items against
+  activity names (token Jaccard with construction synonyms — earthworks≈excavation≈grading,
+  asphalt≈surfacing, culvert≈drainage…) and emits confidence:'auto' candidates; the Mapping tab
+  gained a "Suggest mappings" action, a pending-review queue where a named user Confirms or
+  Rejects each candidate, per-item activity chips with weight % and unlink, an unmapped-only
+  filter, and coverage measured by BOQ VALUE plus % of activities covered (valueCoverage /
+  activityCoverage in domain/mapping.ts).
+- Progress → Planning push (reqs 3a(4)(5)(6), 3b(2)). New domain/derivedProgress.ts derives each
+  activity's physical % from validated executed BOQ quantities through CONFIRMED links only
+  (weighted), compares it with the schedule-expected % (time elapsed between planned start/finish)
+  and computes the divergence. The Schedule table shows Physical % (derived) · Expected % · Δ with
+  rows flagged beyond tolerance; CommercialConfig gains divergenceTolerancePct (default 10,
+  editable in Deductions & retention); the commercial alert banner now raises divergence alerts
+  (critical at 2× tolerance) and an unmapped-BOQ-value alert.
+- Hard over-claim gate (req 3b(4)). claimCap = approved BOQ qty + APPROVED variation qty deltas −
+  already claimed (domain/billing.ts, approvedVariationQtyByItem counts only approved VOs).
+  Generate IPC now BLOCKS any claim above cap: non-authorised roles see "Blocked — over-claim";
+  PD/admin get "Generate with override…" which demands a written reason and records the override
+  (role, items, quantities, reason) in the audit trail via the new provider.recordOverride
+  (Local writes audit action 'override'; Api stub posts to /audit/override).
+- Updated the legacy single-select mapping test for the chip UI. New IntegrationSeams.test.tsx
+  covers coverage math, suggestion engine, derived %/divergence/unmapped alerts, claim caps, the
+  review-queue confirm flow and the schedule columns. Web 351 (59 files); server 9; typecheck
+  clean; both builds green.
+
+2026-06-23 — Three professional enhancements: machinery-hire log, over-allocation guard, scope coverage
+- Machinery-usage log (Procurement): new MachineryUsage type (hours × rate = usage value), provider
+  methods listMachineryUsage / createMachineryUsage / setMachineryRecovered (Local + Api stubs +
+  interface), generator seeds EXC-320 and RLR-12T hired to sublet contractors, and a new
+  "Machinery hire" Procurement sub-tab (log + per-contractor recovery balances). domain/
+  machineryRecovery.ts mirrors materialrecovery (per-contractor usage − recovered = balance).
+  The RAR modal now surfaces the contractor's outstanding machinery balance with a one-click
+  "Recover this" that pre-fills a machinery recovery — parallel to material, suppressed for labour.
+- Over-allocation guard: the distribution planner now caps any allocation at the item's remaining
+  BOQ quantity (item.qty − Σ other lines), toasts when it clamps, and the qty input remounts so the
+  capped figure shows. Quantities can never exceed the BOQ.
+- Per-contract scope coverage: domain/allocations.ts gains contractCoverage() and the planner shows
+  a "Contract scope coverage" panel (scope value · allocated · unawarded · coverage %) so unawarded
+  scope is visible at a glance; rows with unawarded balance are flagged. Panel renders whenever
+  awarded contracts exist, independent of allocations.
+- Tests: machineryRecovery + contractCoverage domain tests, machinery register render, and the
+  coverage panel render. Web 341 (58 files); server 9; typecheck clean; both builds green.
+
+2026-06-23 — Remove RAR↔IPC recovery linking; material-recovery suggestion (verify A/B/C)
+- Confirmed the three commercial requirements are implemented and reconciled:
+  * RAR recoveries (B): material / machinery / other via domain/rarRecovery.ts (rarSettlement),
+    with material & machinery suppressed for labour-only contractors (allowedRecoveryKinds);
+    RAR net = gross − contract retention − RAR taxes − recoveries; IPCs never involved.
+  * Distribution splitting (C): domain/allocations.ts + DistributionPlanner already support
+    multiple allocations per BOQ item (labour / sublet / NLC-direct), partial quantities with a
+    live remaining-to-assign balance, the awarded contract shown per line, and a Mode label of
+    Unassigned/Self/Sublet/Labor/Mixed.
+- Removed the remaining RAR↔IPC recovery linking UI (the RecoveryLinks panel in the RAR register,
+  its state/loaders and the obsolete test) and the lingering revenue-panel note — there is now no
+  mention of recovering RAR against IPC anywhere in the app.
+- Professional touch: the RAR recoveries panel now surfaces the contractor's outstanding NLC
+  material balance (issued value − recovered, from domain/materialrecovery) with a one-click
+  "Recover this" that pre-fills a material recovery — directly supporting "amount corresponding to
+  material consumed". Suppressed for labour contracts.
+- Tests: added regressions (no Recovery-against/RAR↔IPC UI; RAR settled by retention+taxes
+  +recoveries). Web 337 (57 files); server 9; typecheck clean; both builds green.
+
+2026-06-23 — RAR recoveries (material/machinery/other), no RAR↔IPC recovery, planner contract refs
+- Removed all RAR↔IPC recovery from the app (it's a given): IPC modal no longer shows an
+  "Advance recovery linked" section or any RAR mention; RAR modal no longer has "Recovery against
+  IPCs" or an IPC-dependent payment computation. RAR settlement is now standalone.
+- RAR recoveries (domain/rarRecovery.ts + types RarRecovery/RarRecoveryKind on Rar):
+  a) material — NLC-issued material consumed in the executed works,
+  b) machinery — NLC plant/machinery usage,
+  c) other — described free-text + amount.
+  Material & machinery are blocked for labour-only contracts (allowedRecoveryKinds → ['other']);
+  sublet contracts allow all three. RAR net = gross − contract retention − RAR income tax − RAR GST
+  − recoveries. New provider.setRarRecoveries recomputes net and audits; generated sublet RARs now
+  carry a material recovery (+ machinery on alternate RARs) so the model is populated.
+- RAR detail modal rebuilt: KPIs (gross / recoveries / net), the contractor-BOQ measurement sheet,
+  an editable Recoveries table (type gated by contract kind, live preview), a clean Settlement
+  waterfall, and the billing approval chain (with the contractor-advance netting gate, not IPC).
+- Distribution planner: the split model (one BOQ item across labour / sublet / NLC-direct with
+  partial quantities) already existed; added a Contract column per allocation (mapped from the
+  Contracts register by contractor) and an explicit Unassigned remainder row, so it's clear how
+  much of each item is assigned and to which contract.
+- Tests: rarRecovery.test (3: settlement math, labour gating, persistence recompute),
+  DistributionSplit.test (1: contract column, unassigned row, sublet+labour split). Updated the
+  RAR-detail test to the settlement table. Web 336 (57 files); server 9; both builds green.
+
+2026-06-23 — Fix: IPC gross now reconciles to its itemwise lines (flagship was hand-seeded)
+- Root cause of "Gross certified 4,200 Mn vs This-IPC total 94 Mn": a leftover readIpcs() helper
+  still returned the hand-authored SEED_IPCS for the flagship (gross set by hand to 4.2/3.8/3.2 bn
+  but only 3 sample lines each), even though the BOQ and every other register had moved to the
+  generator. The measurement sheet summed the 3 lines (94 Mn) while the waterfall showed the
+  hand gross (4,200 Mn).
+- Fix: readIpcs() now uses the generator for the flagship like every other project, so each IPC's
+  gross == Σ line.amount (≈70 lines/IPC). Removed the dead SEED_IPCS constant. RAR mutation
+  fallbacks made generator-aware too (gen()?.rars ?? SEED_RARS). Seed version bumped to v7 so
+  existing sessions drop the stale hand-seeded IPC cache and regenerate.
+- Swept for similar issues: RARs already reconcile (gross == Σ lines, generated); the only other
+  flagship hand-seed special-case left is photos, which is intentional (not generated).
+- New guard: data/seedConsistency.test.ts asserts every IPC/RAR gross equals the sum of its lines
+  for the flagship and a sample of generated projects, and that IPCs carry the full certified set
+  (not a token sample). Updated 6 tests that assumed the old hand statuses — the generated vetted
+  IPC is IPC-04 (not IPC-03), and the retention-timeline test is now derived rather than hard-coded.
+- Web 332 (55 files); server 9; typecheck clean; both builds green.
+
+2026-06-23 — Complete IPC/RAR measurement sheets, contractor BOQ, and RAR-specific taxes
+- IPC detail now shows the COMPLETE certificate: a Previous · This IPC · Cumulative measurement
+  sheet across every BOQ item (new domain/measurement.ts), with BOQ qty, balance and % columns,
+  totals (previous/this/cumulative gross, % of BOQ), a "billed this IPC only" toggle, and KPI
+  header (this/previous/cumulative/net/%). Deductions now read the project's CommercialConfig
+  (retention/income tax/GST) instead of the old hard-coded settings. Wide modal + horizontal scroll.
+- RAR detail mirrors this against the CONTRACTOR's scope BOQ (items in the contract's scope bills),
+  with previous = peer RARs under the same contract; payment-chain/recoveries panels retained.
+- Separated IPC vs RAR taxes: CommercialConfig gains rarIncomeTaxPct / rarGstPct. RAR net =
+  gross − contract retention − RAR income tax − RAR GST (no IPC deductions; IPCs/EPCs are revenue
+  inflow, RARs are expenditure and are never netted against client billing — stated in the IPC
+  modal and revenue panel). Config tab now has separate "Client billing (IPC/EPC)" and
+  "Subcontractor RAR taxes" sections.
+- Contracts register: each row gains a View action opening a ContractDetailModal — the full
+  contractor Bill of Quantities (scope bills) with BOQ amount, Executed, RAR-billed, Balance and %
+  per item, header KPIs (contract value, scope value, executed, RAR-billed, retention held), a
+  "scope bills only" toggle and the RARs billed under the contract.
+- Revenue composition: billed/vetted drill-downs are client-IPC-only (RARs removed); note clarifies
+  RARs are tracked separately as expenditure.
+- Tests: measurement.test (2), ContractRarDetail.test (2), updated IPC-detail assertion to the
+  measurement sheet, config literals carry the new RAR fields. Web 329 (54 files); server 9;
+  typecheck clean; both builds green.
+
+2026-06-23 — Revenue composition + IPC/RAR → BOQ-line drill-downs
+- New 'Revenue composition' sub-tab (RevenueComposition.tsx + domain/revenue.ts) renders the gross
+  revenue chain: Executed work (IPC) + Price escalation (EPC, certified separately) = Gross
+  revenue → − retention → − income tax → − GST/stamp = Net certified, with Receipts (cash) shown
+  beneath. Side facts: Vetted (certified), Billed to date, Slippage = Executed − Vetted, and
+  Advances shown separately and excluded from the chain (isAdvanceReceipt matches the mobilisation
+  advance source). Deduction rates come from the project's CommercialConfig.
+- Drill-downs: the Executed/Billed/Vetted figures open an IPC/RAR → BOQ-line breakdown (each
+  certificate expands to its itemwise lines mapped to BOQ code · description, qty and amount);
+  Vetted lists only certified IPCs (vetted/forwarded/approved/paid); Receipts opens a by-source
+  ledger tagging each row Advance vs Revenue.
+- Tests: RevenueComposition.test.tsx (3) — domain chain math (gross/net/receipts-excl-advances/
+  slippage), advance flagging, and a render test that drills an IPC down to its BOQ lines.
+- Closes the financial-model rework: flagship generation, cash-flow month alignment, configurable
+  retention/taxes, revenue composition and drill-downs are all in. Web 325 (52 files); server 9;
+  typecheck clean; both builds green.
+
+2026-06-23 — Configurable retention & taxes + cash-flow month alignment
+- Cash-flow fix: the generated IPC periods, receipts and payments were anchored to each project's
+  start date, so they fell outside the fixed Sep-25..Aug-26 cash-flow window and the chart read
+  flat. Re-anchored those months to the demo "now" (Jun-2026) in the generator, so receipts land
+  Oct-25/Dec-25/Feb-26 and payments Mar-26..Jun-26 — the cash-flow chart now populates.
+- Retention & taxes are now configurable per project, applied at certification:
+  * New CommercialConfig { ipcRetentionPct (10), incomeTaxPct (7), gstPct (0) } per project, with
+    provider get/setCommercialConfig (key nlc-ecc.commcfg.<pid>, values clamped).
+  * Contract.retentionPct (default 5%, capped at 5% of contract value) set when a contract is
+    awarded (new field on the Contracts form) and editable later; provider setContractRetention.
+  * computeNet / ipcDeductionBreakdown extended with a GST/stamp line; deductionsFromConfig maps a
+    project's config to the IPC deduction rates.
+  * IPC generation now uses the project's config (the deduction-to-net panel shows retention,
+    income tax and, when set, GST). RAR generation now nets gross by the *contract's* retention
+    plus the project's income tax + GST.
+  * New 'Deductions & retention' sub-tab (CommercialConfigTab): edit the three IPC deduction rates
+    (with a live "PKR 100 → net" preview) and per-contract subcontractor retention (capped 5%),
+    gated to manager_contracts/admin.
+- ApiDataProvider stubs added for the three new methods (legacy parity). New test
+  commercialConfig.test.ts (4): config defaults/clamp, retention cap, RAR net = gross−retention
+  −tax, IPC GST line. Web 322 (51 files); server 9; typecheck clean; both builds green.
+- STILL PENDING (next): revenue-composition panel (Executed work + Escalation, advances excluded,
+  slippage = Executed − Vetted) and IPC/RAR → BOQ-line drill-downs for billed/vetted/receipts.
+
+2026-06-23 — Flagship F-14/F-15 is now a fully generated project (commercial consistency)
+- Made the flagship generated like the other 20 projects (added it to SEED_PROFILES; removed the
+  hand-authored SEED_BOQ / curated+filler path; flipped all 43 per-entity flagship fallbacks to
+  the generator; flagship progress/IPCs/RARs/contracts/distributions now come from the same
+  deterministic seed). Result: BOQ totals the contract (~19.28 bn), executed ≈ actual %, IPCs vet
+  to ≈ billed, RARs/receipts reconcile — the consistency needed for logical vetted/billed/slippage.
+- Generator: one RAR per project is now 'submitted' (pipeline demos have a verifiable bill).
+- Rebuilt the test fixture (21 tests across Commercial/Execution/Financial/Procurement/CrossCutting
+  /finance) to assert the generated data (codes 1-01.., catalogue descriptions, generated sub
+  names, BG patterns) and to be resilient (getAllBy where the generated set repeats a value).
+- Seed version bumped to v6; reconcile clears the full stale flagship cache so existing users
+  regenerate. KNOWN FOLLOW-UP: generated receipt/payment months don't align with the fixed
+  cash-flow TIMELINE, so the cash-flow chart reads flat for generated projects — to be fixed in the
+  financial-model pass (retention/tax config, revenue composition, drill-downs). Web 318 (50 files);
+  server 9; typecheck clean; both builds green.
+
+2026-06-23 — Flagship BOQ shows executed quantities; BOQ totals the contract value
+- BOQ = contract value: the flagship BOQ already tops up curated reference rows with generated
+  catalogue items to total the ~19.28 bn contract (verified). Confirmed and retained.
+- Executed qty/amount were blank because the flagship had no seeded progress (its hand progress
+  was dropped earlier, and it isn't in the generated profile set). Added flagshipProgress(): a
+  deterministic ProgressUpdate per BOQ item at ~the project's actual % (with per-item variation),
+  routed through listProgress so the BOQ register and execution tracker now show executed
+  quantities and value across the whole BOQ. Seed version bumped (v5) to drop the stale empty
+  progress cache for existing users.
+- Explored making the flagship a fully generated project (for end-to-end vetted/billed
+  consistency) but reverted: it rebuilds the entire test fixture (21 tests). Captured as a
+  pending decision pending product confirmation on the commercial model (retention/tax, revenue
+  composition, advances treatment, drill-downs). Web 318 (50 files); server 9; both builds green.
+
+2026-06-23 — Document attachments on IPCs and RARs
+- New Attachment model + provider methods (listAttachments/addAttachment/deleteAttachment across
+  interface + Local + Api stub), stored per project under nlc-ecc.attach.<pid> and scoped by
+  entity + reference. Shared domain/files.ts holds the image-downscale / read-as-dataURL / size
+  helpers (the gallery's pattern, now reusable).
+- New components/Attachments.tsx: attach measurement sheets, test certificates and approvals to a
+  document — images are downscaled, other files (PDFs etc.) accepted up to 4 MB; each row opens in
+  a new tab and can be removed with Undo. Embedded in the IPC and RAR detail modals above the
+  Activity timeline, and every add/remove is recorded in that document's audit trail.
+- Tests cover the provider roundtrip (entity/ref scoping + delete) and the size helpers.
+  Web 318 (50 files); server 9; typecheck clean; both builds green.
+
+2026-06-23 — Fix: flagship BOQ now totals the contract value; feat: saved register views
+- BUG (reported): F-14/F-15's Bill of Quantities summed only ~2.2 bn against a ~19.28 bn
+  contract because the flagship carried just 8 hand-authored sample rows. flagshipBoq() now
+  keeps those 8 curated, reference-stable rows (codes I-1xx/2xx/3xx that the hand IPCs/RARs and
+  the test-suite depend on) and tops them up with catalogue-generated items scaled to the
+  balance, so the BOQ totals the full contract (verified 19.282 bn vs 19.284 bn). Item ids stay
+  boq-proj-f14f15-N so the hand-linked lines (-0..-5) still resolve. Seed version bumped to
+  v3-flagship-boq; reconcile drops any stale cached flagship BOQ so existing users regenerate.
+  Updated the BOQ count assertions to be quantity-agnostic.
+- Saved views: new state/savedViews.ts (named filter snapshots persisted as a UI pref, scoped
+  per register+project) + components/SavedViews.tsx (chips to apply/delete a view + inline
+  "★ Save view"). Wired into the RAR register filter bar (contractor + stage). Pin e.g.
+  "Overdue" or "FWO only" and re-apply in one click. Tests cover the store roundtrip + the
+  save→apply UI flow. Web 316 (49 files); server 9; typecheck clean; both builds green.
+
+2026-06-22 — Branded one-click export (Excel + PDF) across registers
+- New reusable export stack: components/tablePdf.ts renders any register to a branded,
+  paginated A4 landscape PDF via jsPDF (lazy-loaded) — NLC / Engineer Command Centre header,
+  title + subtitle + meta line, zebra rules, column alignment/width control, and a footer with
+  generated-timestamp and page numbers. components/ExportMenu.tsx is a drop-in dropdown offering
+  Excel (.xlsx, via the existing downloadWorkbook) and PDF, disabled when there are no rows and
+  closing on outside-click.
+- Wired ExportMenu into the BOQ, IPC, RAR and Contracts registers (replacing the old
+  Excel-only buttons; the RAR export now also carries the governing contract number, and BOQ/IPC
+  carry totals + counts in the PDF meta line). One consistent ⭳ Export affordance per register.
+- New ExportMenu test (disabled-empty + opens to Excel/PDF options); updated the RAR export
+  assertion. Web 313 (48 files); server 9; typecheck clean; both builds green.
+
+2026-06-22 — Excel/CSV BOQ importer with sheet picker, header detection and column mapping
+- Upgraded the BOQ Import dialog from paste-only into a real spreadsheet importer. New
+  domain/xlsxImport.ts (SheetJS lazy-loaded as its own 429 kB chunk, kept out of the main
+  bundle) reads .xlsx/.xls/.csv into per-sheet grids; detectHeaderRow() skips title/preamble
+  rows, autoMapColumns() matches Bill/Code/Description/Unit/Qty/Rate by header aliases, and
+  gridToRows() builds BOQ rows — carrying a bill value down across grouped rows and skipping
+  sub-total / non-numeric lines.
+- BoqImport.tsx now has a segmented Upload-file / Paste toggle. File mode: choose file → pick
+  sheet (if multiple) → adjust the detected header row → review/override the six column
+  mappings via dropdowns → live preview (count + total) → Replace BOQ. Paste mode retained.
+  Turns a seeded project into a real-data one straight from the client's workbook.
+- New domain test covers header detection, auto-mapping, bill carry-down and total-row skipping
+  on a messy realistic grid; updated the existing paste test for the new tab. Web 311 (47 files);
+  server 9; typecheck clean; both builds green.
+
+2026-06-22 — Currency unit now updates the whole app; VO supersedes BOQ visibly; live activity timeline
+- Currency: the root <App/> now subscribes to the selected unit (useMoneyFormat), so switching
+  Rs Mn / Rs Bn / Rs in Settings re-renders the entire tree at once — every table, KPI and chart
+  reflects the new unit immediately (previously only the six subscribed charts updated, so most
+  values looked frozen). Confirmed no "Cr" remains anywhere in display code (only money.ts units
+  mn/bn/rs; the few stray "Cr" mentions are code comments, not UI).
+- Variation Orders → BOQ: confirmed the line-builder (quantity change, rate change, item addition,
+  item omission) and the approve-supersedes-BOQ flow are wired end-to-end, and made the
+  supersession visible: applyVariationToBoq now tags each edited item with revisedByVo, the BOQ
+  register shows a "VO-xx" pill on revised items and an "added" pill on items a VO introduced.
+  New domain test covers all four line kinds, the signed deltas, the no-op case and type inference.
+- Professional improvement: upgraded the per-document Audit trail (already embedded in the IPC,
+  RAR, Payment, PO and Demand modals) into a live vertical Activity timeline with action icons and
+  relative timestamps that refreshes on nlc:audit events — a modern activity-log feel across every
+  document, at zero new plumbing.
+- Web 307 (46 files); server 9; typecheck clean; both builds green.
+
+2026-06-22 — Contracts register + RAR↔contract linkage, gallery uploads, editable EPC ratios
+- New Contract model + Contracts Register sub-tab: each subcontract package carries a unique
+  number (NLC/<proj>/SC-0N), contractor, scope bills, value and status (draft→awarded→
+  in_progress→completed→closed). Provider list/create/setStatus across interface + Local + Api.
+  The generator now seeds one contract per sublet subcontractor for all 20 projects (flagship
+  keeps its hand seed), and every RAR — seeded and newly generated — is billed against a
+  contract (rar.contractId). Generate RAR now selects a CONTRACT (which sets the contractor),
+  and the RAR detail modal shows the governing contract number.
+- Gallery: replaced URL-only add with real image upload — files are client-side downscaled
+  (max 1280px JPEG) to a data URL, stored with a date + description, and the grid is now
+  grouped and sortable date-wise (newest/oldest) or by recently-added. URL add retained.
+- Escalation: the Pₙ index basket is now fully editable per project — component labels are
+  editable, components can be added/removed, and a live weight-sum check warns when Σ ≠ 1.000
+  (base/current indices and weights were already editable).
+- Fixed a stray code fragment that had corrupted a flagship overhead label. New tests for the
+  contracts seed/linkage and the contracts register UI; updated the RAR-generate, PBS and photo
+  tests for the new controls. Web 300 (45 files); server 9; typecheck clean; both builds green.
+
+2026-06-22 — Generator now seeds every register for all 20 projects
+- Extended the deterministic seed generator to cover the remaining secondary registers,
+  all derived coherently from the project profile: financial receipts (from paid/approved
+  IPCs + mobilization advance), monthly payments by category (materials/labour/plant/
+  subcontract/overhead), liabilities (retention held, outstanding RAR, trade payables),
+  suppliers, procurement demands (with BoQ-linked items and an approval history), project
+  salients, production runs (planned vs actual), material issues (with contractor recovery
+  linkage), plant/equipment/vehicle inventory (status + utilisation), POL/fuel records, and
+  fixed assets. Wired all eleven provider fallbacks to the generator (flagship proj-f14f15
+  keeps its hand seed). New test asserts every secondary register populates for a seeded
+  project. Web 298 (45 files); server 9; typecheck clean; both builds green.
+
+2026-06-22 — Fix: 20-project seed now visible; resources/overheads seeded; bills at full depth
+- ROOT CAUSE of "20 projects not showing": listProjects/listNodes read from the persisted
+  nlc-ecc.projects / nlc-ecc.nodes documents, which existing users already had cached with the
+  old 8-project roster — so the bundled 20 never appeared. Added a seed-version reconcile
+  (SEED_VERSION + reconcileSeed): on load it MERGES any newly-seeded projects/nodes into the
+  cached store without touching user-created data, and backfills commencement/completion/coord
+  fields on seeded projects. Fresh stores get all 20 directly. New seedReconcile.test.ts proves
+  a stale 2-project cache (incl. a user project) upgrades to 21 with the flagship dates backfilled.
+- Seeded the previously-empty registers for all non-flagship projects: added Resources
+  (store/plant/equipment, scaled by contract value) and Overheads (6 categories × last 4 months)
+  to the generator and wired their provider fallbacks. Distributions + mapping already flow from
+  the generator/coords and now surface once the projects appear.
+- Expanded the BOQ catalogue to full item depth: 89 authentic line items across all 12 bills
+  (Road Work, SWD, Water Supply and Sewerage deepened to 10–17 items each) with real MRS
+  descriptions, units and rates harvested from the uploaded BOQ, so each generated project's
+  Bill of Quantities reads like the real document while still totalling share × contract value.
+- Web 297 (45 files); server 9; typecheck clean; both builds green.
+
+2026-06-22 — 20-project detailed seed (from real F-14/F-15 BOQ + baseline) + itemwise IPC/RAR fix
+- Distilled the uploaded F-14/F-15 BOQ (MRS 2nd Bi-Annual, Rs. 19.58 bn) into data/seed/
+  catalog.ts: the real 12-bill structure with each bill's share of contract value, plus an
+  item catalogue with authentic descriptions, units and MRS rates, and subcontractor trade
+  profiles. Baseline dates/sequence taken from the uploaded Primavera XER.
+- New deterministic generator data/seed/commercialSeed.ts (seedFor, memoised): for a project
+  profile it builds a full BOQ scaled so each bill totals share × contract value, plus subs,
+  distributions (sublet vs self), validated progress, 5 cumulative IPCs WITH itemwise lines,
+  per-sub RARs WITH itemwise lines, variations, two bank guarantees, the PBS escalation basket
+  and a 6-activity schedule. Unit-tested (BOQ ≈ CV across 12 bills; IPC/RAR lines reference real
+  BoQ items; monotonic cumulative; deterministic).
+- Roster grown from 8 to 20 projects across all five PD HQs (real Pakistani infrastructure
+  jobs), each with coordinates and commencement/completion dates. LocalDataProvider now seeds
+  every non-flagship project from the generator (flagship proj-f14f15 keeps its hand seed so
+  its reference data — and the existing tests — stay stable). Updated rollup/App tests for the
+  new 20-project totals.
+- FIX (user-reported): opening an IPC or RAR showed no itemwise detail because the detail
+  modals never rendered the line items. Added an "Itemwise breakdown" table (code, description,
+  bill, unit, qty, rate, amount, gross) to both IpcDetailModal and RarDetailModal, resolving
+  each line's BoQ item for its description/unit; falls back to a clear note for lump-sum docs.
+  UI test opens an IPC and asserts the itemwise table.
+- Web 294 (44 files); server 9; typecheck clean; both builds green.
+
+2026-06-22 — Backend cutover verification + commercial docs pass
+- Established that there is no per-entity backend to "wire": the app runs one
+  LocalDataProvider over a pluggable KvStore; api mode swaps in RemoteKvStore, which
+  round-trips every document through /api/state (JSONB in fnpc.app_doc). New commercial
+  entities therefore already persist server-side with no new routes or migrations.
+- Locked that in with tests: data/apiMode.test.ts now creates variations, bank guarantees
+  and escalation indices through the remote store and re-hydrates a fresh provider to prove
+  they survive a session; server/test/docstore.test.ts round-trips the commercial keys as
+  JSONB docs. Documented the legacy/vestigial status of ApiDataProvider's bespoke endpoints
+  in a header comment so nobody tries to "wire" dead code.
+- Docs: new docs/COMMERCIAL_MODULE.md — a consolidated feature guide (sub-tab map, the
+  BoQ→distribution→execution→billing→reconciliation spine, every domain engine, variations
+  & revised contract value, EVM + portfolio, alerts, calendar, certificates, RBAC, and the
+  persistence model) plus a strategic-enhancements summary appended to docs/ENHANCEMENTS.md.
+- Web 289 (43 files); server 9; typecheck clean; both builds green.
+
+2026-06-22 — Strategic #7b: RBAC gating across RAR / EPC / Variation
+- Gave the RAR and Variation pipelines a responsible role per transition (RAR: submit=QS,
+  verify/approve=PM, mark-for-payment/pay=FM; Variation: submit=QS, recommend=PM,
+  approve=PD). EPC already rides the IPC pipeline's roles.
+- Every pipeline advance button across IPC, RAR, EPC and Variations is now gated by the
+  acting role via can(): blocked steps are disabled with a "Requires <role>" tooltip while
+  the steps that role owns stay live (e.g. acting as Finance, a RAR can't be verified but
+  can be marked-for-payment). Two new UI tests cover RAR + Variation gating.
+- Completes the client-side RBAC story (foundation in #7a). Remaining for full #7: real
+  server/Neon cutover of the stubbed Api routes + replacing the dev role switcher with
+  real sign-in. Web 287 (43 files); server 8; typecheck clean; both builds green.
+
+2026-06-18 — Strategic #7a: RBAC foundation (role-gated actions)
+- New Role context (state/Role.tsx): an acting-role (ROLE_LABEL key or 'admin')
+  persisted to localStorage, with a can(required) helper (admin is unrestricted).
+  Wired RoleProvider into the app shell above the routes; default 'admin' so existing
+  flows/tests are unaffected until a role is chosen.
+- Header role switcher + badge (dev stand-in for real X-User auth): pick Admin / Project
+  Manager / Finance Manager / Project Director / Manager Contracts and the badge shows
+  who you're acting as.
+- First enforcement: the IPC pipeline advance button is now gated by the transition's
+  responsible role (transitionRole) — e.g. acting as Finance, the PM-only "Submit to
+  client" step is disabled with a "Requires Project Manager" tooltip. UI test covers it.
+  Next: extend gating to RAR/EPC/Variation transitions and the real server/Neon cutover.
+  Web 285 (43 files); server 8; typecheck clean; both builds green.
+
+2026-06-18 — Strategic #6: PDF certificate generation
+- New pure certificate.ts domain (ipcCertificate / rarCertificate / epcCertificate):
+  builds a structured certificate model — parties (NLC → client / subcontractor),
+  ref/date/period, BoQ line items, deduction waterfall and net — from a document +
+  project context. Unit-tested.
+- New certificatePdf.ts: renders that model to a formatted A4 PDF via jsPDF (added as a
+  dependency, dynamic-imported so it lands in its own lazy 356 kB chunk and never touches
+  the main bundle or tests). NLC letterhead, metadata grid, line-item table, gross →
+  deductions → net totals, and dual signature blocks (QS / Resident Engineer).
+- "PDF" action added to every IPC and RAR register row (one-click download). Browser-only
+  guard keeps it inert under jsdom. Domain + UI tests. Web 284 (43 files); server 8;
+  typecheck clean; both builds green. NOTE: run npm install after pulling (new jspdf dep).
+
+2026-06-18 — Strategic #5: Retention & BG-expiry calendar
+- New calendar.ts domain (commercialCalendar/groupByHorizon): a forward timeline of
+  bank-guarantee expiries (active BGs with a date) and scheduled retention releases
+  (50% at substantial completion = project completion date, 50% after a 365-day DLP),
+  each with days-until and a severity horizon (Overdue / Next 30 / Next 90 / Later).
+  today injectable for tests.
+- New Calendar Commercial sub-tab: KPIs (Due in 30 days incl. overdue count, Next 90,
+  value in next 30 days, total scheduled) and a horizon-grouped event list — each row
+  shows the icon, date, title/detail, days-until and amount, and drills into Advances
+  or Retention. Seeded commencement/completion dates on the flagship projects so
+  retention-release dates populate.
+- Domain + UI tests. Web 281 (43 files); server 8; typecheck clean; both builds green.
+
+2026-06-18 — Strategic #4: Coverage health & alerts
+- New alerts.ts domain (commercialAlerts/alertCounts) that aggregates health signals
+  from existing engines: over-claimed contractors (perContractorRows), critically/
+  highly aged in-pipeline docs (buildAging), and expired/expiring bank guarantees
+  (bgExpiryStatus). Severity-ranked (critical first), each carries the target sub-tab.
+  today is injectable for deterministic tests.
+- New CommercialAlerts banner pinned above the Commercial sub-tabs: collapsed it reads
+  "N items need attention" with critical/warning counts; expanded it lists each issue
+  with a one-line detail and drills straight into the relevant register (Reconciliation
+  / Aging / Advances). Live — it re-reads on nlc:audit so resolving an item clears it.
+- Domain + UI tests (over-claimed alert → Reconciliation). Web 279 (43 files); server 8;
+  typecheck clean; both builds green.
+
+2026-06-18 — Strategic #3: Portfolio earned-value roll-up
+- New portfolio.ts domain: portfolioEvm aggregates BAC/PV/EV and value-weighted
+  planned/actual % across a project set, with per-project SPI (= actual%/planned%)
+  and ahead/on/behind status, sorted worst-schedule-first. Unit-tested.
+- New PortfolioPerformance card on the node command dashboard (respects the active
+  RAG/filter scope): KPIs (Portfolio BAC, EV, PV, Portfolio SPI, Outstanding
+  receivable) + a per-project table (contract, planned/actual %, SPI badge) with an
+  Open → drill-through into each project's Commercial module. Slots in under the
+  portfolio S-curve. Reuses the EVM index status from strategic #2, so schedule
+  health now reads at portfolio AND project level. Web 277 (43 files); server 8;
+  typecheck clean; both builds green.
+
+2026-06-18 — Strategic #2: Earned-Value (EVM) layer
+- New pure evm.ts domain: from {BAC, PV, EV, AC} it derives SV/CV, SPI/CPI, EAC/ETC/VAC
+  and %-complete, plus indexStatus (ahead/on/behind). Unit-tested against worked figures.
+- New "Earned value" Commercial sub-tab bridging Execution and Commercial: BAC = revised
+  contract value (incl. approved VOs); PV = planned% × BAC and EV = actual% × BAC from the
+  project's physical progress; AC = RAR booked gross + self-performed work at 85% of earned
+  value (assumption surfaced in the UI). Headline KPIs, a PV/EV/AC bar chart, big SPI/CPI
+  index cards with ahead/on/behind badges, and an SV/CV/EAC/ETC/VAC ledger.
+- UI test covers the indices. This is the first metric that ties the physical-progress and
+  financial-actuals sides of the platform together. Web 275 (42 files); server 8; typecheck
+  clean; both builds green.
+
+2026-06-18 — Strategic #1: Variation / Change-Order register
+- New Variation model (addition/omission/substitution/rate_change, signed amount) with
+  a 4-stage approval pipeline (draft → submitted → recommended → approved) plus a reject
+  off-ramp; provider list/create/transition across interface, Local (seeded VO-01..03 for
+  proj-f14f15) and Api stub. Pure domain variations.ts (variationSummary, revised
+  ContractValue, nextVoTransition/applyVoAction) with unit tests.
+- New Variations sub-tab: KPIs (Original contract, Approved variations ±, Pending ±,
+  Revised contract, count), a raise-VO form, and a register with per-row Advance/Reject.
+- Made contract value LIVE: revised value (original + approved VOs) now flows into the
+  Commercial Dashboard "Contract value" tile (shows revised + award, links to Variations)
+  AND the Retention cap (5% of the *revised* contract). UI test approves a VO and checks
+  the pipeline. Web 272 (42 files); server 8; typecheck clean; both builds green.
+
+2026-06-18 — Quick wins #2–4: sparklines, skeletons, density toggle
+- KPI sparklines & trend deltas: new domain trends.ts (seriesByPeriod/trendDelta) +
+  a dependency-free inline-SVG Sparkline. Commercial Dashboard tiles with a time
+  series (IPC gross, IPC net, RAR booked, Escalation) now show a period-over-period
+  ▲/▼ delta badge and a mini cumulative sparkline (Mercury/Ramp style).
+- Skeleton loaders: new Skeleton primitives (SkeletonBlock/SkeletonTiles/SkeletonRows)
+  with a reduced-motion-aware shimmer; the dashboard renders skeleton tiles while its
+  data resolves instead of an empty grid.
+- Density toggle: wired a compact/comfortable switch into the workspace toolbar
+  (the UiState density + .density-compact CSS already existed but had no control);
+  extended compact styling to the kpi-card/dash-tile components.
+- Domain test for the trend series; UI tests for the density toggle. Web 269 (42
+  files); server 8; typecheck clean; both builds green.
+
+2026-06-18 — Quick win #1: sortable columns (registers)
+- New reusable useSort hook + SortTh header cell (asc → desc → neutral, with an
+  aria-sort indicator and click affordance). Wired into the IPC register, RAR register
+  and the Aging table (sorts within the All-items view and inside each group). Default
+  Aging sort stays ratio-desc; everything else is click-to-sort. Pure CSS for the
+  indicator; NoInfer keeps the column-key types honest. UI test asserts the aria-sort
+  toggle. Web 267 (42 files); server 8; typecheck clean; both builds green.
+
+2026-06-18 — Commercial parity (12/n): coherent seed + sticky headers
+- Seeded line items on the flagship project's IPCs and RARs (realistic per-BoQ-item
+  portions). This makes the whole commercial story cohere out of the box: BOQ
+  Vetted/Paid columns populate from IPC lines by status; the Reconciliation RAR↔IPC
+  linker now shows real top-3 suggestions by BoQ overlap and "Auto-link all RARs"
+  produces actual links; Per-IPC coverage lights up once linked.
+- Added sticky table headers for scrollable registers (header stays put while the body
+  scrolls) — a modern data-grid touch applied globally via .table-wrap. Web 266;
+  server 8; typecheck clean; both builds green.
+
+2026-06-18 — Commercial parity (11/n): Reconciliation — 3 views + auto-link
+- Rebuilt Reconciliation to the reference build. Five KPIs: NLC revenue (IPCs),
+  Distributed cost (cost via subs/labour), RAR booked (gross) with paid sub-line,
+  Overall coverage (RAR ÷ distributed) and Working capital (distributed − RAR paid).
+- Three views via a segmented control:
+  • Per-IPC View — IPC No · Period · IPC Gross · Dist. Cost · Linked RARs · Coverage ·
+    Status (Linked/Unlinked), with a totals row.
+  • Per-Contractor View — Code (SUB-0N) · Name (Type) · Dist. Cost · RAR Gross ·
+    RAR Paid · Coverage · Status (Over-claimed when RAR gross exceeds distributed cost).
+  • RAR ↔ IPC Linker — RAR · Contractor · Current Links · Suggested top-3 (by BoQ
+    line-item overlap; "no BoQ overlap" when none) · RAR Gross · per-row Link action,
+    plus a header "⚡ Auto-link all RARs" that links each RAR to its best-overlap IPC.
+- New pure reconcile helpers (reconKpis/perIpcRows/perContractorRows/suggestIpcsForRar/
+  linkerRows) alongside the original reconcileRarIpc; domain + UI tests. The BoQ-overlap
+  suggestions are powered by the RarLine/IpcLine items captured at generation. Web 266
+  (42 files); server 8; typecheck clean; both builds green.
+
+2026-06-18 — Commercial parity (10/n): RAR split — Generate RAR + RAR Register
+- Split the old combined "RAR & recovery" tab into two, matching the reference:
+  • Generate RAR wizard (new sub-tab): "Generate Running Account Receipt (RAR)" with
+    a RAR SETUP bar (Select Contractor · Period · date · "N items · PKR"), an empty
+    "Select a contractor to begin" state, and — once a contractor is picked — their
+    distributed BoQ work eligible for billing (rate, allocated, already-billed,
+    pending, editable This-RAR qty, amount) with Bill-all-pending / Clear and a live
+    gross. Generate creates the RAR with line items and jumps to the register.
+  • RAR Register: retitled "RAR Register (Subcontractor & Labour Billing)" with the
+    6-stage pipeline subtitle, a Filter bar (All Contractors / All Stages) and a
+    summary line "N RARs · GROSS · PAID". Inline create removed (now via the wizard);
+    table is filter-aware; screenshot-style empty state.
+- New RarLine model + lines/date on Rar; createRar persists line items (foundation
+  for the reconciliation BoQ-overlap linker, next). Provider + Api updated. Tab order
+  now …IPC Register · Generate RAR · RAR Register · Reconciliation… Updated the RAR
+  tab-name tests; added a Generate-RAR UI test. Web 263 (42 files); server 8;
+  typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (9/n): Cash Flow + Commercial Dashboard
+- Cash Flow sub-tab: client IPC net inflow vs subcontractor RAR net outflow by
+  period, a composed bar+line chart (inflow/outflow bars + cumulative-net line),
+  KPI strip (total inflow, total outflow, net position) and a per-period table.
+  New domain commercialcashflow.ts (commercialCashflow/cashflowTotals) unit-tested.
+- Commercial Dashboard landing sub-tab: nine roll-up tiles (contract value, BOQ
+  value, IPC gross billed, IPC net certified, RAR booked, coverage, retention held,
+  escalation, outstanding advances) — each clickable to drill into its register.
+  Default landing stays BOQ to match the reference. Two new sub-tabs; the Commercial
+  bar is now Dashboard · BOQ · Generate IPC · IPC · RAR · Reconciliation · Cash flow ·
+  Retention · Escalation · Contractors · Distribution planner · Execution tracker ·
+  Distributions · Advances · Aging · Margin analytics. Two UI tests + one domain test.
+  Web 262; server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (8/n): Aging + Margin Analytics
+- Aging dashboard: every in-pipeline IPC/RAR/EPC (not yet paid) with days-in-stage
+  from the billing period, an ×threshold ratio and an urgency badge (Critical ≥2×,
+  High 1.5×, Due 1×, On track). KPI strip (In pipeline, Total value, Critical, High,
+  Medium), Group by All/Stage/Owner/Urgency, and a "Breached only" filter.
+- Margin Analytics: KPIs — Gross revenue (executed), S/C cost, L/O cost, Gross margin
+  (% on revenue), Net working capital (paid IPC net − paid RAR net) — plus a Top
+  contractors bar list (by allocated value) and an "Items at margin risk" table
+  (contractor rate ÷ BOQ rate > 90%).
+- New pure domains aging.ts (buildAging/agingTotals/urgencyOf/periodToDate) and
+  marginanalytics.ts, each unit-tested; two UI tests. Two new Commercial sub-tabs.
+  Web 259 (42 files); server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (7/n): Retention cap + DLP split
+- Reframed the Retention tab to the reference build's five KPIs — Cumulative
+  retention deducted (N IPCs), Released at substantial completion, Held for DLP,
+  Released after DLP, Written-off — with Final-Bill-aware logic (until the Final
+  Bill is client-approved the whole balance sits in "Held for DLP" and completion
+  release reads "Final Bill not approved").
+- Added a Retention cap card: ceiling = 5% of contract value with a progress-to-cap
+  bar that turns red and stops further deduction once reached. Kept the cumulative
+  timeline chart + per-IPC ledger. New domain retentionSummary (+ DEFAULT_RETENTION_
+  CAP_PCT) with unit tests (cap + 50/50 split); UI test covers the KPIs, cap and
+  ledger. Web 254; server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (6/n): Escalation / EPC engine
+- Rebuilt the Escalation tab to the formula-based EPC engine. Overview KPIs (sublet
+  escalation approved/paid/pending + Client EPCs issued) above the PBS INDEX MASTER:
+  Component · Base idx · Current (editable) · Ratio · Weight (editable) · Contribution,
+  footed with Σ weights and the live price-adjustment coefficient Pₙ = Σ wᵢ·(Cᵢ/Bᵢ).
+  Seeded indices give Pₙ = 1.1252 (+12.52%), matching the reference build.
+- EPC pipeline: "⚡ Generate drafts for all eligible IPCs" creates one EPC per
+  vetted-or-later IPC (idempotent via ipcNo), amount = IPC_gross × (Pₙ − 1); rows
+  advance through the shared IPC pipeline with toasts. PBS indices persist per project.
+- New domain pnCoefficient + DEFAULT_PBS_COMPONENTS (unit-tested to 1.1252); Epc gained
+  ipcNo; new provider methods list/setEscalationComponents (interface + Local seeded +
+  Api stub). Rewrote the two legacy EPC tests; deleted the now-dead EpcRegister +
+  EscalationCalculator. Web 251 (42 files); server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (5/n): Advances ledger + Bank Guarantees
+- Rebuilt Advances into the two-sided ledger. Kind tabs (Mobilisation / Secure
+  Advance (Material)); a six-KPI strip per kind — Received from client, Recovered
+  (client, via IPCs), Outstanding (client→NLC), Disbursed to S/C, Outstanding
+  (S/C→NLC), and Active BG cover; and three views: Client Receipts (FGEHA→NLC),
+  Subcontractor Disbursements (NLC→S/C), and a new Bank Guarantee register. Each
+  ledger view has an add form, totals row and export.
+- New BankGuarantee model + provider methods (list/add/setStatus) across interface,
+  Local (seeded 2 BGs for proj-f14f15) and Api stub; bgExpiryStatus drives a Valid/
+  Expiring/Expired badge with a Release action. New domain/advances.ts
+  (advanceSummary/bgExpiryStatus/bgActiveCover) with unit tests; UI test covers the
+  KPIs + BG register. Recovery KPI wires to the IPC pipeline next. Web 250 (42 files);
+  server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (4/n): Generate IPC + deduction-to-net
+- New "Generate IPC" wizard sub-tab. Per BOQ item: Rate, Executed (cumulative from
+  progress), In IPC (already claimed across existing IPC lines), Pending, an editable
+  This-IPC-qty (checkbox-gated), and Amount. Controls: Period + date + bill + search,
+  Select-all-pending, Suggest-from-progress, Clear, with a live "N items · PKR" count
+  and over-claim (qty > pending) flagging.
+- Deduction-to-net panel: Gross → −retention(10%) → −income tax(7%) → −advance
+  recovery → Net payable. "Generate IPC" creates the certificate with line items and
+  jumps to the register.
+- Cross-link: BOQ register now feeds Vetted/Paid from IPC line items by status
+  (vetted-or-later → Vetted, paid → Paid), so generating an IPC lights up those BOQ
+  columns. New domain helpers ipcDeductionBreakdown / ipcVettedPaidByItem /
+  ipcClaimedQtyByItem with unit tests; a UI test drives select→qty→generate. Web 247;
+  server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (3/n): Execution Tracker
+- New Execution Tracker sub-tab. Per BOQ item it shows Description / Party (NLC
+  Self-execution or the subcontractor name from the distribution), Unit, Allocated,
+  Rate, an editable Executed cell (cumulative, written via ProgressUpdate), Balance,
+  Revenue and a progress bar — turning red and flagging "exceeds plan" when executed
+  runs past the allocation. Filter bar (search + bill), a "Hide unassigned" toggle
+  (on by default), a "⚙ Manage Distribution" jump to the Distributions tab, and a
+  totals footer (allocated value, balance, executed revenue). Recorded execution
+  feeds the BOQ Executed column.
+- Seeded distributions for proj-f14f15 (2 self + 2 sublet) so the tracker and the
+  BOQ Mode column show real assignments. Added an execution-tracker test (party
+  names + record 50% → progress). Web 244; server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (2/n): Distribution Planner
+- Brought the planner up to the HTML build. The per-item row now carries the full
+  column set — Code, Description, Unit, Contract qty, Rate, Amount, Mode badge
+  (Self/Sublet/Labor/Mixed/⚠Unassigned), an allocation % bar (red when over), and
+  S/C cost, L/O cost and Margin % derived from the allocation lines — over a
+  grand-totals footer (Σ amount, S/C, L/O, weighted margin %).
+- Added a filter bar (search + bill + live count), a "⚡ Mark filtered 100% Self"
+  bulk action (with toast), and Export Plan (XLSX). Kept the richer expandable
+  allocation editor and the Contracts/PEC approval section intact.
+- New domain helpers in allocations.ts (itemScCost/itemLoCost/itemModeLabel/
+  itemMarginPct/planTotals). Updated the allocate test (Plan button) and added a
+  columns/totals/bulk test. Web 243; server 8; typecheck clean; both builds green.
+
+2026-06-17 — Commercial parity (1/n): BOQ register overhaul
+- First slice bringing the React Commercial module up to the HTML build's standard.
+  Rebuilt the BOQ register to match it: bill → section grouping with subtotals, the
+  full 12-column layout (Item ref, Description, Unit, Contract qty, Rate, Amount,
+  Mode, Executed, Vetted, Paid, Receivable, Status), per-row Mode badge (Self /
+  Sublet / ⚠ Unassigned from distributions), a % progress bar (executed ÷ contract
+  from progress updates), a filter bar (search + bill + status with live "x of y"
+  count), and a grand-total footer. Export now emits the enriched columns.
+- BoqItem gained optional billName/section (non-breaking); seed enriched to 8 items
+  across 3 named bills/sections. New pure domain module domain/boqrollup.ts
+  (buildBoqRows/groupBoq/boqTotals/filterBoqRows) with 4 unit tests; 3 new UI tests
+  (grouping + badges + grand total, and search filter). Vetted/Paid wire in with the
+  IPC-pipeline slice next. Web 242 (41 files); server 8; typecheck clean; both builds green.
+
+2026-06-16 — Keyboard-first establishment grid
+- The inline-editable establishment table is now arrow-key navigable. EditableCell
+  emits data-r/data-c on its display button; a grid keydown handler on the table
+  wrapper moves focus between adjacent editable cells (↑↓ rows, ←→ columns),
+  skipping the static Reports-to column. Arrows only navigate when a cell is
+  focused (not while editing an input), so text editing is unaffected; Enter/click
+  still opens the editor. Test focuses a cell and asserts ArrowDown/Right move
+  focus. Web 236; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Bulk attendance in the roster
+- Roster person cards gained selection checkboxes (reusing useBulkSelection).
+  Selecting one or more reveals a bulk bar to set attendance (Present / On leave
+  / Detached / Training) for all at once via upsertPerson, with a success toast
+  and Undo that restores each person's prior status. Selected cards are
+  outlined. Test selects a person, applies "On leave", asserts the toast. Web
+  235; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Consistency pass: commercial billing toasts
+- Extended save confirmations to the core billing registers. IPC: create ("IPC-04
+  created") and each stage transition ("IPC-03 → With client"). RAR: create and
+  stage transition ("RAR-… → …"). Reuses the toast primitive (useToast added to
+  IpcRegister/RarRegister). Asserted the IPC advance toast in the commercial test.
+  Web 234; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Consistency pass: HR admin save confirmations
+- Wired success toasts through the HR admin workflows that previously saved
+  silently: credential add ("Added … credential"), posting raise/effect/reject,
+  and establishment snapshot ("Snapshot vN captured") / sanction ("Sanctioned
+  vN"). Reuses the toast primitive (useToast added to PostingsView/VersionsView).
+  Feedback is now uniform across HR. Extended the version test to assert the
+  snapshot toast. Web 234; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Cross-linked drawers (peek from palette + activity)
+- Command palette: selecting a person now opens their detail drawer in place
+  (dispatches nlc:person-drawer) instead of navigating to the HR page — a fast
+  Linear-style peek from anywhere. Nodes/projects still navigate.
+- Activity feed: project-scoped entries (entity ≠ Node) are now clickable and
+  open that project's detail drawer, so you can jump from an event straight to
+  the project's numbers. Keyboard-accessible (Enter/Space).
+- Updated the palette test to assert the person drawer opens. Web 234; server 8;
+  typecheck clean; both builds green.
+
+2026-06-16 — Person detail drawer
+- Clicking a person's name in the roster (or bench) now opens a right-hand
+  drawer (reusing DetailDrawer) with their post, status badge, rank, category,
+  CNIC, contact and posting date, plus their Credentials (kind · ref + expiry
+  badge) and Postings (destination + stage) pulled live from the node's stores.
+  New PersonDrawerHost mounted at app root listens for an 'nlc:person-drawer'
+  event; PersonCard gained an onOpen (clickable name). "Open HR →" jumps to the
+  cockpit. Test opens Hamza Sheikh and asserts his PEC credential shows. Web 234;
+  server 8; typecheck clean; both builds green.
+
+2026-06-16 — Cross-filtering (shared RAG lens)
+- The map's status filter is no longer a private control: it now reads/writes the
+  shared UiState RAG filter, so the map, league table, exceptions, S-curve and
+  KPIs all respond to one health filter together.
+- Added one-click RagFilterChips on dashboards — On track / At risk / Behind with
+  live subtree counts; tapping one sets the shared filter (tap again to clear),
+  active chip highlighted. Saved map views still capture the RAG lens.
+- Test taps the Behind chip and asserts the shared map status filter follows.
+  Web 233; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Inline-edit table cells
+- New reusable EditableCell: click (or Enter/Space) turns a cell into an input
+  that commits on Enter/blur and cancels on Esc, firing onCommit only when the
+  value changed. Applied across the establishment table (title, scale, category,
+  auth, held) — every cell is now click-to-edit with an optimistic save and a
+  brief "Updated …" toast; edits flow straight through to the organogram. The
+  old bare auth/held blur-inputs are replaced by the unified primitive. Test
+  edits a title cell inline and asserts the new value + toast. Web 232; server 8;
+  typecheck clean; both builds green.
+
+2026-06-16 — Undo for destructive actions
+- Project archive no longer uses a blocking confirm(); it archives, navigates to
+  HQ, and shows an "Archived …" toast with Undo that restores the project and
+  returns to it. HR credential delete (Skills) likewise shows an Undo toast that
+  re-adds the credential. Both reuse the toast primitive's action button; the
+  reversible-op pattern (capture → delete → re-create on undo) is now used in
+  three places (photos, credentials, archive). Tests cover archive→undo→restored
+  and credential delete→undo→restored. Web 231; server 8; typecheck clean; both
+  builds green.
+
+2026-06-16 — Saved map views
+- The map can now save its current lens — view filter (HQ+projects / projects /
+  sites), RAG status filter, and basemap — as a named, persisted view and recall
+  it from a dropdown. Stored browser-local in UiState under nlc-ecc.mapviews
+  (mirrors the named-layouts pattern) with saveMapView/deleteMapView; views are
+  global so they apply on any node's map. Save confirms with a toast; delete from
+  the selected view. Controls only show in Overview mode on tiers with
+  descendants. Test saves a view, changes the filter, recalls it. Web 230;
+  server 8; typecheck clean; both builds green.
+
+2026-06-16 — Toast notifications + undo primitive
+- New ToastProvider/useToast mounted at app root: a bottom-right stack of
+  success/info/error toasts that auto-dismiss (longer when an action is present),
+  each with an optional action button and manual close. Reusable app-wide; the
+  default context is a no-op so callers never crash without the provider.
+- Wired first uses: progress save now confirms with a "Progress updated" toast
+  instead of saving silently; deleting a progress photo shows an "Undo" toast
+  that re-adds it (reversible-op pattern). Tests cover both the success toast and
+  the delete→undo→restore flow. Web 229; server 8; typecheck clean; both builds
+  green.
+
+2026-06-16 — Per-node activity timeline
+- New ActivityFeed surfaces the append-only audit log as a readable, day-grouped
+  timeline (coloured entity tag · action · ref · detail, with a connector rail).
+  Mounted on the project Executive tab (that project's events) and on branch
+  dashboards with a "This node / All sub-units" scope toggle (self vs descendant
+  ids). Previously the audit log was only visible per entity-reference inside
+  detail modals (AuditTrail).
+- Made it live: audit() now emits a 'nlc:audit' window event and the feed
+  refetches on it, so an action (e.g. Update progress) shows up immediately.
+  Test drives the progress editor and asserts the new 'update' entry appears.
+  Web 229; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Right-hand detail drawer for projects
+- New slide-in DetailDrawer (Esc/backdrop close, animated) + ProjectDrawerHost
+  mounted at app root next to the command palette. It opens on a
+  'nlc:project-drawer' CustomEvent and shows a project's RAG badge, an
+  actual-vs-planned progress bar with slippage, financials (contract, billed,
+  received, outstanding, unbilled) and identity (client, location, code, PD HQ,
+  dates), with Open-project / Close actions — all without navigating away.
+- Triggers: a "Details" button in each map popup (project markers dispatch the
+  event; added to MapMarker.onDetails) and a "Details" button on project rows of
+  the dashboard league table (project rows only, via a projectIds set). The map
+  path stays headless-safe; the league-table path is covered by a new test.
+  Web 228; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Map marker clustering
+- Added leaflet.markercluster (^1.5.3): the map's marker layer is now a themed
+  cluster group, so busy maps (HQ NLC with many project pins) collapse nearby
+  sites into a count bubble that splits on zoom / click. Loaded lazily alongside
+  leaflet (own ~9KB gz chunk) and only on the real-DOM branch; the picker layer
+  and the jsdom OfflineLocator are unchanged, so tests stay green. Cluster
+  bubbles restyled to the command palette tokens (no default green/yellow).
+  getBounds still drives the Fit-to-markers control. Added a module shim in
+  vite-env.d.ts. Web 227; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Command palette: search people, not just nodes
+- ⌘/Ctrl-K palette extended from node/project jump to a true entity search. It
+  now also finds people (by name or rank) across every node via listAllPeople
+  (loaded lazily on first open), showing an avatar + rank · home-unit; Enter
+  opens that person's HR page. Nodes/projects still rank first, then people,
+  capped at 10. Dependency-free, reuses the existing palette + HrAvatar.
+- Test: open palette, search a person, Enter lands on their HR command page.
+  Web 227; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Map: rich click popups + fit-to-markers control
+- Clicking a marker now opens a popup card: title + detail rows (status, actual%,
+  planned%, client, location for projects; type/location for HQ/PD HQ) with an
+  "Open ›" action that navigates to that node/project. Hover still shows the
+  tooltip; popups are skipped in Set-location mode so map-click keeps setting the
+  pin. MapMarker gained optional `detail` rows + `openLabel`; HTML is escaped.
+- Added a "Fit to markers" Leaflet control (⤢, top-left) that refits the view to
+  every plotted location; marker layer switched to a featureGroup so the control
+  reads live bounds. Dependency-free (Leaflet bindPopup + fitBounds); only the
+  real-DOM branch is affected (jsdom uses the OfflineLocator), so tests are
+  untouched. Web 226; server 8; typecheck clean; both builds green (leaflet
+  still lazy-chunked ~43.5KB gz).
+
+2026-06-16 — Outline organogram search + single-map polish; remove dead maps
+- Outline layout (indented tree, already present) gained a search box (matches
+  titles/scales, keeps ancestors+descendants visible) and Expand-all/Collapse-all;
+  per-node collapse lifted to a shared set so search/global controls work.
+- Map: confirmed the single NodeMap (Overview / Set-location modes + view
+  filter) is the only map at every tier; deleted the orphaned LevelMap,
+  NodeLocationEditor and LocationEditor (the old second map). Added a RAG status
+  filter (All / On track / At risk / Behind) and a live "N shown" marker count.
+- Tests: replaced the old Location-editor assertion with a single-map +
+  Set-location-mode check; added an outline+search test. Web 226; server 8;
+  typecheck clean; both builds green.
+
+2026-06-16 — Fix clipped post titles + show occupant names on the chart
+- Bug: inside a narrow section card the post row laid title (left) against a
+  growing right cluster (seat chip + held/auth + the three edit buttons); with
+  deep indentation the title flex-shrank to zero and was clipped by ellipsis, so
+  designations vanished while the numbers stayed. Fix: row now wraps, the title
+  takes priority (flex 1 1 60%, wraps instead of clipping), the right cluster is
+  flex:0 0 auto / margin-left:auto, indentation reduced + capped, section cards
+  widened to 232px.
+- Names on the chart: HrOrganogram now takes `people` and renders occupant chips
+  (avatar + name) under each post/leaf section, with dashed "vacant" chips for
+  unfilled seats — so designations AND the people holding them are visible
+  without leaving the organogram (full roster still one click away).
+- Test asserts a leaf-section occupant name + titled child posts render.
+  Web 225; server 8; typecheck clean; both builds green.
+
+2026-06-16 — Editable organogram (HR staff edit on the chart)
+- The organogram is now an editing surface. An "Edit organogram" toggle on the
+  Organogram tab turns on inline affordances: ＋ add a post under any box, ✎ edit
+  (title / scale / category / auth / held / reports-to), ✕ remove (with confirm;
+  orphans re-parent to the deleted box's parent). An "Add section" tile and an
+  "Add head post" empty-state cover the structural cases.
+- Re-parenting two ways: the editor's Reports-to dropdown and drag-and-drop —
+  drag any box onto another to re-assign its parent, with a cycle guard so a box
+  can't be dropped onto its own descendant.
+- A lightweight UnitEditorPanel (inline, not a modal) handles add/edit; every
+  change persists immediately via upsertHrUnit/deleteHrUnit and the chart
+  re-renders. Editing operates on the authored establishment; if the tier was
+  still category-derived, entering edit first materialises real posts so edits
+  stick. Export buttons follow the edited set.
+- Tests +1 (add a section via the chart) → web 225; server 8; typecheck clean;
+  both builds green.
+
+2026-06-16 — HR admin: postings, skills, versioning, import/export
+- Postings & deployment (HrTransfer, global store): raise a movement for a
+  person to a post/node, run it raised→recommended→approved→effected through a
+  POSTING_CHAIN (or reject); effecting moves the person record between node
+  stores. Writes to the audit log. Cross-node target posts resolved by fetching
+  the destination node's units.
+- Skills / qualifications (HrCredential per node): PEC / licence / certification
+  / training / medical with issue + expiry; domain/credentials.ts computes
+  valid / expiring(≤90d) / expired and an attention list; Skills view shows an
+  alert banner + table. Seeded creds on proj-rwp-ring (one expiring, one
+  expired).
+- Establishment versioning (HrEstablishmentVersion per node): snapshot the
+  current TO&E as vN (draft), sanction it (approval + approver), and diff any
+  snapshot against the live establishment (added / removed / changed +
+  auth/held deltas) via domain/estabversion.ts.
+- Import / export: establishment ⇄ .xlsx/.csv (SheetJS, reusing the existing
+  workbook helpers; Anx-D style sheets parse by header into HrUnits with parent
+  resolution by title), and the organogram exports to SVG, PNG (SVG→canvas) and
+  Print/PDF via a self-contained chart generator (hrExport.ts).
+- Cockpit now: Organogram · Roster · Postings · Skills · Recruitment · Cost ·
+  Establishment · Versions (+ Org board on branches). Domain tests +4,
+  integration +3 → web 224; server 8; typecheck clean; both builds green
+  (xlsx lazy-chunked).
+
+2026-06-16 — HR platform: roster, recruitment, attendance, cost, org board
+- People layer (HrPerson): name/rank/CNIC/contact/photo/posting-date/status,
+  linked to an establishment post (or bench). Provider CRUD on Local + Api.
+  Recruitment requisitions (HrRequisition) with a raised→advertised→interview→
+  offer→joined stage flow + advance/convert-to-hire; writes to the audit log.
+- domain/roster.ts (occupancy, present strength, bench, initials/hue) and
+  domain/hrcost.ts (NLC pay-bands, scale parsing, cost by section/total on a
+  held-or-named basis). Unit-tested (8 new).
+- Organogram is now occupancy-aware: each box shows present/named and empty
+  seats, has a PRESENT summary cell, and is clickable → opens that post's roster.
+- HrCockpit became a full one-window platform: Organogram · Roster ·
+  Recruitment · Cost · Establishment (+ Org board on branch tiers).
+  • Roster: Bitrix-style people cards grouped by post, empty-seat cards for
+    vacancies, a bench group, add/edit/remove with attendance status.
+  • Recruitment: live vacancy list (AUTH−HELD) + a kanban pipeline; raise from a
+    vacancy, advance stages, or convert a 'joined' card into a roster entry.
+  • Cost: monthly burn by section + annualised, held/named basis toggle.
+  • Org board: branch-wide fill% across every sub-unit, worst-fill-first, with
+    present strength and vacancy columns.
+- Seeded a named roster + open requisitions on proj-rwp-ring. Replaced the old
+  HrRollupCard (superseded by Org board). Tests +10 → web 217; server 8;
+  typecheck clean; both builds green.
+
+2026-06-15 — HR organogram at every tier + one-window HR cockpit
+- New establishment model: HrUnit (post/section tree per node, parentId, scale,
+  category, auth/held, order) with provider CRUD (listHrUnits / listAllHrUnits /
+  upsertHrUnit / deleteHrUnit) on Local + Api providers; rides existing JSONB,
+  no migration.
+- domain/organogram.ts: tree build, leaf roll-up (no double counting),
+  establishment totals, fill status/percent, command-spine detection, and a
+  fallback that synthesises an organogram from category strengths so EVERY tier
+  shows something. Unit-tested (6).
+- HrOrganogram component: interactive top-down chart — AUTH/HELD/FILLED/VACANT
+  summary panel, command spine (Director → Deputy), responsive section grid with
+  RAG fill bars, and expandable posts (designation tiers). Themed, not the dated
+  3D look; reads on light/dark.
+- HrCockpit (one window): Organogram / Strength / Establishment sub-tabs.
+  Strength = KPIs + by-category fill + roll-up across sub-units (branch tiers).
+  Establishment = builder table (add/edit/delete posts, re-parent, seed from
+  categories). Wired into the project HR tab AND branch dashboards, and the
+  organogram is Focusable + Dockable (full-screen / pin).
+- Seeded establishments: proj-rwp-ring (image-1 directorate, AUTH 113/HELD 96),
+  proj-e12 (Anx-D Table of Organisation, ~33 posts with designations & scales),
+  pd-centre and hq-engrs (upper tiers). Other nodes fall back to category-
+  derived organograms.
+- Replaced the old HrTab with the cockpit. Tests +7 → web 207 passing; server 8;
+  typecheck clean; both builds green.
+
+2026-06-15 — Workspace power-user layer + OSM basemaps
+- Resizable sidebar: drag handle on its right edge sets width (200–440px,
+  persisted via the workspace key, live during drag).
+- Per-panel collapse: new CollapsibleCard accordions a card to its header,
+  state persisted per id; independent of focus mode. Dashboard breakdown now
+  collapses, expands full-page, and docks.
+- Presentation mode: header button (and Esc to exit) hides all chrome and
+  bumps zoom ×1.12 for briefings. Settings → Workspace saves two named layout
+  slots (sidebar/width/zoom/density/theme).
+- Route cross-fade: RouteFade keys the outlet by path; View-Transitions name
+  set where supported, CSS fade fallback everywhere (respects reduced-motion).
+- Keyboard layer: '[' toggle sidebar, '+/-' zoom, 'g' command palette, 'f'
+  expand the panel under the cursor. Typing targets are ignored.
+- Dock / split view: new Dock (provider + Dockable + right rail). Pin the map
+  or breakdown to a sticky rail that stays put while the page scrolls; clears
+  on navigation. Hidden under 1100px.
+- Density toggle: comfortable/compact table rows (Settings), separate from zoom.
+- Persistence: theme + last-visited node remembered; app reopens where you
+  left off (HomeRedirect → last node).
+- Focus 'Expand' folded onto S-curve, twin S-curve, EVM, cash flow, Gantt,
+  distribution mix, and the receipts/payments/liabilities tables.
+- Maps: Leaflet + OpenStreetMap made first-class — basemap switcher on every
+  map and a default-basemap setting (Auto/OpenStreetMap/Light/Dark); OSM uses
+  the canonical tile.openstreetmap.org tiles. Theme now drives tiles directly.
+  Tests +6 → web 200 passing; server 8; typecheck clean; both builds green.
+
+2026-06-15 — Workspace interactivity (sidebar / focus mode / zoom)
+- Collapsible sidebar: header toggle slides it away with a width/opacity
+  transition and reclaims the space; state persisted (nlc-ecc.workspace). On
+  narrow screens it becomes an off-canvas drawer with a click-away scrim.
+- Focus mode: new reusable Focusable (render-prop) puts an Expand affordance on
+  panels and opens them full-page in an overlay (Esc/✕ to close, background
+  scroll locked). Wired to every level map and the dashboard breakdown table.
+  Full-screen maps enable scroll-wheel zoom + pan via MapView interactiveZoom.
+- Content zoom: header A−/100%/A+ control scales the whole content area
+  (0.8–1.4, persisted); click the value to reset.
+- Fullscreen: header button toggles the browser Fullscreen API for a control-
+  room view.
+- State: UiState gained persisted sidebarOpen + zoom. Tests +3 (Workspace).
+  Web 194 passing, server 8; typecheck clean; both builds green.
+
+2026-06-15 — Map & form aesthetic pass
+- Basemap: switched to free CARTO tiles (Positron/Dark Matter, no key),
+  auto-matched to the app's light/dark theme via a MutationObserver on
+  data-theme so calm terrain lets coloured pins pop.
+- Markers: HQ/PD HQ now render a building-glyph tile; projects a RAG dot. The
+  location picker pin gets a soft pulsing halo. Offline SVG fallback mirrors the
+  square-vs-dot distinction.
+- Create modal: grouped into Identity / Contract dates / Location sections with
+  light dividers and small caps labels.
+- Project header: Code / Commenced / Completion now render as mono pill chips.
+- Dashboard: HQ-level command map gets a hero treatment (taller, stronger card,
+  legend inline in the header). Lower levels keep the legend beneath.
+- Empty state: nodes with no located sites show a friendly "No sites mapped yet"
+  prompt instead of hiding the map.
+- ChartCard gained an optional headerExtra slot (inline legend). Web 191 tests,
+  server 8; typecheck clean; both builds green.
+
+2026-06-15 — Project-creation rework + interactive maps (Leaflet/OSM)
+- New-project window: removed Planned %/Actual % inputs. Fields are now PD HQ
+  (structural), Project Code, Project Name, CA Amount, Date of Commencement,
+  Date of Completion, plus optional Client and a map location picker. New
+  projects default to 0% progress.
+- Maps: added Leaflet 1.9 + free OpenStreetMap tiles (no API key/card). New
+  MapView component (interactive in-browser, jsdom-safe SVG fallback for tests),
+  used as a click-to-pin picker in the create modal, the project LocationEditor,
+  and a new NodeLocationEditor for HQ/PD HQ. Best-effort reverse geocoding via
+  free Nominatim auto-fills the place name.
+- Multi-level maps: OrgNode gained lat/lng/location; HQ + all PD HQs are seeded
+  with coordinates (with backfill onto older cached node sets). New LevelMap
+  plots, per level, the node + its PD HQs + project sites — colour-coded by
+  level and (projects) by RAG, click-through. Wired into CommandDashboard and
+  the project executive tab. Removed the old static PakistanMap (SVG logic moved
+  into domain/geo.ts).
+- Data: createProject persists code/dates/coords; updateProject handles the new
+  fields; new updateNodeLocation provider method (both providers). api mode
+  needs no server/DB change — the new fields ride in the existing /api/state
+  JSONB docs.
+- Tests: +9 (domain/geo, data/projectCreation). Updated ProjectLifecycle UI test
+  to the new field set. Web 191 passing, server 8 passing; typecheck clean;
+  builds green in local and api modes.
+
+2026-07-08 — Clean slate: demo seed retired to a test-only fixture
+- Delivered app now starts EMPTY — no seeded projects and no generated
+  commercial data. The org scaffold (HQ NLC, HQ Engineers, 5 PD HQs) stays so
+  new projects have somewhere to attach.
+- LocalDataProvider: the 21-project demo portfolio is renamed DEMO_SEED and
+  gated behind demoSeedEnabled = import.meta.env.MODE === 'test'. Under vitest
+  the flagship + demo generate as before (all 477 web tests unchanged); every
+  real build (dev/local/api) folds the flag to false and ships clean. SEED/
+  NODES/SEED_PROFILES/PROJECTS became recomputable `let`s (buildNodes/
+  buildProfiles/buildProjects); read sites reference them live. setDemoSeed()
+  exposes the toggle for clean-slate tests.
+- Org/global demo residue also gated: SEED_HR (HQ-level postings), the global
+  SEED_MACHINERY_ASSETS pool and SEED_TRANSFERS go empty when the seed is off.
+  Project-keyed maps (HR units/people/reqs/creds/DLP/photos) are inert without
+  their demo projects and left as-is. SEED_USERS (appointment/role roster) is
+  structural and kept so the app stays operable.
+- Migration: SEED_VERSION bumped to 2026-07-08.v12-clean-slate. reconcileSeed
+  now PURGES previously-seeded demo projects — their project rows, org nodes and
+  cached entity docs — from an existing store on upgrade, while keeping any
+  projects the user created (matched against LEGACY_SEED_IDS). ENTITY_KEYS
+  lifted to module scope and reused by the purge.
+- Tests: new data/seedDisabled.test.ts covers the seed-off path (zero projects,
+  base-only nodes, empty commercial lists, working user-created project) and the
+  legacy-purge migration (demo dropped, user project kept, stale docs removed).
+  Web 477 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-09 — Primavera P6 .xer import (Execution → Schedule / WBS)
+- Root cause of the failed import: there was no XER parser. Schedule import fed
+  every file through readSheetRows()/parseScheduleRows(), which expect a tabular
+  .xlsx/.csv. An .xer is P6's native tab-delimited RELATIONAL dump (%T table /
+  %F fields / %R record), so nothing mapped.
+- New domain/xer.ts (pure, no DOM): parseXer() reads the %T/%F/%R record stream
+  into a typed table map; xerToSchedule() maps PROJECT/CALENDAR/PROJWBS/TASK/
+  TASKPRED/RSRC/TASKRSRC onto ScheduleActivity — resolving the WBS code path
+  ("4.Z1.1") and readable name path ("Construction › Zone 1 › Main Carriageway"),
+  converting hour counts to days via each activity's calendar (day_hr_cnt),
+  deriving %-complete (CP_Phys vs duration-based), status, actual dates, total
+  float, critical flag (float ≤ 0), predecessor logic (FS/SS/FF/SF + lag in days,
+  resolved to activity codes) and resource assignment names. WBS-summary rows
+  (TT_WBS) are skipped; problems surface as warnings rather than exceptions.
+- types.ts: ScheduleActivity gained OPTIONAL status/pctComplete/actualStart/
+  actualFinish/totalFloatDays/isCritical/activityType/wbsPath/predecessors/
+  resourceNames, so pasted and .xlsx imports plus existing cached data stay
+  valid. replaceSchedule now spreads the row, preserving the new fields.
+- components/xerImport.ts: readXerText() decodes strict UTF-8 then falls back to
+  Windows-1252 (real P6 exports are ANSI — decoding as UTF-8 mangles names), and
+  readFileBytes() falls back to FileReader where Blob.arrayBuffer() is missing
+  (older Safari, jsdom). xlsxImport now shares that reader.
+- BaselineImport: accepts .xer/.xlsx/.csv, auto-detects .xer, and previews a P6
+  summary — project id, activity/WBS/logic/milestone/resource counts, programme
+  window, warnings — before Apply. Paste + xlsx paths unchanged.
+- Execution → Schedule: new Programme summary KPI strip (window, critical-path
+  count, status split, logic/milestones) and new Status / Float / Predecessors
+  columns; WBS cell carries the full path as a tooltip. Gantt now colours the
+  critical path red (legend in the subtitle) and calls it out in the tooltip.
+- Verified against the real 545 KB EMA-13.xer: 628 activities, 52 WBS, 787 logic
+  links, 101 critical, 379 resource-loaded, window 2026-02-23 → 2027-05-30, zero
+  warnings. Tests: +15 (domain/xer.test.ts, against a trimmed real-structure
+  fixture) and +1 UI test uploading a .xer through the dialog into the table.
+  Web 493 passing, server 9; typecheck clean; local + api builds green.
+- api mode needs no server/DB change — the new fields ride in the existing
+  /api/state JSONB documents.
+
+2026-07-09 — P6 shape: Activities table + dedicated Gantt tab
+- Why the import "landed in one tab and displayed badly": the schedule was a
+  FLAT activity list. XER carries a WBS tree (PROJWBS parent pointers) which we
+  collapsed to a code string, so there were no summary rows to group under; and
+  the Gantt was a recharts stacked bar with a "D0/D123" day-offset axis rendered
+  under the table — 628 rows tall, no dates, unreadable.
+- Model: ScheduleWbsNode (id/parentId/code/name/seq) and ScheduleMeta (data date,
+  plan window, working weekdays, holidays) now persist with the schedule.
+  ScheduleActivity gained wbsId, originalDurationDays, remainingDurationDays and
+  schedulePctComplete (P6 duration-based). replaceSchedule(rows, wbs?, meta?)
+  writes all three docs together so a tabular import cannot leave a stale P6
+  hierarchy behind; listScheduleWbs / getScheduleMeta read them back. Both
+  providers updated; schedwbs + schedmeta added to the ENTITY_KEYS purge list.
+- xer.ts: parseCalendarData() decodes clndr_data (DaysOfWeek shifts → working
+  weekdays; Exceptions → holidays from Excel day serials), and the mapper now
+  emits the WBS tree, the data date (last_recalc_date) and the dominant
+  calendar pattern alongside the activities.
+- New domain/scheduleTree.ts: buildScheduleRows() interleaves WBS summary rows
+  with their activities in tree order, honouring a collapsed set. Rollups follow
+  P6: start = earliest descendant, finish = latest, duration = WORKING-DAY SPAN
+  of that window (not the sum of children — a WBS holding two milestones a year
+  apart reads a year, not zero), schedule % = duration-weighted mean of leaves,
+  critical if any descendant is critical. Empty WBS branches are hidden;
+  activities with no hierarchy fall back to the old flat list. formatP6Date()
+  renders 23-Feb-26.
+- New components/ActivityTable.tsx: the P6 Activities grid — Activity ID,
+  Activity Name, Original Duration, Remaining Duration, Schedule % Complete,
+  Start, Finish — with collapsible WBS summary rows, find-by-id/name and
+  expand/collapse all.
+- GanttChart rewritten as a time-scaled SVG: fixed activity column, scrollable
+  timeline with year + month header bands, WBS summary bars with tapered caps,
+  activity bars (critical red) with a progress overlay, milestone diamonds, the
+  P6 data-date line, and Year/Quarter/Month/Week zoom. It now lives in its own
+  "Gantt chart" sub-tab; "Schedule / WBS" is renamed "Activities" and keeps the
+  derived-vs-expected commercial read in a separate "Schedule analysis" table.
+- Verified on the real EMA-13.xer: 628 activities under 54 WBS rows (682 display
+  rows; 5 top-level branches — Project Control Events, Prelims, Pre Cons,
+  Construction, Completion & Handover), window 23-Feb-26 → 30-May-27, data date
+  23-Feb-26, collapse-all → 5 rows. Prelims rolls up to 449d against a 450d child
+  because 2026-03-02 is a holiday in the file calendar — the calendar is honoured.
+- Web 518 passing (+25: scheduleTree 17, xer +7, Execution +1), server 9;
+  typecheck clean; local + api builds green.
+
+2026-07-09 — Interactive Gantt + quantity-allocated BOQ mapping
+- Gantt is now a working instrument rather than a picture: continuous zoom
+  slider (0.3–30 px/day) with Fit-to-width, a pan slider that scrubs the
+  timeline, a row-height slider, view filters (All / Critical only / In progress
+  / Milestones), and click-to-select a bar — which dims the rest and draws elbow
+  arrows back to the driving predecessors we already parse from TASKPRED, so a
+  planner can walk the logic chain. Dependencies toggle; selection clears.
+  Month labels thin out automatically at low zoom instead of overprinting.
+- BOQ↔activity mapping is now QUANTITY-ALLOCATED, and works in both directions.
+  BoqWbsLink gained an optional qty: the quantity of that BOQ item executed under
+  that activity, in the item unit. Semantics, in domain/mapping.ts:
+    * effectiveWeight() priority — qty ÷ item qty, else explicit weight, else
+      even split. Legacy call sites that pass no item keep the old behaviour, so
+      existing mappings are untouched.
+    * itemAllocation() reports allocated / remaining qty, over- and fully-
+      allocated, with a decimal tolerance (quantities are m³ and tonnes).
+    * allocationIssues() is the pre-lock gate. OVER-allocation is blocking — it
+      would bill the same quantity twice through two activities. Under-allocation
+      is only a warning: mapping part of an item now and the rest later is valid.
+    * linksByActivity() / activityMappedValue() give the activity-centric read.
+  derivedProgress now passes the item, so a quantity-allocated activity carries
+  exactly the value of the quantity it will execute.
+- New screens/mapping/ActivityMapping.tsx ("Activity → BOQ" sub-tab): pick an
+  activity, attach as many BOQ items as it consumes, and set how much of each via
+  a slider or a number box. New links default to whatever quantity of the item is
+  still free; an "all" shortcut takes the remaining head-room. Each row shows the
+  share, the value carried and what is left of the item across every activity.
+  Over-allocated rows flag red and raise a blocking banner.
+- MappingWorkflowStrip takes a blockedReason: the approval button is disabled and
+  the reason announced (role=alert) while any item is over-allocated, so a bad
+  allocation cannot be locked into a baseline.
+- Tests: +17 domain (mappingQty.test.ts — weight priority, tolerance, blocking vs
+  warning, activity value split) and +6 UI (Gantt sliders/filters/selection, many
+  items to one activity, over-allocation blocks approval).
+  Web 541 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-09 — Diff-on-import + frozen baseline (the data-loss fix)
+- The latent bug: replaceSchedule was a silent overwrite, and BoqWbsLink keys off
+  the activity CODE. Re-importing a revised .xer would drop any activity no longer
+  in the file, orphaning every BOQ link — and now the quantity allocations — hanging
+  off it, with no warning. Row ids were positional (act-<pid>-<n>), so an inserted
+  activity renumbered everything after it.
+- Stable identity: the row id is now derived from the activity code
+  (act-<pid>-<code>), so reordering or inserting activities keeps identities.
+- New domain/scheduleDiff.ts: diffSchedule(current, incoming, links) returns added /
+  removed / changed (with the exact fields that moved) / unchanged, the net shift of
+  the programme finish, slipped activities worst-first, and — the point of the whole
+  thing — `orphaned`: removed activities that still carry non-disputed BOQ links,
+  with the link count. isNoOp() and diffHeadline() for the summary line.
+- BaselineImport now previews the change set before ANY write, for both .xer and
+  tabular imports. Orphaned mappings raise a red role=alert naming the activities
+  and the number of links that would be lost. The action reads "Apply changes"
+  rather than "Apply baseline" once a programme already exists.
+- Frozen baseline: new ScheduleBaseline doc (capturedAt, source, activity windows).
+  The first programme a project receives IS its baseline, captured automatically;
+  later imports become the current schedule. A Re-baseline button freezes the
+  current programme on demand. getScheduleBaseline / setScheduleBaseline on both
+  providers; schedbaseline added to the ENTITY_KEYS purge list.
+- Variance: baselineIndex() / varianceOf() give per-activity start and finish
+  variance. The Activities table gains a Var column (positive = slip, "new" for
+  activities absent from the baseline) and the Gantt draws a grey baseline ghost
+  under each live bar, so slip reads as an overhang. Both are toggleable/absent
+  when no baseline exists.
+- Verified against the real EMA-13.xer: simulating rev-2 (one mapped activity
+  deleted, one slipped 18d, one added) yields "1 changed · 1 added · 1 removed ·
+  626 unchanged" and correctly names MAT-ASP-MIX as orphaning 1 BOQ link.
+- Tests: +13 domain (scheduleDiff.test.ts) and +2 UI (change set shown before
+  overwrite; re-baseline adds the variance column).
+  Web 556 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — The baseline is an act of approval, not a side effect of import
+- Previously the FIRST import auto-froze the baseline. For a project carrying a
+  seeded schedule that meant the seed silently became the contract baseline —
+  the thing every variance figure and delay claim is measured against. Wrong
+  provenance, and no human ever said so.
+- Capture moved to the approval seam. advanceScheduleWorkflow() freezes the
+  programme only when the chain reaches "Approve & lock (Comd Engineer)" and the
+  workflow locks. replaceSchedule() now never creates a baseline, no matter how
+  many times a file is imported. Approving an EMPTY schedule freezes nothing.
+- A later re-approval (after amendScheduleBaseline) deliberately LEAVES THE
+  ORIGINAL BASELINE STANDING. An EOT claim is argued against the programme that
+  was originally approved, so a revision must not quietly redefine the yardstick.
+  Replacing it is an explicit act: setScheduleBaseline() is the manual
+  re-baseline, and the UI asks for confirmation before discarding the frozen
+  programme. ScheduleBaseline gained `revision`; source reads "approved
+  (original)" for revision 0 and "approved rev N" thereafter.
+- UI: the Activities header shows a Baseline pill (date + revision, provenance in
+  the tooltip) once approved, and otherwise says plainly "No baseline — approve
+  the programme to freeze it". Re-baseline only appears once a baseline exists.
+  The Schedule tab reloads the baseline when the workflow lock changes, so the
+  Var column and the Gantt ghost bars appear the moment approval completes.
+- Tests: +7 provider (data/scheduleBaseline.test.ts — import never freezes; part-
+  way through the chain freezes nothing; approval captures rev 0; empty schedule
+  freezes nothing; re-approval preserves the original; explicit re-baseline
+  overwrites; a wrong acting role cannot advance and therefore cannot freeze) and
+  the Execution UI tests now prove absence-before-approval and capture-on-approval
+  by walking the five-stage chain.
+  Web 564 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Multiple baselines: contract original + every approved revision
+- A claim is presented two ways at once: slip against the programme the CONTRACT
+  was signed against, and slip against the LAST APPROVED revision. One frozen
+  document cannot answer both, so the baseline is now a set.
+- Storage: nlc-ecc.schedbaselines.<pid> holds ScheduleBaseline[], oldest first;
+  index 0 is the original approval. ScheduleBaseline gained a stable `id` so a
+  comparison selection survives a reload. listScheduleBaselines() migrates a
+  project frozen under the older single-document key on first read, minting an id
+  for the legacy record; the old key is left untouched. schedbaselines added to
+  the ENTITY_KEYS purge list.
+- setScheduleBaseline() now APPENDS. It can no longer destroy the programme the
+  contract was signed against, whoever calls it. getScheduleBaseline() answers
+  with the original, so every existing call site keeps its meaning.
+- advanceScheduleWorkflow() captures on EVERY approval, not just the first, and
+  guards against appending the same revision twice (a duplicate advance on a
+  locked workflow throws before it can). Original = "approved (original)",
+  revision N = "approved rev N".
+- UI: a Compare-against selector (hidden while only one baseline exists) sits in
+  the Activities header and above the Gantt. Switching it re-reads the Var column
+  and the grey ghost bars against the chosen programme — original and latest
+  revision are one click apart. The baseline pill now reads "Original · <date>" /
+  "Rev 2 · <date>". Re-baseline copy corrected: it adds a baseline, it does not
+  replace one.
+- Tests: baseline provider suite grew to 9 (append-not-overwrite, no duplicate
+  revision, original survives re-approval, legacy migration mints an id) and the
+  Execution UI proves two approved revisions appear in the selector and variance
+  can be read against either. A test bug was caught and fixed on the way:
+  amending remounts the workflow strip, so the acting-role select must be
+  re-queried rather than captured once.
+  Web 567 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Variance & claim report + near-critical band
+- New domain/varianceReport.ts. With a baseline SET, slip must be read two ways
+  at once: against the ORIGINAL approval (the yardstick an EOT claim is argued
+  from) and against the LATEST approved revision (what the team is judged on now).
+  The gap between them is the slip approved amendments already absorbed. A project
+  can be 31 days behind contract while sitting exactly on its current revision —
+  both statements true, and the report says so in one line rather than letting
+  someone pick the flattering number.
+  varianceReport() returns per-activity varVsOriginal / varVsRevision /
+  absorbedByRevision (null where an activity is absent from that programme — new
+  scope, not zero slip), plus a summary: programme finish against each frozen
+  programme, slipped / ahead counts, critical slip, new-scope count, worst ten.
+  singleBaseline collapses the two yardsticks so the UI hides the columns instead
+  of printing zeroes.
+- New Execution → "Variance & claim" sub-tab: KPI strip (finish vs contract, vs
+  latest revision, absorbed by amendments, slipped activities, new scope), filters
+  (All / Slipped / Critical / New scope) and the claim table. Before any approval
+  it says plainly that variance needs an approved baseline, rather than rendering
+  a table of dashes.
+- floatBand(): critical (float ≤ 0), near-critical (≤ 10d by default, configurable),
+  normal, unknown. The critical path says what IS late; the near-critical band says
+  what is one bad week from driving completion. Added as a Gantt filter and an
+  amber bar colour, with the float quoted in the tooltip.
+  On the real EMA-13 programme: 101 critical, 13 near-critical at 10 days,
+  59 at 30 — a real population, not an empty band.
+- Tests: +14 domain (varianceReport.test.ts — the two yardsticks, absorbed time,
+  behind-contract-yet-ahead-of-revision, new scope, single/no baseline, float
+  bands) and +2 UI (variance tab explains itself without a baseline; near-critical
+  filter), with the two-revision UI test extended to assert the claim columns.
+  Web 583 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Suggested BOQ↔activity QUANTITY allocations
+- Mapping 628 activities by hand was the bottleneck between this app and live
+  work. The suggester now proposes not just WHICH activities consume a BOQ item
+  but HOW MUCH of it each one takes.
+- matchScore() got the P6 data it was missing: alongside the activity name and
+  WBS code it now reads the readable WBS path and the assigned RESOURCE NAMES
+  ("Clearing & grubbing"), which are frequently a closer match to the BOQ
+  description than the activity title.
+- Scoring bug found by a test and fixed: bill/section tokens were counted as
+  full evidence, so any item sitting in an "Earthworks" bill matched every
+  earthwork activity regardless of its description. Description tokens now carry
+  full weight and bill/section context 0.4, so a bill name alone can never carry
+  a suggestion over the threshold.
+- suggestAllocations() splits each unmapped item across up to N candidate
+  activities, weighted by match score × activity duration — a thirty-day activity
+  plausibly executes more of an item than a three-day one. distribute() uses the
+  largest-remainder method so the parts sum EXACTLY to the item quantity; naive
+  rounding would leave a phantom unallocated remainder that reads as an error.
+  Items a human already mapped are never touched; milestones and zero-qty items
+  are skipped; output is deterministic for equal scores.
+- Everything lands as confidence:"auto" and takes no part in derived progress
+  until confirmed. The review queue now shows the proposed quantity per link, with
+  Confirm all / Reject all, and says plainly that a plausible name match is not
+  proof that an activity executes that work.
+- Against the real EMA-13 programme and the seeded 88-item BOQ: 14 items matched
+  → 35 proposed links. Example: "Asphaltic base course" 939,433 Cft split
+  313144.34 / 313144.33 / 313144.33 across the three zones — sums exactly. It also
+  pulls "wearing course" partly onto "base course" activities, which is exactly the
+  kind of plausible-but-wrong match the confirmation step exists to catch.
+- Tests: +15 domain (mappingSuggestQty.test.ts — exact distribution on awkward
+  decimals, duration weighting, cap, never re-proposing mapped items, resource/WBS
+  matching, determinism) and +2 UI (queue shows quantities and holds them; reject
+  all clears).
+  Web 600 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Export the variance & claim report to Excel
+- The claim table is the artifact that leaves the building; it could only be read
+  on screen. Export added, built on the existing components/xlsxExport helper.
+- INCIDENT, recorded honestly: I overwrote components/xlsxExport.ts, which six
+  modules already depended on (ExportMenu, HrAdminViews, CommandDashboard,
+  DistributionPlanner, DistributionsTab, AdvancesTab). Typecheck caught it
+  immediately. Restored verbatim from the uploaded archive rather than
+  reconstructed from memory, its 49 dependent tests re-run green, and the new
+  exporter conformed to the existing SheetSpec { name, aoa } shape instead of
+  imposing a second one. widthsFor() added as a non-breaking improvement so every
+  export gets readable columns rather than a wall of ####.
+- New domain/varianceExport.ts, pure and browser-free so the CONTENT is asserted
+  in tests rather than eyeballed in Excel. Two sheets: Summary (project, the two
+  programmes compared, headline figures, worst slips) and Variance (one row per
+  activity). Two rules govern the shape:
+    * variances are written as NUMBERS, not "+15d" — a reviewer will sort, filter
+      and total that column, and a string defeats all three;
+    * a missing baseline entry is a genuinely EMPTY cell, never 0. An activity
+      absent from the contract programme is new scope; printing 0 would claim it
+      was on time.
+  A probe showed empty STRINGS write text cells, which turn a numeric column to
+  text and break SUM — so Cell allows null and null writes a truly blank cell.
+  Verified by round-tripping the workbook through SheetJS: numbers read back as
+  numbers, the new-scope key is absent rather than zero.
+- baselineLabel() moved from components/BaselineSelector to domain/baselines so
+  both the UI and the export can name the programme they measured against, without
+  a domain module importing a component.
+- The workbook always carries EVERY activity, never the current screen filter — a
+  claim built from a filtered table is a claim with holes in it. Export appears
+  only once a baseline exists.
+- Demonstrated on the real EMA-13 programme with a contract baseline and a
+  simulated approved rev 1: +25d vs contract, +5d vs revision, 20d absorbed by the
+  amendment, 291 activities slipped (63 critical), 628 detail rows.
+- Tests: +17 domain (varianceExport.test.ts — numeric cells, blank new scope,
+  single-baseline column dropping, filename sanitising, column widths, SheetJS
+  round-trip) and +2 UI (export offered once baselined, absent before).
+  Web 618 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Rename detection: the last data-loss hole closed
+- A revised programme routinely RENUMBERS an activity rather than deleting it —
+  MAT-ASP-MIX becomes MAT-ASP-MIX-A. The diff saw a removal plus an addition, and
+  the BOQ links, with their quantity allocations, died with the removal. It warned;
+  it could not help.
+- similarity(): Dice coefficient over character bigrams. Chosen over token-set
+  measures because it works on CODES as well as prose — "MAT-ASP-MIX" vs
+  "MAT-ASP-MIX-A" scores > 0.85, which a token Jaccard would miss entirely.
+- detectRenames() pairs each ORPHANED removal (one that carries links, and so has
+  something to lose) with the added activity most likely to be the same work:
+  0.6 × name similarity + 0.4 × code similarity, plus bonuses for identical dates
+  and identical WBS. Greedy and one-to-one — the strongest pair wins and neither
+  side is offered twice, so two orphans cannot both claim one successor. Removals
+  with nothing mapped to them are ignored: there is nothing to rescue.
+  unrescuedOrphans() reports what is genuinely lost once the user has chosen.
+- Honesty fix caught while reading real output: the reason string said "same name"
+  for a name that merely resembled the original. "same" is now reserved for exact
+  equality; anything else reads "similar". A planner ticking these boxes has to be
+  able to trust the word.
+- provider.remapBoqWbsActivity() carries every link across, quantity intact. Where
+  the target already maps the same BOQ item the links MERGE rather than one being
+  dropped: quantities add (both describe work on the same item) and a confirmed
+  link is never demoted to auto by the merge.
+- BaselineImport now lists proposed remaps with checkboxes, pre-ticking those above
+  85% confidence and showing the link count, score and reason for each. The red
+  data-loss alert now names only the orphans with no successor selected, and turns
+  green when every mapped activity that disappears has one. Remaps run AFTER the
+  schedule is written, when the new activity codes exist.
+- On the real EMA-13 programme with two mapped activities renamed, one genuinely
+  deleted and an unrelated activity added: 3 orphans → 2 rescued at 100%, 1 lost
+  and named. The unrelated addition is never claimed as a successor.
+- Tests: +17 (similarity on codes/names/edge cases, one-to-one pairing, threshold,
+  no-links-no-rescue, remap merge semantics, confirmed never demoted, no-op cases)
+  and +1 UI proving the rescue end to end: map an item, re-import with the activity
+  renamed, see it pre-ticked, untick it and watch the honest loss warning return.
+  Web 636 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Gantt row virtualization + PDF claim export
+- Virtualization: only the rows inside the viewport, plus six of overscan each
+  side, are rendered. A 5,000-activity programme is 120,000px of DOM otherwise and
+  the zoom slider stutters on every frame. Spacer divs above and below preserve
+  the true scroll height, so the scrollbar never lies. Dependency arrows and the
+  data-date line are positioned absolutely in the SVG, so they still draw
+  correctly when an endpoint is scrolled out of view.
+- rowWindow() extracted as a pure function so the arithmetic is TESTED rather than
+  inferred from a screenshot. That immediately paid: a scroll position past the end
+  of the content (a stale scrollTop after a collapse) produced first > count,
+  rendering nothing behind a page-tall top spacer. `first` is now clamped to
+  `last`. jsdom and the first paint report clientHeight 0, so the window falls
+  back to the CSS max height rather than rendering a blank chart.
+- PDF export of the variance & claim report, on the existing branded tablePdf
+  helper. A PDF cannot be sorted or filtered, so the headline figures move up into
+  the meta block where a reader meets them before the table: finish vs contract,
+  finish vs revision, time absorbed by amendments, slipped and critical counts.
+  Numeric columns are right-aligned; blanks are empty strings because a PDF cell
+  has no null. Single-baseline reports drop the revision columns and meta rows,
+  as in the spreadsheet.
+- Both exports appear only once a baseline exists, and both always carry every
+  activity rather than the current screen filter.
+- Tests: +7 (rowWindow: viewport+overscan, scrolled window, height preservation,
+  end clamping, zero rows / zero height / negative scroll, row-height effect) and
+  +6 (variancePdf: headline in meta, project naming, right alignment, blank cells,
+  single-baseline column dropping, filename derivation), plus UI assertions for
+  both export buttons.
+  Web 649 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Derived S-curve, budget reconciliation, and .xer provenance
+- EMA-13 turns out to be fully COST-LOADED: 463 TASKRSRC assignments totalling
+  PKR 4,109,496,988. The parser was throwing that away, reading resource names
+  only. TASKRSRC.target_cost is now summed per activity (ScheduleActivity.
+  budgetCost) and per programme (ScheduleMeta.totalBudgetCost).
+- New domain/scurveFromSchedule.ts. Two sources of truth for one curve will drift,
+  and the drift is always found at the worst moment. The planned curve is now
+  COMPUTED from the programme: each activity budget spread across its WORKING days
+  — nothing is earned on a holiday — bucketed by month and accumulated. Milestones
+  carry no work and contribute nothing. Programmes without costs fall back to
+  duration weighting and SAY SO, because a duration-weighted curve asserts that
+  every day of work is worth the same, which is a claim about the project rather
+  than a fact about it. Actuals are left null: a derived plan asserts nothing about
+  what happened. The last point is pinned to exactly 100 — float accumulation
+  otherwise leaves it at 99.9.
+  On the real programme: 16 months, monotonic, 1.8% at Feb-26 → 100% at May-27,
+  zero activities skipped.
+- reconcileProgrammeCost(): a cost-loaded programme is an INDEPENDENT statement of
+  the contract value. If it disagrees with the BOQ beyond tolerance, a bill is
+  missing from the programme or a resource was never loaded. The import dialog now
+  reports the divergence instead of letting two totals sit side by side unnoticed.
+- Provenance: the uploaded .xer is hashed as bytes (SHA-256 via Web Crypto) and
+  the file name, size, hash and import timestamp travel with the schedule meta,
+  surfaced on the Activities header with the full digest in the tooltip. A claim
+  must be able to prove WHICH file produced WHICH baseline.
+  crypto.subtle is undefined on insecure origins — exactly where a hash silently
+  degrading would be most dangerous — so the fallback (FNV-1a) is always LABELLED.
+  The stored record names its own algorithm and never claims to be SHA-256 when it
+  is not. Verified against the known digest of "hello world".
+- Tests: +20 domain (curve spreading across month boundaries and non-working days,
+  monotonicity, exact-100 termination, milestone exclusion, duration fallback,
+  degenerate input, reconciliation tolerance, hash stability and labelling) and +1
+  UI proving the whole path: upload, provenance recorded, curve derived, budget
+  reconciled, provenance visible afterwards.
+  Web 670 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-10 — Allocation heat-map, shared collapse state, lookahead chip
+- AllocationBar: each BOQ item drawn as a stacked bar of its activity
+  allocations, with whatever is not yet allocated in grey. Scanning a column of
+  these finds the unmapped value in a second; scanning the rows takes minutes.
+  Unmapped items get a hatched track; OVER-allocated items are drawn as a full
+  red bar rather than a segment overflowing its track — a bar running past its
+  own end reads as a rendering bug, not as the accounting error it is.
+  Caught while wiring it: I had reached for a --amber CSS variable that does not
+  exist in theme.css. A missing var renders an INVISIBLE segment, silently
+  understating how much of an item is mapped. Now only variables that exist
+  (--primary, --info, --warning, --rag-green) are used.
+- Collapse state lifted into ExecutionTab and passed to both ActivityTable and
+  GanttChart. Collapsing a WBS branch in the table leaves it collapsed in the
+  Gantt, and back. Kept in memory rather than persisted — a planner who collapses
+  everything to skim does not expect that state back next week.
+- "Next 8 weeks" Gantt filter chip, built on the EXISTING domain/lookahead
+  function rather than a second window definition, so one screen cannot hold two
+  different ideas of what the next eight weeks means. It anchors on the P6 data
+  date when one was imported, otherwise today.
+- Tests: +2 mapping UI (unmapped hatch → allocation bar after confirming a
+  suggestion; over-allocation renders as the red full bar) and +2 execution UI
+  (collapse state shared in both directions; lookahead chip filters the Gantt).
+  Web 674 passing, server 9; typecheck clean; local + api builds green.
+- This clears every enhancement on the three suggestion lists except
+  drag-to-reschedule (proposed vs approved), which is deliberately held: its
+  shape depends on workflow answers only a planner can give.
+
+2026-07-13 — Sublet / labor contract interface + seed removal
+- New feature: a proper interface to create a sublet or labor contract from the
+  subcontractor's own BOQ. Contractor details (existing or new), a per-item BOQ
+  (uploaded xlsx/csv OR entered by hand), a review with live contract value, then
+  create. On creation the contract is written, the subcontractor is created if
+  new, and each line LOCKS its quantity of the corresponding item in the
+  distribution planner.
+- Data model: Contract gained optional lines?:ContractLine[] (boqItemId, qty,
+  rate) and kind?:"sublet"|"labor". Value is DERIVED as Sigma(qty*rate), never a
+  typed figure that can drift from the quantities it is billed against.
+- domain/contractLocks.ts: itemLocks() gives locked vs unallocated qty per BOQ
+  item with the holding contracts; contractLineIssues() folds a proposed set of
+  lines onto everyone else's locks and reports over-commitment. Splitting one item
+  across several contractors is allowed; over-committing is a WARNING the user
+  acknowledges, not a hard block (a commercial decision, not an input error).
+  12 domain tests.
+- provider.createSubletContract() creates the sub when given details instead of an
+  id, derives scopeBills from the line items, numbers the contract NLC/<PID>/SC-NN
+  (or LC-NN for labor), and leaves it DRAFT (locked-but-editable) until awarded.
+  updateContractLines() only edits a draft — awarded lines are frozen (variations,
+  not silent edits, move committed quantities). Stubbed on the API provider.
+- Distribution planner: new Locked and Unallocated columns per item, with the
+  holding contracts in the tooltip and an over-commit flag.
+- SEED REMOVAL (requested): contractors, sublet contracts and variation orders are
+  no longer seeded. Every register that hangs off a subcontractor (RARs, the sub
+  bank-guarantee, sub-directed material issues and machinery hire) starts empty
+  too — a dangling RAR with no contractor is worse than none. Distributions now
+  start as NLC self-execution across the board. SEED_VERSION bumped to
+  2026-07-10.v13-no-contract-seeds so live stores purge and regenerate.
+- Latent bug found and fixed while seeding tests: setDistribution() read the
+  distributions list with an empty-array fallback while listDistributions() seeded
+  from the generator. Editing ANY distribution before the list had ever loaded
+  silently wiped the whole seeded set. Both now seed from gen(). Another: a test
+  used listSubcontractors() where it meant listSuppliers().
+- Test fallout handled honestly: 39 tests across 15 files assumed the old seeded
+  commercial spine. Rather than prop them up with fake fixtures, each now builds
+  its own precondition through the real provider flow (create contract/RAR/VO,
+  then act) — they are stronger integration tests for it. Added a shared
+  src/testSeed.ts helper (seedCommercial) that runs the seed reconciliation first
+  so the app boot does not purge what the test seeded, then creates a contractor +
+  contract (+ optional distributions, RARs at target statuses, executed progress,
+  variations). Seed-shape tests (commercialSeed, seedReconcile, seedConsistency,
+  NewProjectCleanSlate) were rewritten to assert the new empty-spine reality.
+- End-to-end: SubletContract.test.tsx proves create-from-hand-entered-BOQ →
+  contracts register → quantity locked in the planner, and the overlap warning
+  gating (blocked until acknowledged).
+  Web 687 passing (98 files), server 9; typecheck clean; local + api builds green.
+
+2026-07-14 — CI fix: environment-dependent hash algorithm + action bump
+- CI (GitHub Actions run #640) failed on ONE test:
+  Execution.test.tsx > "records the source file, derives the planned curve, and
+  reconciles the budget". It asserted the provenance line contained "sha-256",
+  but CI produced "fnv-1a 70af0f…c2d5".
+- Root cause: this is the labelled-fallback design working as intended, and a
+  test that assumed one environment. hashBytes() uses SHA-256 via Web Crypto when
+  available and a LABELLED FNV-1a fallback otherwise. In CI, the UI test reads the
+  .xer through a jsdom File/FileReader path and crypto.subtle.digest throws on
+  that buffer, so the code correctly falls back and NAMES the algorithm. The
+  domain unit test (native ArrayBuffer) still gets SHA-256 and passed — which is
+  why only 1 of 687 failed. The assertion, not the code, was wrong.
+- Fix: assert /sha-256|fnv-1a/ — either is correct; what the design guarantees is
+  that the algorithm is NAMED, never silently assumed. Proved both branches: the
+  test passes locally (sha-256) and, with crypto.subtle stubbed out to reproduce
+  CI, hashBytes returns a labelled fnv-1a hash that still satisfies the assertion.
+- Also cleared the CI warnings from the screenshots: actions/checkout and
+  actions/setup-node bumped v4 → v5 (v4 runs on the now-deprecated Node 20 runtime)
+  across ci.yml and pages.yml. node-version: 20 (the APP target) left as-is.
+  Web 687 passing, server 9; typecheck clean; local + api builds green.
+
+2026-07-14 (b) — v14: purge stale seeds from USER-CREATED projects
+- REPORT: deployed site still showed 3 contractors (FWO, Sardar & Sons, Reliable
+  Construction), 3 contracts NLC/F14F15/SC-01..03, RARs (Rs 5,350 Mn booked) and
+  VOs on proj-extension-of-margalla-ro (P0295). "RAR seeds shall also be removed."
+- DIAGNOSIS: the code was already correct. Verified by scanning all 20 seeded
+  projects: zero contractors/contracts/RARs/VOs generated. gen() returns null for
+  any project not in SEED_PROFILES, so user-created projects get NO generated seed.
+  The names in the screenshots live in data/seed/catalog.ts as unused catalog
+  constants (SUB_PROFILES/SUB_NAMES) that commercialSeed.ts no longer imports.
+  proj-extension-of-margalla-ro is USER-CREATED (the seeded one is
+  proj-margalla-rd). The records were OLD-SEED RESIDUE persisted in the browser
+  localStorage by a PREVIOUS build — and reconcileSeed only purged
+  Object.keys(SEED_PROFILES) + LEGACY_SEED_IDS, deliberately skipping user-created
+  projects to protect user data. So the residue survived every upgrade.
+- FIX (v14 migration): after the seeded-project purge, sweep the commercial spine
+  (subs, contractsreg, rars, rarlinks, variations) from EVERY persisted project
+  that is not a seeded one, and reset any non-self distribution back to
+  mode:self/subcontractorId:undefined (rewriting only the mode, so a user BOQ or
+  allocation edit is preserved). SEED_VERSION → 2026-07-14.v14-purge-user-project-
+  contract-seeds.
+- SAFETY: this runs exactly ONCE, at a version that postdates BOTH the seed
+  removal AND the sublet-creation feature — so any spine data present at that
+  instant is old-seed residue by definition (a user could not have created a
+  contract through the new flow before the version existed). The version is
+  stamped afterwards, so it never runs again and genuinely user-created contracts
+  are untouched. The user PROJECT itself is never deleted.
+- Tests: data/seedMigrationV14.test.ts (4) — clears the spine from a user project;
+  resets stale sublet dists to self; keeps the project row; and proves a contract
+  created AFTER the migration survives a reload (the migration does not re-run).
+  Reproduced the reported store exactly (3 subs / 3 contracts / RAR / VO on P0295)
+  → all zero after boot, project intact.
+  Web 691 passing (99 files), server 9; typecheck clean; local + api builds green.
+
+2026-07-15 — CSV import templates + bill/code matching (from the real WKC BOQ)
+- User supplied WKC_BOQ.xlsx (M/S Wali Khan, Anx J, Margalla Avenue) and asked for
+  a sample CSV to upload it, plus a sample CSV offered inside the import tabs.
+- READING THE FILE: single sheet, 3-row merged header. A=Sr, B=Item No, C=Desc,
+  D=Unit, E=CA qty, F=CA rate, G=reduced CA rate (F×0.97849 — G is the operative
+  one, E×G=H), H=CA amount. J2:O3 merged "M/S Wali Khan Contractor" spans TWO
+  blocks: J/K/L and M/N/O (qty/rate/amount each). P (Total) = L + O, so BOTH are
+  contractor scope: 20 Bill-4d bridge items at individually negotiated rates
+  (0.45–0.90 of CA) and 89 items at a flat 12% below CA (N = G×0.88 exactly).
+  Extraction ties out to the sheet G.TOTAL to the paisa: PKR 3,266,285,816.30.
+  Bill 6A Toll Plaza is a PKR 176 Mn provisional sum (qty 0, unit PS) that the
+  sheet itself excludes from P — excluded here too, flagged to the user.
+- KEY FINDING — a BOQ code is NOT unique. 109 rows carry only 77 distinct codes:
+  401f (lean concrete) is priced under 7 bills, 107a under 5. The sublet importer
+  matched on CODE ALONE, so uploading a real BOQ would silently collapse 7 lines
+  onto 1 item. The unique key is BILL + CODE.
+- Worse, bill+code is not unique either: the sheet has two mis-keyed rows —
+  row 94 (bill 4e) codes "Concrete A3 (Elevated)" as 401a3ii when 4c prices
+  Elevated as 401a3iii; row 132 (bill 6) codes "Gantry Sign Type-II" as 608j2,
+  which is Pavement Marking (row 127). Reported to the user rather than guessed at.
+- NEW domain/subletImport.ts — matchSubletRows(rows, items): keys on bill+code,
+  falls back to code alone only when unambiguous, breaks a repeated bill+code by
+  exact (normalised) description, and never matches by ELIMINATION — if a stated
+  description contradicts the last free candidate that is a discrepancy to report,
+  not a line to commit. An item can be claimed by only one row. Everything it
+  cannot place is returned as ambiguous/unmatched and surfaced in the UI, because
+  a wrong quantity here becomes a wrong commitment. Both lookup maps hold LISTS —
+  a last-one-wins overwrite is the exact bug this module exists to prevent.
+  12 tests, including the two real mis-keyed cases.
+- NEW domain/csvTemplates.ts + "Sample CSV" buttons in Bill of Quantities → Import
+  and New sublet contract, reusing the existing toCsv/downloadText helpers. Sample
+  rows are real Margalla items chosen to demonstrate that bill disambiguates a
+  repeated code (401f under 4a and 4b). Both importers ignore extra columns, so a
+  user can upload their own working sheet unchanged.
+- NewSubletContract now reads bill + description columns, carries the bill down
+  (BOQs group rows under a bill header) and reports ambiguous/unmatched rows.
+- Verified end-to-end through the REAL importers, not by assumption: the generated
+  contractor CSV → 108 uploaded, 108 matched, 0 ambiguous, 0 unmatched, 108
+  DISTINCT BOQ items (nothing collapsed), value PKR 3,266,285,816.30 exact.
+  Web 703 passing (100 files), server 9; typecheck clean; local + api builds green.
+
+2026-07-15 (b) — margin at award, worked out against the ORIGINAL BOQ
+- USER CORRECTION: "in Subcontractor BOQ only quantities and items subletted will
+  be present alongwith sublet rate. Margin shall be worked out against Original
+  BOQ." My earlier advice to import margalla-BOQ-import.csv over the live BOQ was
+  WRONG — that would have replaced the 122-item / Rs 4,109.5 Mn original with the
+  annexure subset (108 items / Rs 3,816.0 Mn) and destroyed the very baseline the
+  margin is measured against. Retracted; that file is now boq-import-sample.csv,
+  a FORMAT reference only.
+- The model, stated properly: the subcontractor BOQ is a COST document only — the
+  items sublet, the sublet quantity, the sublet rate. It never states revenue.
+  Revenue is the project original BOQ rate for the same item. Margin is derived:
+      revenue = sublet qty x ORIGINAL BOQ rate
+      cost    = sublet qty x sublet rate
+      margin  = revenue - cost
+  An item not sublet simply does not appear; a partly-sublet item appears with only
+  the quantity awarded (the planner already tracks locked vs unallocated).
+- NEW domain/contractMargin.ts — contractMargin(lines, items): per-line and total
+  revenue/cost/margin/margin%, against the original BOQ. Distinct from the existing
+  domain/marginanalytics.ts, which measures margin on work EXECUTED: this one is
+  the decision taken at award, that one is the outturn. Both matter.
+  A sublet rate AT or ABOVE the BOQ rate earns nothing or loses money and is
+  flagged per line and listed in negativeLines — never buried in a favourable
+  total (tested: a healthy line must not hide a loss-making one). Lines whose item
+  is not in the BOQ are ignored rather than priced by guess; a zero BOQ rate never
+  divides by zero. 8 tests.
+- New sublet contract screen now shows, per line, the BOQ rate beside the sublet
+  rate and the resulting margin + %, with a ⚠ on any non-earning line; plus a
+  margin card (revenue at BOQ rates / contract value / margin %) and an explicit
+  alert naming the codes priced at or above the BOQ rate. Footer totals both
+  revenue-at-BOQ and margin. 1 new UI test (defaulting the rate to the BOQ rate
+  → zero margin → warning; halving it → 50.00% → warning clears).
+- Deliverables regenerated from WKC_BOQ.xlsx: WKC-sublet-contract-BOQ.csv = 108
+  sublet lines (bill, code, description, unit, sublet qty, sublet rate),
+  cost PKR 3,266,285,816.30 (ties to the sheet G.TOTAL exactly); revenue at the
+  annexure CA rates PKR 3,816,046,981.48 → margin PKR 549,761,165.18 (14.41%) —
+  the blend of a flat 12% on 89 items and the negotiated Bill-4d bridge rates.
+  NOTE the app computes margin against the PROJECT original BOQ, which may differ
+  slightly from the annexure CA column — that is the point of the correction.
+  Web 712 passing (101 files), server 9; typecheck clean; local + api builds green.

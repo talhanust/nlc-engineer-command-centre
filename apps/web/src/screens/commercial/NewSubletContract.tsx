@@ -3,7 +3,7 @@ import { useData } from '../../data/DataContext';
 import { formatMoney } from '../../domain/money';
 import { readWorkbook } from '../../domain/xlsxImport';
 import { itemLocks, contractLineIssues, contractValue } from '../../domain/contractLocks';
-import { matchSubletRows, parseSubletGrid, type SubletImportResult } from '../../domain/subletImport';
+import { matchSubletRows, parseSubletGrid, rowKey, type SkippedRow, type SubletImportResult } from '../../domain/subletImport';
 import { ImportReconciliation } from '../../components/ImportReconciliation';
 import { contractMargin } from '../../domain/contractMargin';
 import { SUBLET_TEMPLATE_AOA, SUBLET_TEMPLATE_FILENAME } from '../../domain/csvTemplates';
@@ -43,6 +43,8 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
   const [rows, setRows] = useState<Draft[]>([]);
   const [importNote, setImportNote] = useState('');
   const [recon, setRecon] = useState<SubletImportResult | null>(null);
+  const [uploadedRows, setUploadedRows] = useState<ReturnType<typeof parseSubletGrid>['rows']>([]);
+  const [resolutions, setResolutions] = useState<Map<string, string>>(new Map());
   const [fileName, setFileName] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -73,13 +75,14 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
   const margin = useMemo(() => contractMargin(pricedLines, items), [pricedLines, items]);
 
   async function onUpload(file: File) {
-    setError(''); setImportNote(''); setRecon(null);
+    setError(''); setImportNote(''); setRecon(null); setResolutions(new Map());
     try {
       const wb = await readWorkbook(file);
       const grid = wb.grids[wb.sheetNames[0]] ?? [];
       const { rows: uploaded, error: parseErr } = parseSubletGrid(grid);
       if (parseErr) { setError(parseErr); return; }
 
+      setUploadedRows(uploaded);
       const res = matchSubletRows(uploaded, items);
       setRecon(res);
       if (res.matched.length === 0) {
@@ -110,6 +113,17 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
   function removeRow(i: number) { setRows((r) => r.filter((_, j) => j !== i)); }
 
   const canSubmit = pricedLines.length > 0 && unpriced === 0 && title.trim() && (existingSubId || name.trim()) && (issues.length === 0 || ackOverlap);
+
+  function resolve(row: SkippedRow, boqItemId: string) {
+    const next = new Map(resolutions);
+    if (boqItemId) next.set(rowKey(row), boqItemId); else next.delete(rowKey(row));
+    setResolutions(next);
+    const res = matchSubletRows(uploadedRows, items, next);
+    setRecon(res);
+    setRows(res.matched.map((m) => ({
+      boqItemId: m.boqItemId, qty: String(m.qty), rate: m.rate > 0 ? String(m.rate) : '',
+    })));
+  }
 
   async function create() {
     setBusy(true); setError('');
@@ -254,7 +268,7 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
         )}
       </div>
 
-      {recon && <ImportReconciliation result={recon} fileName={fileName} />}
+      {recon && <ImportReconciliation result={recon} fileName={fileName} items={items} resolutions={resolutions} onResolve={resolve} />}
 
       {unpriced > 0 && (
         <div className="card" style={{ marginTop: 12, borderColor: 'var(--danger)' }} aria-label="Unpriced lines">

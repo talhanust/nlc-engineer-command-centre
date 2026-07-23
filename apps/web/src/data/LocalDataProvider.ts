@@ -391,17 +391,43 @@ export class LocalDataProvider implements DataProvider {
     projectId: string,
     items: Array<Pick<BoqItem, 'billNo' | 'code' | 'description' | 'unit' | 'qty' | 'rate'>>,
   ): Promise<BoqItem[]> {
-    const rows: BoqItem[] = items.map((r, i) => ({
-      id: `boq-${projectId}-${i}`,
-      projectId,
-      billNo: r.billNo,
-      code: r.code,
-      description: r.description,
-      unit: r.unit,
-      qty: r.qty,
-      rate: r.rate,
-      amount: itemAmount(r.qty, r.rate),
-    }));
+    // BOQ item identity must be STABLE across a re-import. Contract lines, RAR
+    // lines, allocations and schedule mappings all store boqItemId, so minting ids
+    // by row position means inserting one row (a provisional sum, say) silently
+    // re-points every line below it at a different item — corruption with no error.
+    // So an incoming row that matches an existing item on (bill, code, description)
+    // keeps that item's id; only genuinely new rows are given new ids, numbered
+    // beyond every id already in use so a retired index is never recycled.
+    const prev = readJson<BoqItem[]>(boqKey(projectId), () => ((gen(projectId)?.boq ?? [])));
+    const natural = (b?: string, c?: string, d?: string) =>
+      `${(b ?? '').trim().toLowerCase()}|${(c ?? '').trim().toLowerCase()}|${(d ?? '').replace(/\s+/g, ' ').trim().toLowerCase()}`;
+    const byNatural = new Map<string, BoqItem[]>();
+    for (const it of prev) {
+      const k = natural(it.billNo, it.code, it.description);
+      byNatural.set(k, [...(byNatural.get(k) ?? []), it]);
+    }
+    let nextId = prev.reduce((m, it) => {
+      const n = Number(String(it.id).split('-').pop());
+      return Number.isFinite(n) ? Math.max(m, n + 1) : m;
+    }, 0);
+
+    const rows: BoqItem[] = items.map((r) => {
+      const k = natural(r.billNo, r.code, r.description);
+      const pool = byNatural.get(k);
+      // shift() so two identical rows take two different existing items, not one twice
+      const kept = pool && pool.length ? pool.shift() : undefined;
+      return {
+        id: kept ? kept.id : `boq-${projectId}-${nextId++}`,
+        projectId,
+        billNo: r.billNo,
+        code: r.code,
+        description: r.description,
+        unit: r.unit,
+        qty: r.qty,
+        rate: r.rate,
+        amount: itemAmount(r.qty, r.rate),
+      };
+    });
     writeJson(boqKey(projectId), rows);
     // CA Value = BOQ Amount (single source of truth): syncing the project's
     // contract value to the BOQ total so every dashboard shows one figure.

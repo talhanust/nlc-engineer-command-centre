@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { formatMoney } from '../../domain/money';
 import { readWorkbook } from '../../domain/xlsxImport';
-import { matchSubletRows, parseSubletGrid, type SubletImportResult } from '../../domain/subletImport';
+import { matchSubletRows, parseSubletGrid, rowKey, type SkippedRow, type SubletImportResult } from '../../domain/subletImport';
 import { ImportReconciliation } from '../../components/ImportReconciliation';
 import { diffContractLines, type ContractLineDiff } from '../../domain/contractLineDiff';
 import { contractMargin } from '../../domain/contractMargin';
@@ -30,6 +30,8 @@ export function ReviseContractBoq({ projectId, contract, onClose, onSaved }: {
   const [items, setItems] = useState<BoqItem[]>([]);
   const [proposed, setProposed] = useState<ContractLine[] | null>(null);
   const [recon, setRecon] = useState<SubletImportResult | null>(null);
+  const [uploaded, setUploaded] = useState<ReturnType<typeof parseSubletGrid>['rows']>([]);
+  const [resolutions, setResolutions] = useState<Map<string, string>>(new Map());
   const [fileName, setFileName] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -48,13 +50,14 @@ export function ReviseContractBoq({ projectId, contract, onClose, onSaved }: {
   const margin = useMemo(() => (proposed ? contractMargin(proposed, items) : null), [proposed, items]);
 
   async function onUpload(file: File) {
-    setError(''); setRecon(null);
+    setError(''); setRecon(null); setResolutions(new Map());
     try {
       const wb = await readWorkbook(file);
       const grid = wb.grids[wb.sheetNames[0]] ?? [];
       const { rows, error: parseErr } = parseSubletGrid(grid);
       if (parseErr) { setError(parseErr); return; }
 
+      setUploaded(rows);
       const res = matchSubletRows(rows, items);
       setRecon(res);
       if (res.matched.length === 0) {
@@ -66,6 +69,15 @@ export function ReviseContractBoq({ projectId, contract, onClose, onSaved }: {
     } catch {
       setError('Could not read that spreadsheet.');
     }
+  }
+
+  function resolve(row: SkippedRow, boqItemId: string) {
+    const next = new Map(resolutions);
+    if (boqItemId) next.set(rowKey(row), boqItemId); else next.delete(rowKey(row));
+    setResolutions(next);
+    const res = matchSubletRows(uploaded, items, next);
+    setRecon(res);
+    setProposed(res.matched.map((m) => ({ boqItemId: m.boqItemId, qty: m.qty, rate: m.rate })));
   }
 
   async function apply() {
@@ -112,7 +124,7 @@ export function ReviseContractBoq({ projectId, contract, onClose, onSaved }: {
               </label>
             </div>
             {error && <p className="neg small" role="alert">{error}</p>}
-            {recon && <ImportReconciliation result={recon} fileName={fileName} />}
+            {recon && <ImportReconciliation result={recon} fileName={fileName} items={items} resolutions={resolutions} onResolve={resolve} />}
 
             {diff && (
               <>

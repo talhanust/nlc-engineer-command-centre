@@ -160,6 +160,11 @@ export interface Allocation {
   contractorId?: string; // labor/sublet contractor (subcontractor pool)
   qty: number;
   rate: number; // contractor rate (PKR/unit); 0 for nlc_direct
+  /** Set when this allocation comes FROM a sublet/labor contract rather than
+   *  from planning by hand. Such allocations are owned by the contract: they are
+   *  rewritten when its lines change and removed when it is deleted, so the plan
+   *  can never drift from the commitment. */
+  contractId?: string;
 }
 
 /** Per-contract finalisation status, keyed `${executionType}:${contractorId}`. */

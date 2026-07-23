@@ -811,6 +811,65 @@ export class LocalDataProvider implements DataProvider {
     audit(projectId, 'create', 'Contract', c.contractNo, `PKR ${Math.round(c.value).toLocaleString('en-PK')} · retention ${c.retentionPct}%`);
     return c;
   }
+  /**
+   * Push a contract's lines into the planner.
+   *
+   * The contract is the COMMITMENT; the distribution planner and its allocations
+   * are how the rest of the app understands who is doing what — contractor
+   * scorecards, the distribution mix, margin analytics and the execution tracker
+   * all read them, not the contracts register. Writing the contract alone left it
+   * an island: awarded on one screen, invisible on every other.
+   *
+   * So a contract owns a slice of the plan. Its lines become allocations tagged
+   * with contractId (rewritten on revision, removed on deletion, never touching
+   * allocations a planner made by hand), and each covered BOQ item is marked
+   * sublet to that subcontractor.
+   */
+  private syncContractPlan(projectId: string, contract: Contract, remove = false): void {
+    const lines = contract.lines ?? [];
+
+    // --- allocations: this contract's are replaced wholesale, others untouched
+    const allocs = readJson<Allocation[]>(allocKey(projectId), () => []);
+    const kept = allocs.filter((a) => a.contractId !== contract.id);
+    if (!remove) {
+      for (const l of lines) {
+        kept.push({
+          id: `alloc-${contract.id}-${l.boqItemId}`,
+          projectId, boqItemId: l.boqItemId,
+          executionType: contract.kind === 'labor' ? 'labor' : 'sublet',
+          contractorId: contract.subcontractorId,
+          qty: l.qty, rate: l.rate, contractId: contract.id,
+        });
+      }
+    }
+    writeJson(allocKey(projectId), kept);
+
+    // --- distributions: mark each covered item, or release it if nothing else holds it
+    const dists = readJson<Distribution[]>(distKey(projectId), () => ((gen(projectId)?.distributions ?? [])));
+    const others = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? [])))
+      .filter((c) => c.id !== contract.id && c.status !== 'closed');
+    const heldElsewhere = new Set<string>();
+    for (const c of others) for (const l of c.lines ?? []) heldElsewhere.add(l.boqItemId);
+
+    for (const l of lines) {
+      const idx = dists.findIndex((d) => d.boqItemId === l.boqItemId);
+      if (remove) {
+        // Only release an item no other live contract covers, so deleting one
+        // contract cannot unassign work that still belongs to another.
+        if (idx >= 0 && !heldElsewhere.has(l.boqItemId)) {
+          dists[idx] = { ...dists[idx], mode: 'unassigned', subcontractorId: undefined, allocatedQty: 0 };
+        }
+        continue;
+      }
+      const row: Distribution = {
+        boqItemId: l.boqItemId, projectId, mode: 'sublet',
+        subcontractorId: contract.subcontractorId, allocatedQty: l.qty,
+      };
+      if (idx >= 0) dists[idx] = row; else dists.push(row);
+    }
+    writeJson(distKey(projectId), dists);
+  }
+
   async createSubletContract(projectId: string, input: {
     title: string;
     kind: import('./types').ContractKind;
@@ -853,6 +912,7 @@ export class LocalDataProvider implements DataProvider {
     };
     all.push(c);
     writeJson(contractsRegKey(projectId), all);
+    this.syncContractPlan(projectId, c);
     audit(projectId, 'create', 'Contract', c.contractNo, `${lines.length} lines · PKR ${Math.round(value).toLocaleString('en-PK')}`);
     return c;
   }
@@ -866,6 +926,7 @@ export class LocalDataProvider implements DataProvider {
     c.lines = lines.filter((l) => l.qty > 0 && l.rate >= 0);
     c.value = c.lines.reduce((t, l) => t + l.qty * l.rate, 0);
     writeJson(contractsRegKey(projectId), all);
+    this.syncContractPlan(projectId, c);
     audit(projectId, 'update', 'Contract', c.contractNo, `${c.lines.length} lines · PKR ${Math.round(c.value).toLocaleString('en-PK')}`);
     return c;
   }
@@ -881,6 +942,7 @@ export class LocalDataProvider implements DataProvider {
 
     const next = all.filter((x) => x.id !== contractId);
     writeJson(contractsRegKey(projectId), next);
+    this.syncContractPlan(projectId, c, true);
     // Record what was removed — a deletion that leaves no trace is the thing the
     // register exists to prevent.
     audit(projectId, 'delete', 'Contract', c.contractNo,
@@ -2494,6 +2556,21 @@ const seriesKey = (pid: string) => `nlc-ecc.series.${pid}`;
 const nodesKey = 'nlc-ecc.nodes';
 const projectsKey = 'nlc-ecc.projects';
 const seedVersionKey = 'nlc-ecc.seedVersion';
+// Destructive one-time migrations are recorded INDIVIDUALLY, not inferred from a
+// single version stamp. Under the old scheme every version bump replayed the whole
+// block — so shipping v15 would have re-run the v14 purge and deleted contracts a
+// user had since created. A migration ledger is the only safe way to say
+// "this ran already" when the thing it does cannot be undone.
+const migrationsKey = 'nlc-ecc.migrations';
+const MIG_V14_PURGE = 'v14-purge-user-project-contract-seeds';
+const MIG_V15_PLANS = 'v15-sync-contract-plans';
+function migrationDone(id: string): boolean {
+  return readJson<string[]>(migrationsKey, () => []).includes(id);
+}
+function markMigration(id: string): void {
+  const done = readJson<string[]>(migrationsKey, () => []);
+  if (!done.includes(id)) writeJson(migrationsKey, [...done, id]);
+}
 // Per-project entity document keys — used both to regenerate seeded caches and
 // to purge a removed demo project's cached documents on a version upgrade.
 const ENTITY_KEYS = [
@@ -2507,13 +2584,17 @@ const ENTITY_KEYS = [
 // pick up newly-seeded projects and nodes without losing user-created data.
 // v12 (clean-slate): the delivered app ships no demo portfolio, so this upgrade
 // also PURGES any previously-seeded demo projects from an existing store.
-const SEED_VERSION = '2026-07-14.v14-purge-user-project-contract-seeds';
+const SEED_VERSION = '2026-07-23.v15-sync-contract-plans';
 
 /** Merge any newly-seeded projects/nodes into an already-persisted store and
  *  backfill date/coordinate fields on seeded projects. Runs once per version. */
 function reconcileSeed(): void {
   try {
-    if (readJson<string | null>(seedVersionKey, () => null) === SEED_VERSION) return;
+    const prevVersion = readJson<string | null>(seedVersionKey, () => null);
+    if (prevVersion === SEED_VERSION) return;
+    // A store already at or past v14 had that purge applied under the old
+    // single-version scheme. Record it so it can never be replayed.
+    if (prevVersion && prevVersion >= '2026-07-14.v14') markMigration(MIG_V14_PURGE);
 
     const exP = readJson<Project[]>(projectsKey, () => []);
     if (exP.length === 0) {
@@ -2605,6 +2686,7 @@ function reconcileSeed(): void {
     // After the version is stamped below it never runs again, so genuinely
     // user-created contracts created on this build onward are untouched.
     try {
+      if (migrationDone(MIG_V14_PURGE)) throw new Error('skip');
       const COMMERCIAL_SPINE_KEYS = ['subs', 'contractsreg', 'rars', 'rarlinks', 'variations'];
       const allProjects = readJson<Project[]>(projectsKey, () => []);
       for (const pr of allProjects) {
@@ -2618,8 +2700,30 @@ function reconcileSeed(): void {
           writeJson(distKeyId, dists.map((d) => ({ ...d, mode: 'self' as const, subcontractorId: undefined })));
         }
       }
+      markMigration(MIG_V14_PURGE);
     } catch { /* ignore */ }
 
+
+    // One-time migration (v15): contracts created before the plan-sync existed
+    // wrote no allocations, so an awarded contract showed a value in the register
+    // and zero everywhere else — contractor scorecards, distribution mix, margin
+    // analytics. Re-derive the plan from every contract that carries lines. This is
+    // idempotent: allocations are keyed by contract, so a repeat is a no-op rather
+    // than a duplicate.
+    try {
+      if (migrationDone(MIG_V15_PLANS)) throw new Error('skip');
+      const allProjects = readJson<Project[]>(projectsKey, () => []);
+      const provider = new LocalDataProvider();
+      for (const pr of allProjects) {
+        const contracts = readJson<Contract[]>(contractsRegKey(pr.id), () => ((gen(pr.id)?.contracts ?? [])));
+        for (const c of contracts) {
+          if ((c.lines?.length ?? 0) > 0) {
+            (provider as unknown as { syncContractPlan: (p: string, c: Contract) => void }).syncContractPlan(pr.id, c);
+          }
+        }
+      }
+      markMigration(MIG_V15_PLANS);
+    } catch { /* ignore */ }
 
     writeJson(seedVersionKey, SEED_VERSION);
   } catch { /* ignore */ }

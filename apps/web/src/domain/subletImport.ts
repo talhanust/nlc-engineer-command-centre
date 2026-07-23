@@ -29,12 +29,34 @@ export interface SubletMatch {
   rate: number;
 }
 
+export type SkipReason = 'ambiguous' | 'not-in-boq' | 'no-quantity' | 'no-rate';
+
+/** A row the importer did NOT take, with the money it carries. Import must be
+ *  reconcilable to the last rupee, so every discarded row is reported with its
+ *  value — a silently dropped provisional sum is how a contract ends up short. */
+export interface SkippedRow {
+  bill: string;
+  code: string;
+  description: string;
+  amount: number;
+  reason: SkipReason;
+  detail?: string;
+}
+
 export interface SubletImportResult {
   matched: SubletMatch[];
   /** Rows the sheet cannot place on exactly one BOQ item. */
   ambiguous: Array<{ bill: string; code: string; candidates: number }>;
   /** Rows whose bill+code (or code) matched no BOQ item at all. */
   unmatched: Array<{ bill: string; code: string }>;
+  /** Every row not imported, with its amount and why. */
+  skipped: SkippedRow[];
+  /** Σ qty × rate over ALL rows read from the file — the control total. */
+  fileValue: number;
+  /** Σ qty × rate over the rows actually imported. */
+  matchedValue: number;
+  /** fileValue − matchedValue. Must be 0 for a clean import. */
+  variance: number;
 }
 
 const key = (bill: string, code: string) => `${bill.trim().toLowerCase()}|${code.trim().toLowerCase()}`;
@@ -57,16 +79,21 @@ export function matchSubletRows(rows: SubletImportRow[], items: BoqItem[]): Subl
   // this module exists to prevent, so collisions must stay visible.
   const byBillCode = new Map<string, BoqItem[]>();
   const byCode = new Map<string, BoqItem[]>();
+  const byBill = new Map<string, BoqItem[]>();
   for (const it of items) {
     const bc = key(it.billNo ?? '', it.code);
     byBillCode.set(bc, [...(byBillCode.get(bc) ?? []), it]);
     const c = it.code.trim().toLowerCase();
     byCode.set(c, [...(byCode.get(c) ?? []), it]);
+    const b = (it.billNo ?? '').trim().toLowerCase();
+    byBill.set(b, [...(byBill.get(b) ?? []), it]);
   }
 
   const matched: SubletMatch[] = [];
   const ambiguous: SubletImportResult['ambiguous'] = [];
   const unmatched: SubletImportResult['unmatched'] = [];
+  const skipped: SkippedRow[] = [];
+  let fileValue = 0;
 
   // An item may only be claimed by one uploaded row, so two rows sharing a
   // mis-keyed code cannot both land on it.
@@ -81,27 +108,59 @@ export function matchSubletRows(rows: SubletImportRow[], items: BoqItem[]): Subl
   };
 
   for (const r of rows) {
-    if (!r.code.trim() || r.qty <= 0) continue;
+    const amount = Math.max(0, r.qty) * Math.max(0, r.rate);
+    fileValue += amount;
+    const label = { bill: r.bill, code: r.code, description: r.description ?? '', amount };
+
+    if (r.qty <= 0) { skipped.push({ ...label, reason: 'no-quantity' }); continue; }
+    if (r.rate <= 0) { skipped.push({ ...label, reason: 'no-rate' }); continue; }
+
     let item: BoqItem | undefined;
-    // 1. bill + code (+ description when that pair repeats).
-    const billCandidates = r.bill.trim() ? (byBillCode.get(key(r.bill, r.code)) ?? []) : [];
-    if (billCandidates.length) {
-      item = pick(billCandidates, r);
-      if (!item) { ambiguous.push({ bill: r.bill, code: r.code, candidates: billCandidates.length }); continue; }
-    }
-    if (!item) {
-      // 2. Code alone — only when it identifies exactly one item.
-      const candidates = byCode.get(r.code.trim().toLowerCase()) ?? [];
-      if (candidates.length) {
-        item = pick(candidates, r);
-        if (!item) { ambiguous.push({ bill: r.bill, code: r.code, candidates: candidates.length }); continue; }
+    let wasAmbiguous = false;
+
+    if (r.code.trim()) {
+      // 1. bill + code (+ description when that pair repeats).
+      const billCandidates = r.bill.trim() ? (byBillCode.get(key(r.bill, r.code)) ?? []) : [];
+      if (billCandidates.length) {
+        item = pick(billCandidates, r);
+        if (!item) wasAmbiguous = true;
+      }
+      if (!item && !wasAmbiguous) {
+        // 2. Code alone — only when it identifies exactly one item.
+        const candidates = byCode.get(r.code.trim().toLowerCase()) ?? [];
+        if (candidates.length) {
+          item = pick(candidates, r);
+          if (!item) wasAmbiguous = true;
+        }
       }
     }
-    if (!item) { unmatched.push({ bill: r.bill, code: r.code }); continue; }
+
+    // 3. No code (or code found nothing): match on description. A provisional or
+    //    lump sum legitimately carries no item code, and dropping it because of
+    //    that is how a whole sum goes missing from a contract.
+    if (!item && !wasAmbiguous && r.description) {
+      const inBill = r.bill.trim() ? (byBill.get(r.bill.trim().toLowerCase()) ?? []) : [];
+      item = byDescription(inBill.filter((c) => !taken.has(c.id)), r.description)
+        ?? byDescription(items.filter((c) => !taken.has(c.id)), r.description);
+    }
+
+    if (wasAmbiguous) {
+      const n = (byBillCode.get(key(r.bill, r.code)) ?? byCode.get(r.code.trim().toLowerCase()) ?? []).length;
+      ambiguous.push({ bill: r.bill, code: r.code, candidates: n });
+      skipped.push({ ...label, reason: 'ambiguous', detail: `${n} BOQ items share this code` });
+      continue;
+    }
+    if (!item) {
+      unmatched.push({ bill: r.bill, code: r.code });
+      skipped.push({ ...label, reason: 'not-in-boq', detail: r.code.trim() ? undefined : 'no item code — matched on description, which found nothing' });
+      continue;
+    }
     taken.add(item.id);
     matched.push({ boqItemId: item.id, qty: r.qty, rate: r.rate });
   }
-  return { matched, ambiguous, unmatched };
+
+  const matchedValue = matched.reduce((s, m) => s + m.qty * m.rate, 0);
+  return { matched, ambiguous, unmatched, skipped, fileValue, matchedValue, variance: fileValue - matchedValue };
 }
 
 /**
@@ -137,12 +196,17 @@ export function parseSubletGrid(grid: string[][]): { rows: SubletImportRow[]; er
   for (const g of grid.slice(headerRow + 1)) {
     if (cBill >= 0 && String(g[cBill] ?? '').trim()) currentBill = String(g[cBill]).trim();
     const code = String(g[cCode] ?? '').trim();
-    if (!code) continue;
+    const description = cDesc >= 0 ? String(g[cDesc] ?? '').trim() : '';
+    const qty = num(String(g[cQty] ?? ''));
+    const rate = cRate >= 0 ? num(String(g[cRate] ?? '')) : 0;
+    // Keep a row that carries money even without an item code — provisional and
+    // lump sums are real BOQ lines. Drop only true headings/blanks: nothing to
+    // identify it by, or nothing priced.
+    if (!code && !description) continue;
+    if (qty <= 0 && rate <= 0) continue;
     rows.push({
-      bill: currentBill, code,
-      qty: num(String(g[cQty] ?? '')),
-      rate: cRate >= 0 ? num(String(g[cRate] ?? '')) : 0,
-      description: cDesc >= 0 ? String(g[cDesc] ?? '').trim() : undefined,
+      bill: currentBill, code, qty, rate,
+      description: description || undefined,
     });
   }
   return { rows };

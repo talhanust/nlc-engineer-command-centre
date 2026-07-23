@@ -70,9 +70,13 @@ describe('matchSubletRows', () => {
     expect(r.unmatched).toHaveLength(0);
   });
 
-  it('passes a zero rate through so the caller can default it to the BOQ rate', () => {
+  it('reports an unpriced row instead of importing it at zero', () => {
+    // Rates are never defaulted from the client rate, so a blank rate is an
+    // incomplete line — and it must be visible, not quietly dropped.
     const r = matchSubletRows([{ bill: '1', code: '101', qty: 500, rate: 0 }], items);
-    expect(r.matched).toEqual([{ boqItemId: 'i-101', qty: 500, rate: 0 }]);
+    expect(r.matched).toHaveLength(0);
+    expect(r.skipped).toHaveLength(1);
+    expect(r.skipped[0].reason).toBe('no-rate');
   });
 });
 
@@ -118,5 +122,57 @@ describe('matchSubletRows — a code repeated WITHIN one bill', () => {
       { bill: '4e', code: '401a3ii', qty: 1925, rate: 1, description: '  concrete class A3 (ELEVATED)   Abutment   Walls ' },
     ], dup);
     expect(r.matched.map((m) => m.boqItemId)).toEqual(['i-4e-b']);
+  });
+});
+
+// The Rs 176 Mn Toll Plaza line in the real Wali Khan contract carries a
+// quantity, a rate and a description — but NO item code. Requiring a code
+// discarded it silently and left the contract 176 million short.
+describe('matchSubletRows — rows that carry no item code', () => {
+  const withPs = [
+    ...items,
+    { ...item('i-ps', '6A', ''), description: 'Toll Plaza', unit: 'PS', qty: 1, rate: 176_000_000 } as BoqItem,
+  ];
+
+  it('matches a code-less provisional sum on its description', () => {
+    const r = matchSubletRows([{ bill: '6A', code: '', qty: 1, rate: 176_000_000, description: 'Toll Plaza' }], withPs);
+    expect(r.matched).toEqual([{ boqItemId: 'i-ps', qty: 1, rate: 176_000_000 }]);
+    expect(r.variance).toBe(0);
+  });
+
+  it('REPORTS a code-less row it cannot place, with its full value', () => {
+    const r = matchSubletRows([{ bill: '6A', code: '', qty: 1, rate: 176_000_000, description: 'Toll Plaza' }], items);
+    expect(r.matched).toHaveLength(0);
+    expect(r.skipped).toHaveLength(1);
+    expect(r.skipped[0].amount).toBe(176_000_000);
+    expect(r.skipped[0].reason).toBe('not-in-boq');
+    expect(r.skipped[0].detail).toMatch(/no item code/);
+    // The control total makes the loss impossible to miss.
+    expect(r.fileValue).toBe(176_000_000);
+    expect(r.matchedValue).toBe(0);
+    expect(r.variance).toBe(176_000_000);
+  });
+});
+
+describe('matchSubletRows — the control total', () => {
+  it('reconciles to zero when everything imports', () => {
+    const r = matchSubletRows([
+      { bill: '1', code: '101', qty: 100, rate: 10 },
+      { bill: '4a', code: '401f', qty: 50, rate: 20 },
+    ], items);
+    expect(r.fileValue).toBe(2000);
+    expect(r.matchedValue).toBe(2000);
+    expect(r.variance).toBe(0);
+  });
+
+  it('variance equals exactly the money in the skipped rows', () => {
+    const r = matchSubletRows([
+      { bill: '1', code: '101', qty: 100, rate: 10 },      // imports
+      { bill: '9', code: 'ZZZ', qty: 5, rate: 1000 },      // not in BOQ
+      { bill: '', code: '401f', qty: 2, rate: 500 },       // ambiguous
+    ], items);
+    expect(r.matchedValue).toBe(1000);
+    expect(r.variance).toBe(5000 + 1000);
+    expect(r.skipped.reduce((s, x) => s + x.amount, 0)).toBe(r.variance);
   });
 });

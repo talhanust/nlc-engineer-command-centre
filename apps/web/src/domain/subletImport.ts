@@ -103,3 +103,47 @@ export function matchSubletRows(rows: SubletImportRow[], items: BoqItem[]): Subl
   }
   return { matched, ambiguous, unmatched };
 }
+
+/**
+ * Pull contractor-BOQ rows out of a spreadsheet grid: find the header, locate the
+ * bill/code/qty/rate/description columns, and carry the bill down (a BOQ groups
+ * its rows under a bill heading, so only the first row of each group names it).
+ * Shared by the create and revise flows so both read a sheet identically.
+ */
+export function parseSubletGrid(grid: string[][]): { rows: SubletImportRow[]; error?: string } {
+  let headerRow = 0;
+  for (let i = 0; i < Math.min(grid.length, 8); i++) {
+    const joined = (grid[i] ?? []).join(' ').toLowerCase();
+    if (/code|item/.test(joined) && /(qty|quantity)/.test(joined)) { headerRow = i; break; }
+  }
+  const header = (grid[headerRow] ?? []).map((c) => c.toLowerCase());
+  const col = (...names: string[]) => header.findIndex((h) => names.some((n) => h.includes(n)));
+  const cCode = col('code', 'item');
+  const cQty = col('qty', 'quantity');
+  const cRate = col('rate', 'price');
+  const cBill = col('bill');
+  const cDesc = col('description', 'desc', 'particulars');
+  if (cCode < 0 || cQty < 0) {
+    return { rows: [], error: 'Could not find "code" and "quantity" columns in that file.' };
+  }
+
+  const num = (s: string): number => {
+    const n = Number(String(s).replace(/[,\s]/g, ''));
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  let currentBill = '';
+  const rows: SubletImportRow[] = [];
+  for (const g of grid.slice(headerRow + 1)) {
+    if (cBill >= 0 && String(g[cBill] ?? '').trim()) currentBill = String(g[cBill]).trim();
+    const code = String(g[cCode] ?? '').trim();
+    if (!code) continue;
+    rows.push({
+      bill: currentBill, code,
+      qty: num(String(g[cQty] ?? '')),
+      rate: cRate >= 0 ? num(String(g[cRate] ?? '')) : 0,
+      description: cDesc >= 0 ? String(g[cDesc] ?? '').trim() : undefined,
+    });
+  }
+  return { rows };
+}

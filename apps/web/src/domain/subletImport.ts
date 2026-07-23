@@ -12,6 +12,7 @@
 // guessing, because a wrong quantity here becomes a wrong commitment.
 
 import type { BoqItem } from '../data/types';
+import { similarity } from './scheduleDiff';
 
 export interface SubletImportRow {
   bill: string;
@@ -38,9 +39,16 @@ export interface SkippedRow {
   bill: string;
   code: string;
   description: string;
+  qty: number;
+  rate: number;
   amount: number;
   reason: SkipReason;
   detail?: string;
+}
+
+/** Stable key for a sheet row, so a user's manual match survives a recompute. */
+export function rowKey(r: { bill: string; code: string; description?: string }): string {
+  return `${r.bill.trim().toLowerCase()}|${r.code.trim().toLowerCase()}|${(r.description ?? '').replace(/\s+/g, ' ').trim().toLowerCase()}`;
 }
 
 export interface SubletImportResult {
@@ -74,12 +82,19 @@ function byDescription(candidates: BoqItem[], description?: string): BoqItem | u
  * Rows with qty <= 0 are dropped (a contract line needs a quantity); a rate of 0
  * is allowed through so the caller can default it to the BOQ rate.
  */
-export function matchSubletRows(rows: SubletImportRow[], items: BoqItem[]): SubletImportResult {
+export function matchSubletRows(
+  rows: SubletImportRow[],
+  items: BoqItem[],
+  /** Manual row → BOQ item decisions, keyed by rowKey(). A human choice is taken
+   *  as given: it is the one source of truth the algorithm cannot second-guess. */
+  resolutions?: Map<string, string>,
+): SubletImportResult {
   // Both maps hold LISTS: a silent last-one-wins overwrite is exactly the bug
   // this module exists to prevent, so collisions must stay visible.
   const byBillCode = new Map<string, BoqItem[]>();
   const byCode = new Map<string, BoqItem[]>();
   const byBill = new Map<string, BoqItem[]>();
+  const itemById = new Map(items.map((i) => [i.id, i]));
   for (const it of items) {
     const bc = key(it.billNo ?? '', it.code);
     byBillCode.set(bc, [...(byBillCode.get(bc) ?? []), it]);
@@ -110,13 +125,23 @@ export function matchSubletRows(rows: SubletImportRow[], items: BoqItem[]): Subl
   for (const r of rows) {
     const amount = Math.max(0, r.qty) * Math.max(0, r.rate);
     fileValue += amount;
-    const label = { bill: r.bill, code: r.code, description: r.description ?? '', amount };
+    const label = { bill: r.bill, code: r.code, description: r.description ?? '', qty: r.qty, rate: r.rate, amount };
 
     if (r.qty <= 0) { skipped.push({ ...label, reason: 'no-quantity' }); continue; }
     if (r.rate <= 0) { skipped.push({ ...label, reason: 'no-rate' }); continue; }
 
     let item: BoqItem | undefined;
     let wasAmbiguous = false;
+
+    const chosen = resolutions?.get(rowKey(r));
+    if (chosen) {
+      const picked = itemById.get(chosen);
+      if (picked && !taken.has(picked.id)) {
+        taken.add(picked.id);
+        matched.push({ boqItemId: picked.id, qty: r.qty, rate: r.rate });
+        continue;
+      }
+    }
 
     if (r.code.trim()) {
       // 1. bill + code (+ description when that pair repeats).
@@ -210,4 +235,46 @@ export function parseSubletGrid(grid: string[][]): { rows: SubletImportRow[]; er
     });
   }
   return { rows };
+}
+
+/**
+ * Candidate BOQ items for a row the importer could not place.
+ *
+ * A contractor's sheet and the client's BOQ describe the same work in different
+ * words: "Toll Plaza" against "Remodeling of Toll Plaza". Exact description
+ * matching misses that, and fuzzy matching that decides for itself is worse — a
+ * wrong guess here becomes a committed quantity at a committed rate.
+ *
+ * So the importer suggests and the user confirms. Candidates are ranked by
+ * description similarity, with a nudge for sharing the row's bill, and each is
+ * returned with its BOQ amount so the choice can be sanity-checked against the
+ * money rather than the wording alone.
+ */
+export interface BoqCandidate {
+  item: BoqItem;
+  score: number;
+  sameBill: boolean;
+}
+
+export function suggestBoqMatches(
+  row: { bill: string; code: string; description?: string },
+  items: BoqItem[],
+  limit = 5,
+): BoqCandidate[] {
+  const text = (row.description ?? '').trim() || row.code.trim();
+  if (!text) return [];
+  const rowBill = row.bill.trim().toLowerCase();
+
+  return items
+    .map((item) => {
+      const sameBill = !!rowBill && (item.billNo ?? '').trim().toLowerCase() === rowBill;
+      const byDesc = similarity(text, item.description ?? '');
+      const byCode = row.code.trim() ? similarity(row.code, item.code ?? '') : 0;
+      // Description carries the meaning; a shared bill is corroboration, not proof.
+      const score = Math.max(byDesc, byCode * 0.8) + (sameBill ? 0.15 : 0);
+      return { item, score, sameBill };
+    })
+    .filter((c) => c.score > 0.2)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
 }

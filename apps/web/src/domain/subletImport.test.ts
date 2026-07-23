@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { BoqItem } from '../data/types';
-import { matchSubletRows } from './subletImport';
+import { matchSubletRows, suggestBoqMatches, rowKey } from './subletImport';
 
 const item = (id: string, billNo: string, code: string, qty = 1000, rate = 100): BoqItem => ({
   id, projectId: 'p1', billNo, billName: `Bill ${billNo}`, section: 's',
@@ -174,5 +174,98 @@ describe('matchSubletRows — the control total', () => {
     expect(r.matchedValue).toBe(1000);
     expect(r.variance).toBe(5000 + 1000);
     expect(r.skipped.reduce((s, x) => s + x.amount, 0)).toBe(r.variance);
+  });
+});
+
+// The real case: the client BOQ calls it "Remodeling of Toll Plaza" (bill 6a,
+// code 109, Rs 200,000,000); the contractor's sheet says "Toll Plaza" with no
+// code, at Rs 176,000,000 — the same 12% below. Exact matching misses it, and
+// guessing would be worse, so the importer must SUGGEST it.
+describe('suggestBoqMatches — resolving a row the importer could not place', () => {
+  const boq = [
+    { ...item('i-109', '6a', '109'), description: 'Remodeling of Toll Plaza', unit: 'PS', qty: 1, rate: 200_000_000 },
+    { ...item('i-611', '6', '611a'), description: 'Galvanized Wire Mesh Fence 1500mm high' },
+    { ...item('i-601', '6', 'SP-601a'), description: 'Gantry Sign Type-I as shown on Dwgs' },
+    { ...item('i-101', '1', '101'), description: 'Clearing & grubbing' },
+  ] as BoqItem[];
+
+  it('ranks the right item first despite the different wording', () => {
+    const c = suggestBoqMatches({ bill: '6A', code: '', description: 'Toll Plaza' }, boq);
+    expect(c.length).toBeGreaterThan(0);
+    expect(c[0].item.id).toBe('i-109');
+    expect(c[0].sameBill).toBe(true); // 6A vs 6a — case is not a difference
+  });
+
+  it('scores the correct item well clear of the alternatives', () => {
+    const c = suggestBoqMatches({ bill: '6A', code: '', description: 'Toll Plaza' }, boq);
+    expect(c[0].score).toBeGreaterThan(0.5);
+    if (c[1]) expect(c[0].score - c[1].score).toBeGreaterThan(0.2);
+  });
+
+  it('will suggest across bills when the wording is a strong match', () => {
+    const c = suggestBoqMatches({ bill: '99', code: '', description: 'Clearing & grubbing' }, boq);
+    expect(c[0].item.id).toBe('i-101');
+    expect(c[0].sameBill).toBe(false);
+  });
+
+  it('uses the code when there is no description', () => {
+    const c = suggestBoqMatches({ bill: '6', code: 'SP-601a', description: undefined }, boq);
+    expect(c[0].item.id).toBe('i-601');
+  });
+
+  it('returns nothing to choose from when the row is blank', () => {
+    expect(suggestBoqMatches({ bill: '6', code: '', description: '' }, boq)).toHaveLength(0);
+  });
+
+  it('does not offer wild guesses', () => {
+    const c = suggestBoqMatches({ bill: '9', code: '', description: 'zzzzzzzz qqqqqqq' }, boq);
+    expect(c).toHaveLength(0);
+  });
+});
+
+describe('matchSubletRows — a manual resolution closes the variance', () => {
+  const boq = [
+    { ...item('i-109', '6a', '109'), description: 'Remodeling of Toll Plaza', unit: 'PS', qty: 1, rate: 200_000_000 },
+    { ...item('i-101', '1', '101'), description: 'Clearing & grubbing', qty: 209958, rate: 37.18278 },
+  ] as BoqItem[];
+
+  const sheet = [
+    { bill: '1', code: '101', qty: 209958, rate: 32.7208464, description: 'Clearing & grubbing' },
+    { bill: '6A', code: '', qty: 1, rate: 176_000_000, description: 'Toll Plaza' },
+  ];
+
+  it('leaves a variance until the row is resolved', () => {
+    const r = matchSubletRows(sheet, boq);
+    expect(r.matched).toHaveLength(1);
+    expect(r.variance).toBe(176_000_000);
+  });
+
+  it('takes the user decision and reconciles to zero', () => {
+    const res = new Map([[rowKey(sheet[1]), 'i-109']]);
+    const r = matchSubletRows(sheet, boq, res);
+    expect(r.matched).toHaveLength(2);
+    expect(r.skipped).toHaveLength(0);
+    expect(r.variance).toBe(0);
+    // The line carries the SHEET's quantity and rate, not the BOQ's.
+    const ps = r.matched.find((m) => m.boqItemId === 'i-109')!;
+    expect(ps.qty).toBe(1);
+    expect(ps.rate).toBe(176_000_000);
+  });
+
+  it('a resolution overrides what the matcher would have done on its own', () => {
+    // Point the clearing row at the Toll Plaza item deliberately.
+    const res = new Map([[rowKey(sheet[0]), 'i-109']]);
+    const r = matchSubletRows(sheet, boq, res);
+    expect(r.matched.find((m) => m.qty === 209958)!.boqItemId).toBe('i-109');
+  });
+
+  it('ignores a resolution pointing at an item already claimed', () => {
+    const res = new Map([
+      [rowKey(sheet[0]), 'i-101'],
+      [rowKey(sheet[1]), 'i-101'], // same item twice
+    ]);
+    const r = matchSubletRows(sheet, boq, res);
+    expect(r.matched).toHaveLength(1);
+    expect(r.skipped).toHaveLength(1); // the second falls through and is reported
   });
 });

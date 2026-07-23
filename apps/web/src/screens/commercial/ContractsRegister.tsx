@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ContractDetailModal } from '../../components/ContractDetailModal';
 import { useData } from '../../data/DataContext';
+import { canDeleteContract, type DeleteContractCheck } from '../../domain/contractDelete';
+import { ReviseContractBoq } from './ReviseContractBoq';
 import { useToast } from '../../components/Toast';
 import { formatMoney } from '../../domain/money';
 import { SkeletonRows } from '../../components/Skeleton';
 import { ExportMenu } from '../../components/ExportMenu';
-import type { Contract, ContractStatus, Subcontractor } from '../../data/types';
+import type { Contract, ContractStatus, Rar, Subcontractor } from '../../data/types';
 import { useRole } from '../../state/Role';
 import { ChainStatus, ChainControls } from '../../components/ApptChainControls';
 
@@ -28,10 +30,16 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
   const [bills, setBills] = useState('');
   const [value, setValue] = useState('');
   const [retention, setRetention] = useState('5');
+  const [rars, setRars] = useState<Rar[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<{ contract: Contract; check: DeleteContractCheck } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [revising, setRevising] = useState<Contract | null>(null);
 
   async function load() {
-    const [c, s] = await Promise.all([provider.listContracts(projectId), provider.listSubcontractors(projectId)]);
-    setContracts(c); setSubs(s); setLoading(false);
+    const [c, s, r] = await Promise.all([
+      provider.listContracts(projectId), provider.listSubcontractors(projectId), provider.listRars(projectId),
+    ]);
+    setContracts(c); setSubs(s); setRars(r); setLoading(false);
     if (!subId && s[0]) setSubId(s[0].id);
   }
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [provider, projectId]);
@@ -63,6 +71,61 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
   return (
     <div>
       {detail && <ContractDetailModal projectId={projectId} contract={detail} onClose={() => setDetail(null)} />}
+
+      {revising && (
+        <ReviseContractBoq projectId={projectId} contract={revising}
+          onClose={() => setRevising(null)}
+          onSaved={async () => { setRevising(null); await load(); toast({ message: 'Contract BOQ revised', kind: 'success' }); }} />
+      )}
+
+      {pendingDelete && (
+        <div className="modal-backdrop" role="dialog" aria-label="Delete contract" aria-modal="true" onClick={() => setPendingDelete(null)}>
+          <div className="modal" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+            <div className="section-head">
+              <h3>Delete {pendingDelete.contract.contractNo}?</h3>
+            </div>
+            <p className="muted small" style={{ marginTop: 0 }}>
+              {pendingDelete.contract.title} · {subName(pendingDelete.contract.subcontractorId)} · {formatMoney(pendingDelete.contract.value)}
+            </p>
+
+            {!pendingDelete.check.allowed ? (
+              <div className="card" style={{ borderColor: 'var(--danger)' }} aria-label="Deletion blocked">
+                <strong className="neg">This contract cannot be deleted.</strong>
+                <div className="muted small" style={{ marginTop: 4 }}>{pendingDelete.check.blockedReason}</div>
+              </div>
+            ) : (
+              <>
+                {pendingDelete.check.warnings.length > 0 && (
+                  <ul className="muted small" aria-label="Deletion consequences" style={{ marginTop: 0 }}>
+                    {pendingDelete.check.warnings.map((w) => <li key={w}>{w}</li>)}
+                  </ul>
+                )}
+                <p className="small" style={{ marginBottom: 0 }}>This cannot be undone. The deletion is recorded in the audit trail.</p>
+              </>
+            )}
+
+            <div className="create-row" style={{ marginTop: 14, justifyContent: 'flex-end' }}>
+              <button className="btn-ghost" onClick={() => setPendingDelete(null)}>Cancel</button>
+              {pendingDelete.check.allowed && (
+                <button className="btn btn-danger" disabled={deleting} aria-label={`Confirm delete ${pendingDelete.contract.contractNo}`}
+                  onClick={async () => {
+                    setDeleting(true);
+                    try {
+                      await provider.deleteContract(projectId, pendingDelete.contract.id);
+                      setPendingDelete(null);
+                      await load();
+                      toast({ message: `${pendingDelete.contract.contractNo} deleted`, kind: 'success' });
+                    } catch (e) {
+                      toast({ message: e instanceof Error ? e.message : 'Could not delete the contract.', kind: 'error' });
+                    } finally { setDeleting(false); }
+                  }}>
+                  {deleting ? 'Deleting…' : 'Delete contract'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <div className="section-head">
         <div>
           <h3>Contracts Register</h3>
@@ -118,6 +181,12 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
                 </td>
                 <td>
                   <button className="btn-ghost btn-mini" aria-label={`View ${c.contractNo}`} onClick={() => setDetail(c)}>View</button>
+                  {c.status === 'draft' && (
+                    <button className="btn-ghost btn-mini" style={{ marginLeft: 6 }} aria-label={`Revise BOQ ${c.contractNo}`}
+                      onClick={() => setRevising(c)}>Revise BOQ</button>
+                  )}
+                  <button className="btn-ghost btn-mini" style={{ marginLeft: 6 }} aria-label={`Delete ${c.contractNo}`}
+                    onClick={() => setPendingDelete({ contract: c, check: canDeleteContract(c, rars) })}>Delete</button>
                   {!c.chain && c.status === 'draft' && (
                     <button className="btn btn-mini" style={{ marginLeft: 6 }} aria-label={`Submit ${c.contractNo} for approval`}
                       onClick={async () => { await provider.submitContractApproval(projectId, c.id, user?.name ?? role); await load(); toast({ message: 'Submitted for approval', kind: 'success' }); }}>

@@ -3,7 +3,7 @@ import { useData } from '../../data/DataContext';
 import { formatMoney } from '../../domain/money';
 import { readWorkbook } from '../../domain/xlsxImport';
 import { itemLocks, contractLineIssues, contractValue } from '../../domain/contractLocks';
-import { matchSubletRows, type SubletImportRow } from '../../domain/subletImport';
+import { matchSubletRows, parseSubletGrid } from '../../domain/subletImport';
 import { contractMargin } from '../../domain/contractMargin';
 import { SUBLET_TEMPLATE_AOA, SUBLET_TEMPLATE_FILENAME } from '../../domain/csvTemplates';
 import { downloadText, toCsv } from '../../components/hrExport';
@@ -74,35 +74,8 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
     try {
       const wb = await readWorkbook(file);
       const grid = wb.grids[wb.sheetNames[0]] ?? [];
-      // Find a header row, then columns for code, quantity and rate.
-      let headerRow = 0;
-      for (let i = 0; i < Math.min(grid.length, 8); i++) {
-        const joined = grid[i].join(' ').toLowerCase();
-        if (/code|item/.test(joined) && /(qty|quantity)/.test(joined)) { headerRow = i; break; }
-      }
-      const header = (grid[headerRow] ?? []).map((c) => c.toLowerCase());
-      const col = (...names: string[]) => header.findIndex((h) => names.some((n) => h.includes(n)));
-      const cCode = col('code', 'item');
-      const cQty = col('qty', 'quantity');
-      const cRate = col('rate', 'price');
-      const cBill = col('bill');
-      const cDesc = col('description', 'desc', 'particulars');
-      if (cCode < 0 || cQty < 0) { setError('Could not find "code" and "quantity" columns in that file.'); return; }
-
-      // A BOQ groups rows under a bill header, so carry the last bill down.
-      let currentBill = '';
-      const uploaded: SubletImportRow[] = [];
-      for (const g of grid.slice(headerRow + 1)) {
-        if (cBill >= 0 && String(g[cBill] ?? '').trim()) currentBill = String(g[cBill]).trim();
-        const code = String(g[cCode] ?? '').trim();
-        if (!code) continue;
-        uploaded.push({
-          bill: currentBill, code,
-          qty: num(String(g[cQty] ?? '')),
-          rate: cRate >= 0 ? num(String(g[cRate] ?? '')) : 0,
-          description: cDesc >= 0 ? String(g[cDesc] ?? '').trim() : undefined,
-        });
-      }
+      const { rows: uploaded, error: parseErr } = parseSubletGrid(grid);
+      if (parseErr) { setError(parseErr); return; }
 
       const res = matchSubletRows(uploaded, items);
       if (res.matched.length === 0) { setError('No rows matched a BOQ item. Check the code (and bill) columns against the project BOQ.'); return; }

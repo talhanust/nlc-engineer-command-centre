@@ -2323,3 +2323,45 @@ NLC Engineer Command Centre — work journal
   was run in chunks — domain+data 62 files/439, screens+components 11/136, root
   9/57 + 11/52 + 13/71. Total 106 files, 755 tests, all passing. Server 9;
   typecheck clean; local + api builds green.
+
+2026-07-23 — silent import loss (Rs 176 Mn) + money wrapping
+- USER: the WKC contract BOQ totals Rs 2,518,703,598 but the app showed Rs 2,342.7
+  Mn; and "Rs ... Mn" wrapped so the unit fell to the next line.
+- ROOT CAUSE: parseSubletGrid did `if (!code) continue;`. The Toll Plaza line
+  (bill 6A, unit PS, qty 1, rate 176,000,000) carries NO item code — it is a
+  provisional sum, a perfectly ordinary BOQ line. It was dropped at parse time.
+  2,518,703,598.40 - 176,000,000 = 2,342,703,598.40 → "Rs 2,342.7 Mn". Exact.
+- The worse defect was not the drop but the SILENCE: the UI said "Read 88 line(s)"
+  and never mentioned the 89th or the money on it. The user found a Rs 176 Mn hole
+  by totalling the sheet by hand. An importer that reports only what it took is
+  unsafe by construction.
+- FIXES:
+  * parseSubletGrid keeps any row that carries money and can be identified by
+    code OR description; only true headings/blanks (nothing priced) are dropped.
+  * matchSubletRows gained a third matching pass: bill+code → code → DESCRIPTION
+    (within the bill, then project-wide), so a code-less provisional or lump sum
+    can find its BOQ item.
+  * It now returns skipped[] — every row not imported, WITH its amount and a
+    reason (ambiguous / not-in-boq / no-quantity / no-rate) — plus fileValue,
+    matchedValue and variance. Nothing can vanish without appearing in the total.
+  * NEW components/ImportReconciliation.tsx: file total vs imported total vs
+    difference, and a table naming every rejected row and its money. Shown in both
+    the create and revise flows. Figures are EXACT RUPEES, not Mn — you cannot
+    reconcile with rounded numbers (Rs 2,342.7 Mn hides whether the gap is
+    176,000,000 or 176,003,598).
+  * Money no longer wraps: .kpi-value gets white-space:nowrap + tabular-nums and a
+    clamped font size, .data-table td.num gets nowrap, and the KPI grid minimums
+    widen (168→196px, 150→178px) so a figure shrinks to fit rather than breaking
+    after the digits. "Rs 2,342.7" over "Mn" reads as a different number.
+- Verified against the real uploaded WKC_Contract.csv: 89 rows parsed, file total
+  PKR 2,518,703,598.40 exact; with a complete project BOQ → 89 matched, variance
+  0; with the Toll Plaza absent → 88 matched and the panel names "Toll Plaza,
+  Rs 176,000,000, no such item in this project BOQ".
+- One obsolete test corrected: subletImport asserted a zero rate passed through so
+  the caller could default it to the BOQ rate. Rate defaulting was removed on
+  2026-07-15 (c) as the client-rate leak, so a blank rate is now reported as an
+  incomplete line instead of silently imported at zero.
+- Gate (run in chunks; the full suite exceeds the command timeout on this
+  machine): domain+data 62 files/443, screens+components 12/140, root 11/62 +
+  11/58 + 11/60 = 107 files, 763 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.

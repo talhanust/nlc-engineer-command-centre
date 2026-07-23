@@ -2251,3 +2251,75 @@ NLC Engineer Command Centre — work journal
   the client rate → 50.00% margin; equal to the client rate → flagged as earning
   nothing.
   Web 714 passing (101 files), server 9; typecheck clean; local + api builds green.
+
+2026-07-22 — delete a contract from the register
+- Deleting a contract is not the same as ending one, so the rule lives in
+  domain/contractDelete.ts (canDeleteContract) rather than in a button handler:
+  * HARD BLOCK when any RAR is billed against the contract. RARs record work
+    measured and money paid; removing their contract would leave payments
+    attached to something that no longer exists — a hole in the audit trail, not
+    a correction. The message names the blocking RARs and points at the remedy
+    (remove the RARs first, or close the contract instead). Blocks equally for a
+    draft RAR and a paid one.
+  * WARN, do not block, otherwise. An awarded/in-progress contract records a
+    commitment actually made, and its approval chain goes with it; locked BOQ
+    lines are released back to the planner. But a contract awarded to the wrong
+    subcontractor is a real mistake needing a real way out — refusing outright
+    would leave a wrong record in the register permanently, which is worse than a
+    recorded deletion.
+- provider.deleteContract(projectId, contractId) re-checks the rule ITSELF, so a
+  caller that skipped the dialog still cannot orphan payment records, and writes
+  an audit entry naming the contract, value, status and how many BOQ lines were
+  released. Api provider stubs DELETE /contracts/:id.
+- UI: a Delete action per row opens a confirmation showing either the block
+  reason or the consequences. When blocked, the confirm button is not rendered at
+  all — there is no way to force it through. Added .btn-danger styling.
+- Locked quantities release automatically: itemLocks derives from the contracts
+  list, so removing the contract frees its lines with no extra bookkeeping.
+  Distributions are deliberately left alone (they name a subcontractor, not a
+  contract, and may still reflect a real intention).
+- Tests: 10 domain + 6 end-to-end (delete a draft and see the quantity unallocated
+  again in the planner; a billed contract refuses and offers no confirm button;
+  an awarded one warns but proceeds; the provider rejects a direct call; the
+  deletion is audited; an unknown id errors clearly).
+  Web 730 passing (103 files), server 9; typecheck clean; local + api builds green.
+
+2026-07-22 (b) — contract detail was showing CLIENT rates; revise-BOQ replaces delete
+- USER: the contract total was wrong, opening the contract showed client rates
+  instead of sublet rates, and the contractor BOQ amount was computed at client
+  rates — which is why a delete function was wanted (to re-upload from scratch).
+- ROOT CAUSE: components/ContractDetailModal predates the sublet feature. It was
+  written when a Contract was scope-bills + a typed value, and never learned about
+  contract lines. It listed EVERY BOQ item in the scope bills (not the lines
+  awarded), showed item.rate (client), item.amount (client qty x client rate), and
+  totalled "Scope BOQ value" across the whole bill. All three reported symptoms,
+  one cause. A second contributor: contracts created before the 2026-07-15 (c) fix
+  had the client rate auto-filled into the sublet rate, so their stored value
+  really was wrong too.
+- NEW domain/contractBoqView.ts — rows come from the LINES, money from the SUBLET
+  rate, client rate carried only as a labelled reference so margin stays
+  verifiable. Reports subletValue (derived), clientValue on the same quantities,
+  margin, billed and balance. Legacy contracts with no lines fall back to the
+  scope-at-client-rates view and are marked lineBased:false so the UI says so
+  plainly rather than implying precision it does not have. It also flags a stored
+  contract.value that disagrees with the sum of its lines — the exact fingerprint
+  of a record written by the older build — instead of leaving the user to spot two
+  different totals in two places. 12 tests.
+- NEW screens/commercial/ReviseContractBoq.tsx + domain/contractLineDiff.ts:
+  re-upload a corrected BOQ onto a DRAFT contract and approve an explicit diff
+  (added/removed/changed with old->new qty and rate, value delta, resulting
+  margin) before anything is written. The contract keeps its number, approval
+  chain and audit history — delete-and-recreate throws all of that away and is
+  impossible once anything is billed. Awarded contracts are frozen: that is a
+  variation, not a silent edit, and updateContractLines already enforces it.
+  8 diff tests + 5 end-to-end.
+- Extracted parseSubletGrid() into domain/subletImport so the create and revise
+  flows read a spreadsheet identically instead of duplicating header detection.
+- REGRESSION CAUGHT BY AN EXISTING TEST: rewriting the modal dropped the Executed
+  column and the bill name. Rather than weaken ContractRarDetail.test.tsx, both
+  were restored — Executed is now valued at the SUBLET rate (what is owed), which
+  is more useful than the old client-rate figure.
+- GATE NOTE: the full suite timed out as a single command on this machine, so it
+  was run in chunks — domain+data 62 files/439, screens+components 11/136, root
+  9/57 + 11/52 + 13/71. Total 106 files, 755 tests, all passing. Server 9;
+  typecheck clean; local + api builds green.

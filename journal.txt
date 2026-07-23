@@ -2428,3 +2428,43 @@ NLC Engineer Command Centre — work journal
 - Gate (chunked): domain+data 63 files/458, screens+components 12/144, root 17/95
   + 16/85 = 108 files, 782 tests, all passing. Server 9; typecheck clean;
   local + api builds green.
+
+2026-07-23 (d) — an awarded contract was an island; + a migration replay hazard
+- USER: contract awarded at Rs 2,518.7 Mn, yet the contractor profile showed 0
+  contracts / Rs 0, the distribution planner showed every item Unassigned, the
+  distribution mix showed one mode, and margin analytics read 0.
+- ROOT CAUSE: the app carries THREE models of who does the work —
+  Contract.lines (the commitment), Distribution (mode + subcontractor per item)
+  and Allocation (per item, per contractor, qty x rate). Every downstream screen
+  reads the PLAN, not the register: ContractorProfiles derives its KPIs from
+  contractSummaries(items, allocs); the planner Mode column comes from
+  Distribution; margin analytics costs come from allocations. createSubletContract
+  wrote ONLY the contract — so an award was visible on exactly one screen. The
+  DataProvider interface even documented "seeds planner allocations from them";
+  it was never implemented. (The planner Locked column DID work, because
+  itemLocks reads contracts directly — which is why part of the chain looked fine.)
+- FIX — a contract now OWNS a slice of the plan. New private syncContractPlan()
+  writes one Allocation per line tagged with the new Allocation.contractId, and
+  marks each covered BOQ item sublet to that subcontractor. Called on create, on
+  line revision (rewritten, never duplicated) and on delete (released). Manual
+  allocations are never touched — only rows carrying this contractId — and an item
+  another live contract still covers is not released.
+- v15 MIGRATION backfills the plan for contracts awarded on earlier builds, so an
+  existing contract repairs itself on next load instead of needing a re-apply.
+- HAZARD FOUND WHILE TESTING THAT MIGRATION: reconcileSeed gated EVERY one-time
+  migration behind a single version stamp, so bumping SEED_VERSION replayed the
+  whole block — shipping v15 would have re-run the v14 commercial-spine purge and
+  DELETED contracts users created after v14. Destructive migrations are now
+  recorded individually in a migration ledger (nlc-ecc.migrations); a store whose
+  version is already >= v14 has that purge recorded without executing it, so it
+  can never replay. Guarded both ways: a post-v14 contract survives the upgrade,
+  and genuine pre-v14 seed residue is still purged.
+- Tests data/contractPlanSync.test.ts (12): allocation per line at the SUBLET
+  rate; contractor scorecard shows value/revenue/margin; item marked sublet;
+  uncovered items untouched; labor contracts allocate as labour; revision rewrites
+  without duplicating; delete releases; a hand-made allocation survives both; an
+  item held by a second contract is not released; the v15 backfill; and the
+  replay guard.
+- Gate (chunked): domain+data 64 files/470, screens+components 12/144, root 17/95
+  + 16/85 = 109 files, 794 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.

@@ -199,12 +199,16 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
 
 /* ---- KPI cards ---- */
-.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 13px; margin: 18px 0; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); gap: 13px; margin: 18px 0; }
 .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 15px 16px;
   position: relative; overflow: hidden; box-shadow: var(--shadow-card); }
 .kpi::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--primary); opacity: .8; }
 .kpi-label { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; font-weight: 600; }
-.kpi-value { font-family: var(--font-mono); font-size: 23px; font-weight: 600; margin-top: 5px; letter-spacing: -.02em; }
+/* Money must never break across lines: "Rs 2,342.7 Mn" splitting after the
+   figure reads as a different number at a glance. Nowrap, and let the figure
+   shrink to fit its card rather than wrap or overflow. */
+.kpi-value { font-family: var(--font-mono); font-size: clamp(17px, 1.55vw, 23px); font-weight: 600; margin-top: 5px;
+  letter-spacing: -.02em; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .kpi-sub { font-size: 12px; margin-top: 4px; font-weight: 500; }
 .pos { color: var(--success); } .neg { color: var(--danger); }
 
@@ -213,7 +217,8 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .data-table th { padding: 9px 11px; text-align: left; font-size: 11px; text-transform: uppercase;
   letter-spacing: .06em; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border-strong); }
 .data-table td { padding: 10px 11px; border-bottom: 1px solid var(--border); }
-.data-table th.num, .data-table td.num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.data-table th.num, .data-table td.num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  white-space: nowrap; }
 .data-table tbody tr:hover { background: var(--surface-2); }
 .data-table tfoot td { font-weight: 700; border-top: 2px solid var(--border-strong); background: var(--surface-2); }
 .row-link { cursor: pointer; }
@@ -888,7 +893,7 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .ipc-net-row th, .ipc-net-row td { border-top: 2px solid var(--border-strong); padding-top: 8px; font-size: 15px; }
 
 /* advances ledger */
-.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 10px; }
 .kpi-row .kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 12px 14px; }
 .expiry-badge.st-active { background: var(--rag-green); }
 .pbs-table th.num, .pbs-table td.num { text-align: right; }
@@ -950,7 +955,7 @@ code { font-family: var(--font-mono); font-size: .9em; }
 
 /* density: newer card types */
 .density-compact .kpi-card { padding: 8px 11px; }
-.density-compact .kpi-value { font-size: 19px; }
+.density-compact .kpi-value { font-size: clamp(15px, 1.3vw, 19px); }
 .density-compact .dash-tile { padding: 10px 12px; }
 
 /* EVM indices */

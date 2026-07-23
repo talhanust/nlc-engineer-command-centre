@@ -263,6 +263,9 @@ export class ApiDataProvider implements DataProvider {
   async updateContractLines(projectId: string, contractId: string, lines: import('./types').ContractLine[]): Promise<Contract> {
     return this.send<Contract>(`/api/projects/${projectId}/contracts/${contractId}/lines`, 'PUT', { lines });
   }
+  async deleteContract(projectId: string, contractId: string): Promise<Contract[]> {
+    return this.send<Contract[]>(`/api/projects/${projectId}/contracts/${contractId}`, 'DELETE', {});
+  }
   async setContractStatus(projectId: string, contractId: string, status: ContractStatus): Promise<void> {
     await this.send(`/api/projects/${projectId}/contracts/${contractId}/status`, 'POST', { status });
   }

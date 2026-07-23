@@ -1111,6 +1111,9 @@ export interface DataProvider {
     retentionPct?: number;
   }): Promise<Contract>;
   updateContractLines(projectId: string, contractId: string, lines: ContractLine[]): Promise<Contract>;
+  /** Remove a contract from the register. Refuses when RARs are billed against it —
+   *  deleting would orphan those payment records. Releases any locked BOQ lines. */
+  deleteContract(projectId: string, contractId: string): Promise<Contract[]>;
   setContractStatus(projectId: string, contractId: string, status: ContractStatus): Promise<void>;
   setContractRetention(projectId: string, contractId: string, retentionPct: number): Promise<void>;
   getCommercialConfig(projectId: string): Promise<CommercialConfig>;

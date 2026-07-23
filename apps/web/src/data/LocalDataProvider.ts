@@ -25,6 +25,7 @@ import { pendingMaintStage, advanceMaint, isMaintComplete } from '../domain/main
 import type { BaselineWorkflowState } from '../domain/schedulebaseline';
 import { ROLE_LABEL } from '../domain/chains';
 import { applyRarAction } from '../domain/rar';
+import { canDeleteContract } from '../domain/contractDelete';
 import { synthSeries } from '../domain/scurve';
 import { DEMAND_CHAIN, checkAdvance } from '../domain/chains';
 
@@ -841,6 +842,24 @@ export class LocalDataProvider implements DataProvider {
     writeJson(contractsRegKey(projectId), all);
     audit(projectId, 'update', 'Contract', c.contractNo, `${c.lines.length} lines · PKR ${Math.round(c.value).toLocaleString('en-PK')}`);
     return c;
+  }
+  async deleteContract(projectId: string, contractId: string): Promise<Contract[]> {
+    const all = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? [])));
+    const c = all.find((x) => x.id === contractId);
+    if (!c) throw new Error('Contract not found.');
+    // Re-check the rule HERE, not just in the UI: a caller that skipped the
+    // confirmation dialog must not be able to orphan payment records.
+    const rars = readJson<Rar[]>(rarKey(projectId), () => ((gen(projectId)?.rars ?? [])));
+    const check = canDeleteContract(c, rars);
+    if (!check.allowed) throw new Error(check.blockedReason ?? 'This contract cannot be deleted.');
+
+    const next = all.filter((x) => x.id !== contractId);
+    writeJson(contractsRegKey(projectId), next);
+    // Record what was removed — a deletion that leaves no trace is the thing the
+    // register exists to prevent.
+    audit(projectId, 'delete', 'Contract', c.contractNo,
+      `${c.title} · PKR ${Math.round(c.value).toLocaleString('en-PK')} · ${c.status}${check.releasedLines ? ` · released ${check.releasedLines} BOQ line(s)` : ''}`);
+    return next;
   }
   async setContractStatus(projectId: string, contractId: string, status: Contract['status']): Promise<void> {
     const all = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? [])));

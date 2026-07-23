@@ -2365,3 +2365,66 @@ NLC Engineer Command Centre — work journal
   machine): domain+data 62 files/443, screens+components 12/140, root 11/62 +
   11/58 + 11/60 = 107 files, 763 tests, all passing. Server 9; typecheck clean;
   local + api builds green.
+
+2026-07-23 (b) — BOQ item identity was POSITIONAL (silent re-pointing hazard)
+- Found while answering "how do I choose the corrected BOQ?". The advice would
+  have been "add the Toll Plaza to the project BOQ and re-import" — and that
+  advice would have corrupted the contract.
+- replaceBoq() minted ids as `boq-<project>-<row index>`. Contract lines, RAR
+  lines, allocations and BOQ↔WBS mappings all store boqItemId. So inserting ONE
+  row (a provisional sum in bill order, say) shifted every index below it and
+  silently re-pointed every stored reference at a DIFFERENT item. No error, no
+  warning — the contract would simply start describing the wrong work.
+- FIX: identity is now natural, not positional. An incoming row matching an
+  existing item on (bill, code, description) keeps that item id; only genuinely
+  new rows get new ids, numbered beyond every id already in use so a retired
+  index is never recycled onto a different item. Duplicate natural keys are
+  consumed one-for-one (shift) so two identical rows take two distinct items.
+- Tests data/boqIdentity.test.ts (5): ids survive a mid-list insertion; a CONTRACT
+  LINE still points at the same item after a provisional sum is inserted above it
+  (the exact corruption); qty/rate update in place without an id change; two
+  identical rows get two ids; a removed item id is never recycled.
+- NOTE still open: BoqImport gives no warning when replacing a BOQ whose items are
+  referenced by contracts — a row REMOVED on re-import orphans its contract lines.
+  Identity is now safe; the orphan warning is not built yet.
+- Gate (chunked): domain+data 63 files/448, BOQ-touching+screens+components
+  17/169, root 11/60 + 17/91 = 108 files, 768 tests, all passing. Server 9;
+  typecheck clean; local + api builds green.
+
+2026-07-23 (c) — inline resolution: the item WAS in the BOQ, worded differently
+- USER: "This item is already present in Project BOQ" — and it is:
+  bill 6a · code 109 · "Remodeling of Toll Plaza" · PS · 1 · 200,000,000.
+  My previous instruction (add it to the BOQ) was wrong and would have created a
+  duplicate. The app failed to MATCH it, which is a different defect.
+- WHY IT MISSED: the contractor sheet says "Toll Plaza" with no code; the client
+  BOQ says "Remodeling of Toll Plaza" with code 109. Description matching was
+  EXACT, so a superset description never matched. (Bill 6A vs 6a was fine — both
+  sides lowercase.) Note 200,000,000 x 0.88 = 176,000,000, so the Toll Plaza is
+  sublet at the same flat 12% as the other 88 items — it is NOT a zero-margin
+  pass-through as I speculated last turn.
+- FIX — suggest, never guess. Fuzzy matching that decides for itself is worse than
+  no matching: a wrong guess becomes a committed quantity at a committed rate.
+  * suggestBoqMatches(row, items) ranks candidates by description similarity
+    (reusing the Dice-bigram similarity() from scheduleDiff), nudged for sharing
+    the row bill, and returns each with its BOQ amount so the choice can be
+    checked against the money rather than the wording. "Toll Plaza" scores the
+    right item first, well clear of the alternatives.
+  * matchSubletRows() gained a `resolutions` map (rowKey → boqItemId). A human
+    decision is taken as given and overrides every automatic rule.
+  * ImportReconciliation now renders a picker per unplaced row — starred
+    suggestions first, then the whole BOQ — and the line joins the contract at the
+    SHEET quantity and rate. Rows failing for no-rate/no-quantity say "fix in the
+    sheet" instead, because no BOQ item can repair a missing price.
+  * Wired into both the create and revise flows: choosing an item re-runs the
+    match and the variance closes live.
+- This closes the dead-end flagged last turn: the panel diagnosed a problem and
+  then offered no way to act on it.
+- Tests: subletImport 26 (suggestion ranking incl. the real Toll Plaza wording;
+  resolution closes the variance to zero and carries the sheet qty/rate; a
+  resolution overrides the matcher; a resolution onto an already-claimed item is
+  refused and reported), ImportReconciliation 8 (the differently-worded item is
+  offered first and starred; the choice is reported back; no picker where the
+  sheet must be fixed).
+- Gate (chunked): domain+data 63 files/458, screens+components 12/144, root 17/95
+  + 16/85 = 108 files, 782 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.

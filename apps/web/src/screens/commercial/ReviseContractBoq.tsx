@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { formatMoney } from '../../domain/money';
 import { readWorkbook } from '../../domain/xlsxImport';
-import { matchSubletRows, parseSubletGrid } from '../../domain/subletImport';
+import { matchSubletRows, parseSubletGrid, type SubletImportResult } from '../../domain/subletImport';
+import { ImportReconciliation } from '../../components/ImportReconciliation';
 import { diffContractLines, type ContractLineDiff } from '../../domain/contractLineDiff';
 import { contractMargin } from '../../domain/contractMargin';
 import { SUBLET_TEMPLATE_AOA, SUBLET_TEMPLATE_FILENAME } from '../../domain/csvTemplates';
@@ -28,7 +29,8 @@ export function ReviseContractBoq({ projectId, contract, onClose, onSaved }: {
   const { provider } = useData();
   const [items, setItems] = useState<BoqItem[]>([]);
   const [proposed, setProposed] = useState<ContractLine[] | null>(null);
-  const [note, setNote] = useState('');
+  const [recon, setRecon] = useState<SubletImportResult | null>(null);
+  const [fileName, setFileName] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -46,7 +48,7 @@ export function ReviseContractBoq({ projectId, contract, onClose, onSaved }: {
   const margin = useMemo(() => (proposed ? contractMargin(proposed, items) : null), [proposed, items]);
 
   async function onUpload(file: File) {
-    setError(''); setNote('');
+    setError(''); setRecon(null);
     try {
       const wb = await readWorkbook(file);
       const grid = wb.grids[wb.sheetNames[0]] ?? [];
@@ -54,21 +56,13 @@ export function ReviseContractBoq({ projectId, contract, onClose, onSaved }: {
       if (parseErr) { setError(parseErr); return; }
 
       const res = matchSubletRows(rows, items);
+      setRecon(res);
       if (res.matched.length === 0) {
         setError('No rows matched a BOQ item. Check the code (and bill) columns against the project BOQ.');
-        return;
-      }
-      const unpriced = res.matched.filter((m) => m.rate <= 0);
-      if (unpriced.length > 0) {
-        setError(`${unpriced.length} row(s) have no sublet rate. The rate column must hold the SUBLET rate, not the client rate.`);
+        setProposed(null);
         return;
       }
       setProposed(res.matched.map((m) => ({ boqItemId: m.boqItemId, qty: m.qty, rate: m.rate })));
-
-      const notes = [`Read ${res.matched.length} line(s).`];
-      if (res.ambiguous.length) notes.push(`${res.ambiguous.length} row(s) skipped — ambiguous code (${[...new Set(res.ambiguous.map((a) => a.code))].slice(0, 4).join(', ')}).`);
-      if (res.unmatched.length) notes.push(`${res.unmatched.length} row(s) skipped — not in this project's BOQ (${[...new Set(res.unmatched.map((u) => u.code))].slice(0, 4).join(', ')}).`);
-      setNote(notes.join(' '));
     } catch {
       setError('Could not read that spreadsheet.');
     }
@@ -114,11 +108,11 @@ export function ReviseContractBoq({ projectId, contract, onClose, onSaved }: {
               <label className="btn" style={{ cursor: 'pointer' }}>
                 ⬆ Choose corrected BOQ
                 <input type="file" accept=".xlsx,.xls,.csv" aria-label="Revised contractor BOQ" style={{ display: 'none' }}
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) void onUpload(f); e.target.value = ''; }} />
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFileName(f.name); void onUpload(f); } e.target.value = ''; }} />
               </label>
-              {note && <span className="muted small">{note}</span>}
             </div>
             {error && <p className="neg small" role="alert">{error}</p>}
+            {recon && <ImportReconciliation result={recon} fileName={fileName} />}
 
             {diff && (
               <>

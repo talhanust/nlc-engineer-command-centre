@@ -3,7 +3,8 @@ import { useData } from '../../data/DataContext';
 import { formatMoney } from '../../domain/money';
 import { readWorkbook } from '../../domain/xlsxImport';
 import { itemLocks, contractLineIssues, contractValue } from '../../domain/contractLocks';
-import { matchSubletRows, parseSubletGrid } from '../../domain/subletImport';
+import { matchSubletRows, parseSubletGrid, type SubletImportResult } from '../../domain/subletImport';
+import { ImportReconciliation } from '../../components/ImportReconciliation';
 import { contractMargin } from '../../domain/contractMargin';
 import { SUBLET_TEMPLATE_AOA, SUBLET_TEMPLATE_FILENAME } from '../../domain/csvTemplates';
 import { downloadText, toCsv } from '../../components/hrExport';
@@ -41,6 +42,8 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
 
   const [rows, setRows] = useState<Draft[]>([]);
   const [importNote, setImportNote] = useState('');
+  const [recon, setRecon] = useState<SubletImportResult | null>(null);
+  const [fileName, setFileName] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [ackOverlap, setAckOverlap] = useState(false);
@@ -70,7 +73,7 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
   const margin = useMemo(() => contractMargin(pricedLines, items), [pricedLines, items]);
 
   async function onUpload(file: File) {
-    setError(''); setImportNote('');
+    setError(''); setImportNote(''); setRecon(null);
     try {
       const wb = await readWorkbook(file);
       const grid = wb.grids[wb.sheetNames[0]] ?? [];
@@ -78,24 +81,16 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
       if (parseErr) { setError(parseErr); return; }
 
       const res = matchSubletRows(uploaded, items);
-      if (res.matched.length === 0) { setError('No rows matched a BOQ item. Check the code (and bill) columns against the project BOQ.'); return; }
+      setRecon(res);
+      if (res.matched.length === 0) {
+        setError('No rows matched a BOQ item. Check the code (and bill) columns against the project BOQ.');
+        return;
+      }
       // A missing rate stays EMPTY — never backfilled from the client rate.
       setRows(res.matched.map((m) => ({
         boqItemId: m.boqItemId, qty: String(m.qty), rate: m.rate > 0 ? String(m.rate) : '',
       })));
-
-      // Report honestly: an ambiguous code is NOT guessed at, it is reported, because
-      // the wrong item here becomes the wrong commitment.
-      const notes = [`Imported ${res.matched.length} line(s).`];
-      if (res.ambiguous.length) {
-        const list = [...new Set(res.ambiguous.map((a) => a.code))].slice(0, 5).join(', ');
-        notes.push(`${res.ambiguous.length} row(s) skipped — the code matches more than one BOQ item and neither the bill nor the description tells them apart (${list}). Add a "bill" column, or correct the code in your sheet.`);
-      }
-      if (res.unmatched.length) {
-        const list = [...new Set(res.unmatched.map((u) => u.code))].slice(0, 5).join(', ');
-        notes.push(`${res.unmatched.length} row(s) skipped — no such item in this project's BOQ (${list}).`);
-      }
-      setImportNote(notes.join(' '));
+      setImportNote(`Imported ${res.matched.length} line(s).`);
     } catch {
       setError('Could not read that spreadsheet.');
     }
@@ -186,7 +181,7 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
             <label className="btn-ghost btn-mini" style={{ cursor: 'pointer' }}>
               Upload xlsx / csv
               <input type="file" accept=".xlsx,.xls,.csv" aria-label="Upload subcontractor BOQ" style={{ display: 'none' }}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) void onUpload(f); e.target.value = ''; }} />
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFileName(f.name); void onUpload(f); } e.target.value = ''; }} />
             </label>
             <button className="btn-ghost btn-mini" onClick={() => downloadText(SUBLET_TEMPLATE_FILENAME, toCsv(SUBLET_TEMPLATE_AOA), 'text/csv')}>Sample CSV</button>
             <button className="btn-ghost btn-mini" onClick={addRow}>+ add line</button>
@@ -258,6 +253,8 @@ export function NewSubletContract({ projectId, onCreated }: { projectId: string;
           </table>
         )}
       </div>
+
+      {recon && <ImportReconciliation result={recon} fileName={fileName} />}
 
       {unpriced > 0 && (
         <div className="card" style={{ marginTop: 12, borderColor: 'var(--danger)' }} aria-label="Unpriced lines">

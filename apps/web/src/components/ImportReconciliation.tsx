@@ -4,7 +4,8 @@ import { formatMoney } from '../domain/money';
 // against "Rs 2,518.7 Mn" hides whether the difference is 176,000,000 or
 // 176,003,598, and the whole point of a control total is that it ties exactly.
 const exact = (v: number) => formatMoney(v, 'rs');
-import type { SkipReason, SubletImportResult } from '../domain/subletImport';
+import { rowKey, suggestBoqMatches, type SkipReason, type SkippedRow, type SubletImportResult } from '../domain/subletImport';
+import type { BoqItem } from '../data/types';
 
 const REASON_LABEL: Record<SkipReason, string> = {
   'ambiguous': 'Code matches more than one BOQ item',
@@ -24,7 +25,17 @@ const REASON_LABEL: Record<SkipReason, string> = {
  *
  * The variance is the control: zero means the contract equals the sheet.
  */
-export function ImportReconciliation({ result, fileName }: { result: SubletImportResult; fileName?: string }) {
+export function ImportReconciliation({ result, fileName, items, resolutions, onResolve }: {
+  result: SubletImportResult;
+  fileName?: string;
+  /** Project BOQ, needed to offer candidates for an unplaced row. */
+  items?: BoqItem[];
+  /** Choices already made, so the picker shows them. */
+  resolutions?: Map<string, string>;
+  /** Called when the user picks the BOQ item a row belongs to ('' clears it). */
+  onResolve?: (row: SkippedRow, boqItemId: string) => void;
+}) {
+  const canResolve = !!items && !!onResolve;
   const clean = result.variance === 0 && result.skipped.length === 0;
 
   return (
@@ -62,7 +73,8 @@ export function ImportReconciliation({ result, fileName }: { result: SubletImpor
           </p>
           <div className="table-scroll" style={{ maxHeight: 200 }}>
             <table className="data-table" aria-label="Rows not imported">
-              <thead><tr><th>Bill</th><th>Code</th><th>Description</th><th className="num">Amount</th><th>Why</th></tr></thead>
+              <thead><tr><th>Bill</th><th>Code</th><th>Description</th><th className="num">Amount</th><th>Why</th>
+                {canResolve && <th>Match to BOQ item</th>}</tr></thead>
               <tbody>
                 {result.skipped.map((s, i) => (
                   <tr key={`${s.bill}-${s.code}-${i}`}>
@@ -71,15 +83,39 @@ export function ImportReconciliation({ result, fileName }: { result: SubletImpor
                     <td className="small">{s.description || '—'}</td>
                     <td className="num">{exact(s.amount)}</td>
                     <td className="small muted">{REASON_LABEL[s.reason]}{s.detail ? ` — ${s.detail}` : ''}</td>
+                    {canResolve && (
+                      <td>
+                        {s.reason === 'no-rate' || s.reason === 'no-quantity' ? (
+                          <span className="muted small">fix in the sheet</span>
+                        ) : (
+                          <select aria-label={`Match ${s.description || s.code} to a BOQ item`}
+                            value={resolutions?.get(rowKey(s)) ?? ''}
+                            onChange={(e) => onResolve!(s, e.target.value)}>
+                            <option value="">— choose —</option>
+                            {suggestBoqMatches(s, items!).map((c) => (
+                              <option key={c.item.id} value={c.item.id}>
+                                ★ {c.item.code || '—'} · {c.item.description.slice(0, 48)}{c.sameBill ? ` (bill ${c.item.billNo})` : ''}
+                              </option>
+                            ))}
+                            <option disabled value="">──────────</option>
+                            {items!.map((it) => (
+                              <option key={`all-${it.id}`} value={it.id}>
+                                {it.code || '—'} · {it.description.slice(0, 48)}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <p className="muted small" style={{ marginBottom: 0 }}>
-            A row with no item code (a provisional or lump sum) is matched on its description. If it is still not found, add
-            it to the project BOQ first — a sublet line has to point at something the client is billed for, or the margin on
-            it cannot be worked out.
+            {canResolve
+              ? 'Rows starred ★ are the closest matches in your BOQ — a contractor often words an item differently from the client BOQ ("Toll Plaza" against "Remodeling of Toll Plaza"). Pick the item a row belongs to and it joins the contract at the sheet\u2019s quantity and rate. Nothing is guessed for you.'
+              : 'A row with no item code (a provisional or lump sum) is matched on its description. If it is still not found, add it to the project BOQ first — a sublet line has to point at something the client is billed for, or the margin on it cannot be worked out.'}
           </p>
         </>
       )}

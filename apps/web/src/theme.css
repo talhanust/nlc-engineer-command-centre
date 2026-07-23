@@ -160,6 +160,9 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .btn { background: var(--primary); color: #fff; box-shadow: var(--shadow-1); }
 .btn:hover { background: var(--primary-bright); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-danger { background: var(--danger); color: #fff; box-shadow: var(--shadow-1); }
+.btn-danger:hover { filter: brightness(1.08); }
+.btn-danger:disabled { opacity: .45; cursor: not-allowed; }
 .btn-ghost { background: var(--surface); color: var(--text); border-color: var(--border-strong); }
 .btn-ghost:hover { border-color: var(--primary); color: var(--primary); }
 .header-right .btn-ghost { background: rgba(255,255,255,.08); color: var(--on-command); border-color: rgba(255,255,255,.2); }

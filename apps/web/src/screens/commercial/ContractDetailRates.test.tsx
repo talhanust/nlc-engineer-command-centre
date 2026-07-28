@@ -16,7 +16,7 @@ async function openContract(contractNo: string) {
   await user.click(screen.getByRole('tab', { name: 'Contracts' }));
   await screen.findByRole('table', { name: 'Contracts register' });
   await user.click(screen.getByRole('button', { name: `View ${contractNo}` }));
-  await screen.findByRole('dialog', { name: `${contractNo} detail` });
+  await screen.findByRole('dialog', { name: contractNo });
   return user;
 }
 
@@ -49,7 +49,7 @@ describe('Contract detail shows SUBLET rates, not client rates', () => {
     const derived = (c.lines ?? []).reduce((s, l) => s + l.qty * l.rate, 0);
 
     await openContract(contractNo);
-    const dialog = screen.getByRole('dialog', { name: `${contractNo} detail` });
+    const dialog = screen.getByRole('dialog', { name: contractNo });
     // Contract value equals the sum of the sublet lines (same formatter as the UI).
     const clientTotal = (c.lines ?? []).reduce((s, l) => {
       const it = boqItems.find((b) => b.id === l.boqItemId)!;

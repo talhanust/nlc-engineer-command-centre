@@ -2468,3 +2468,34 @@ NLC Engineer Command Centre — work journal
 - Gate (chunked): domain+data 64 files/470, screens+components 12/144, root 17/95
   + 16/85 = 109 files, 794 tests, all passing. Server 9; typecheck clean;
   local + api builds green.
+
+2026-07-23 (e) — contract detail as a full-height tabbed drawer with progress meters
+- USER: viewing a contract should open as a full, interactive window with proper
+  sliders, and the same treatment for other detail views.
+- Found an existing DetailDrawer (used by person + project views): a right-hand
+  slide-in with Escape-to-close, a good foundation. Rather than fork a second
+  pattern, EXTENDED it — additively, so both existing callers keep working:
+  * new optional props: pill, hero (a band of stat cards), tabs (tabbed sections
+    with per-tab badge counts), width (wide 920px for records, narrow 420px for
+    people/orgs). The old open/children API is untouched.
+  * NEW ProgressMeter — a read-only labelled bar, the "slider" a project-controls
+    user expects beside a value (how much of a line billed, how much of the
+    contract paid). role=progressbar, clamps out-of-range/NaN to 0..100.
+  * CSS: sticky header + tab strip while the body scrolls, hero band, meter fills
+    tinted by tone (good/warn/danger), full-width on mobile.
+- ContractDetailModal rebuilt on the drawer: identity + status pill pinned; a hero
+  row (contract value, revenue at client rates, margin, billed-to-date with a
+  meter, retention); and three tabs — Bill of Quantities (per-line Progress meter
+  in every row, badge = line count), RARs (badge = count), History (audit trail).
+  All the sublet-rate / margin / mismatch logic from the prior fix is preserved;
+  only the shell changed.
+- The drawer is deliberately generic so every detail view can adopt the same shell
+  and "view" means one thing across the app. IPC / demand / payment modals are the
+  obvious next adopters.
+- Tests: DetailDrawer.test.tsx (8) — default/'switch'/initialTab tabs, badge, Escape
+  + ✕ close, the simple children form still works, hero renders, ProgressMeter
+  clamps. Existing contract-detail tests updated for the drawer aria-label (was
+  "<no> detail", now the contract number) — table contents unchanged, all pass.
+- Gate (chunked): domain+data 64 files/470, screens+components 13/152, root 17/95
+  + 16/85 = 111 files, 810 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.

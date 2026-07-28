@@ -2499,3 +2499,40 @@ NLC Engineer Command Centre — work journal
 - Gate (chunked): domain+data 64 files/470, screens+components 13/152, root 17/95
   + 16/85 = 111 files, 810 tests, all passing. Server 9; typecheck clean;
   local + api builds green.
+
+2026-07-28 — committed vs incurred cost (#1 of the three)
+- Of the three asks, built #1 this turn (highest value, lowest risk, contained).
+  #2 (plan-vs-commitment model) and #3 (WBS mapping) are scoped below, not built —
+  #2 is an architectural change across the whole commercial spine and deserves its
+  own turn; half-doing it would be worse than not.
+- The defect: MarginAnalytics "S/C cost" summed allocation rate×qty, which is the
+  COMMITTED (awarded) amount, but was labelled and used as if it were incurred,
+  and there was no incurred figure at all. So the app could not answer the first
+  question in subcontract control: have we promised to pay out more than we take
+  in, and is that visible BEFORE the work is measured.
+- marginanalytics.ts now computes both:
+  * committedCost {sublet, labour, total} = allocation rate × awarded qty. Moves
+    at award, before any unit is built.
+  * incurredCost {sublet, labour, total} = executed qty (capped at awarded) ×
+    sublet rate. Moves only as work is measured. Over-measurement is a variation,
+    not extra cost against this commitment, hence the cap.
+  * remainingCommitment = committed − incurred.
+  * committedRevenue = client BOQ rate × awarded qty; committedMargin =
+    committedRevenue − committedCost.total. Negative ⇒ over-subscribed.
+  grossMargin now uses INCURRED cost (realised margin on work actually done).
+  scCost/loCost retain their historical (committed) meaning so existing callers
+  are untouched.
+- Margin Analytics screen: a new committed-vs-incurred KPI band (committed,
+  incurred, remaining commitment, committed margin), the realised-margin row now
+  shows incurred against committed per cost type, and a red over-subscription
+  banner appears the moment committedMargin < 0 — visible at award with zero
+  executed.
+- Tests domain/marginCommitted.test.ts (9): commit-at-award-before-measurement;
+  incur-as-executed; incurred capped at committed qty; sublet/labour split;
+  realised margin uses incurred; scCost back-compat; over-subscription healthy vs
+  flagged; over-subscription visible at zero executed. Commercial.test.tsx updated
+  for the clearer labels (Gross margin → Gross margin (realised)) + asserts the
+  new Committed/Incurred cards.
+- Gate (chunked): domain+data 65 files/479+9, screens+components 13/152, root
+  17/95 + 16/85 = 112 files, 820 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.

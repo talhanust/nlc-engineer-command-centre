@@ -32,15 +32,33 @@ export function MarginAnalyticsTab({ projectId }: { projectId: string }) {
       <div className="section-head">
         <div>
           <h3>Margin Analytics</h3>
-          <p className="muted small" style={{ margin: '2px 0 0' }}>Revenue (executed) vs costs (sublet/labour incurred), gross margin, and per-contractor scorecard.</p>
+          <p className="muted small" style={{ margin: '2px 0 0' }}>Committed cost (what is awarded) against incurred cost (what is measured), realised margin, and per-contractor scorecard. Committed cost warns of an over-subscribed budget before any money moves.</p>
         </div>
+      </div>
+
+      {m.committedMargin < 0 && (
+        <div className="card" style={{ borderColor: 'var(--danger)', marginBottom: 12 }} role="alert" aria-label="Over-subscription">
+          <strong className="neg">Over-subscribed by {money(-m.committedMargin)}.</strong>
+          <div className="muted small">
+            Committed cost {money(m.committedCost.total)} exceeds client revenue {money(m.committedRevenue)} on the same
+            scope — the awarded subcontracts promise to pay out more than the client pays in. This shows the moment work is
+            awarded, before any of it is measured.
+          </div>
+        </div>
+      )}
+
+      <div className="kpi-row" aria-label="Committed vs incurred">
+        <Kpi label="Committed cost" value={money(m.committedCost.total)} sub="awarded — payable as work proceeds" />
+        <Kpi label="Incurred cost" value={money(m.incurredCost.total)} sub="measured to date" />
+        <Kpi label="Remaining commitment" value={money(m.remainingCommitment)} sub="committed, not yet incurred" />
+        <Kpi label="Committed margin" value={money(m.committedMargin)} sub={m.committedRevenue > 0 ? `${((m.committedMargin / m.committedRevenue) * 100).toFixed(1)}% at award` : 'at award'} accent={m.committedMargin >= 0} neg={m.committedMargin < 0} />
       </div>
 
       <div className="kpi-row" aria-label="Margin summary">
         <Kpi label="Gross revenue (executed)" value={money(m.grossRevenue)} sub="client side" />
-        <Kpi label="S/C cost" value={money(m.scCost)} sub="sublet contractors" />
-        <Kpi label="L/O cost" value={money(m.loCost)} sub="labour-only" />
-        <Kpi label="Gross margin" value={money(m.grossMargin)} sub={`${m.marginPct}% on revenue`} accent={m.grossMargin >= 0} neg={m.grossMargin < 0} />
+        <Kpi label="Incurred S/C cost" value={money(m.incurredCost.sublet)} sub={`of ${money(m.committedCost.sublet)} committed`} />
+        <Kpi label="Incurred L/O cost" value={money(m.incurredCost.labour)} sub={`of ${money(m.committedCost.labour)} committed`} />
+        <Kpi label="Gross margin (realised)" value={money(m.grossMargin)} sub={`${m.marginPct}% on revenue`} accent={m.grossMargin >= 0} neg={m.grossMargin < 0} />
         <Kpi label="Net working capital" value={money(m.netWorkingCapital)} sub={m.netWorkingCapital >= 0 ? 'Positive' : 'Negative'} />
       </div>
 

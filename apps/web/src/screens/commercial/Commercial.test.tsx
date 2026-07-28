@@ -253,7 +253,10 @@ describe('Phase 3 — Commercial tab', () => {
     await user.click(screen.getByRole('tab', { name: 'Margin analytics' }));
     expect(await screen.findByRole('heading', { name: 'Margin Analytics' })).toBeInTheDocument();
     expect(screen.getByText('Gross revenue (executed)')).toBeInTheDocument();
-    expect(screen.getByText('Gross margin')).toBeInTheDocument();
+    expect(screen.getByText('Gross margin (realised)')).toBeInTheDocument();
+    // Committed vs incurred is the distinction cost control turns on.
+    expect(screen.getByText('Committed cost')).toBeInTheDocument();
+    expect(screen.getByText('Incurred cost')).toBeInTheDocument();
     expect(screen.getByText(/Items at margin risk/)).toBeInTheDocument();
   });
 

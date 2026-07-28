@@ -4,6 +4,7 @@ import { formatMoney } from '../domain/money';
 import { contractBoqView } from '../domain/contractBoqView';
 import { RAR_STATUS_LABEL } from '../domain/rar';
 import { AuditTrail } from './AuditTrail';
+import { DetailDrawer, ProgressMeter, type DrawerTab } from './DetailDrawer';
 import type { Contract, BoqItem, ProgressUpdate, Rar, Subcontractor } from '../data/types';
 
 const STATUS_LABEL: Record<Contract['status'], string> = {
@@ -47,60 +48,61 @@ export function ContractDetailModal({ projectId, contract, onClose }: { projectI
   const retentionPct = Math.min(5, contract.retentionPct ?? 5);
   const retentionHeld = myRars.reduce((a, r) => a + r.gross, 0) * retentionPct / 100;
 
-  return (
-    <div className="modal-backdrop" onClick={onClose} role="dialog" aria-label={`${contract.contractNo} detail`} aria-modal="true">
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <div className="section-head">
-          <h3>{contract.contractNo} · {contract.title}</h3>
-          <span className={`status-pill st-${contract.status}`}>{STATUS_LABEL[contract.status]}</span>
-        </div>
-        <p className="muted small" style={{ marginTop: 0 }}>
-          {subName} · scope {contract.scopeBills.length ? `bills ${contract.scopeBills.join(', ')}` : 'full BOQ'} · retention {retentionPct}%
-        </p>
+  const pillClass = contract.status === 'closed' || contract.status === 'completed' ? 'st-completed'
+    : contract.status === 'draft' ? 'st-draft' : 'st-awarded';
+  const billedPct = view.subletValue > 0 ? (billedTotal / view.subletValue) * 100 : 0;
 
-        <div className="kpi-grid">
-          <div className="kpi"><div className="kpi-label">Contract value</div><div className="kpi-value">{formatMoney(view.subletValue)}</div><div className="muted small">{view.lineBased ? 'sum of sublet lines' : 'as recorded'}</div></div>
-          {view.lineBased && <div className="kpi"><div className="kpi-label">Revenue at client rates</div><div className="kpi-value">{formatMoney(view.clientValue)}</div><div className="muted small">same quantities, BOQ rates</div></div>}
-          {view.lineBased && <div className="kpi"><div className="kpi-label">Margin</div><div className={`kpi-value ${view.margin < 0 ? 'neg' : ''}`}>{formatMoney(view.margin)}</div><div className="muted small">{view.marginPct.toFixed(2)}%</div></div>}
-          <div className="kpi"><div className="kpi-label">Executed</div><div className="kpi-value">{formatMoney(executedTotal)}</div><div className="muted small">at sublet rates</div></div>
-          <div className="kpi"><div className="kpi-label">RAR-billed</div><div className="kpi-value">{formatMoney(billedTotal)}</div></div>
-          <div className="kpi"><div className="kpi-label">Balance to bill</div><div className="kpi-value">{formatMoney(view.balanceTotal)}</div></div>
-          <div className="kpi"><div className="kpi-label">Retention held</div><div className="kpi-value">{formatMoney(retentionHeld)}</div></div>
-        </div>
+  const hero = (
+    <div className="kpi-row">
+      <div className="kpi-card"><div className="kpi-label">Contract value</div>
+        <div className="kpi-value">{formatMoney(view.subletValue)}</div>
+        <div className="muted small">{view.lineBased ? 'sum of sublet lines' : 'as recorded'}</div></div>
+      {view.lineBased && <div className="kpi-card"><div className="kpi-label">Revenue at client rates</div>
+        <div className="kpi-value">{formatMoney(view.clientValue)}</div>
+        <div className="muted small">same quantities, BOQ rates</div></div>}
+      {view.lineBased && <div className="kpi-card"><div className="kpi-label">Margin</div>
+        <div className={`kpi-value ${view.margin < 0 ? 'neg' : ''}`}>{formatMoney(view.margin)}</div>
+        <div className="muted small">{view.marginPct.toFixed(2)}%</div></div>}
+      <div className="kpi-card"><div className="kpi-label">Billed to date</div>
+        <div className="kpi-value">{formatMoney(billedTotal)}</div>
+        <div style={{ marginTop: 6 }}><ProgressMeter pct={billedPct} tone={billedPct > 100 ? 'danger' : 'good'} /></div></div>
+      <div className="kpi-card"><div className="kpi-label">Retention held</div>
+        <div className="kpi-value">{formatMoney(retentionHeld)}</div>
+        <div className="muted small">{retentionPct}% of gross</div></div>
+    </div>
+  );
 
-        {view.storedValueMismatch && (
-          <div className="card" style={{ borderColor: 'var(--warning)', marginTop: 8 }} aria-label="Contract value mismatch">
-            <strong className="neg">The stored contract value does not match its lines.</strong>
-            <div className="muted small">
-              Recorded {formatMoney(view.storedValueMismatch.stored)}, but the lines sum to{' '}
-              {formatMoney(view.storedValueMismatch.derived)}. This happens when a contract was written by an earlier build
-              that priced lines at the client rate. Revise the BOQ to correct it — the figures above use the lines.
-            </div>
+  const boqTab = (
+    <>
+      {view.storedValueMismatch && (
+        <div className="card" style={{ borderColor: 'var(--warning)', marginBottom: 12 }} aria-label="Contract value mismatch">
+          <strong className="neg">The stored contract value does not match its lines.</strong>
+          <div className="muted small">
+            Recorded {formatMoney(view.storedValueMismatch.stored)}, but the lines sum to{' '}
+            {formatMoney(view.storedValueMismatch.derived)}. Revise the BOQ to correct it — the figures here use the lines.
           </div>
-        )}
-
-        <div className="section-head" style={{ marginTop: 8 }}>
-          <h3>Contractor Bill of Quantities</h3>
-          <span className="muted small">
-            {view.lineBased
-              ? `${rows.length} sublet line(s) · quantities and rates as awarded to this subcontractor`
-              : 'legacy contract — no sublet BOQ recorded, showing the scope bills at client rates'}
-          </span>
         </div>
-        <div className="table-scroll">
-          <table className="data-table measure-table" aria-label="Contractor BOQ">
-            <thead><tr>
-              <th>Code</th><th>Description</th>
-              <th className="num">{view.lineBased ? 'Sublet qty' : 'Qty'}</th><th>Unit</th>
-              <th className="num">{view.lineBased ? 'Sublet rate' : 'Rate'}</th>
-              <th className="num">{view.lineBased ? 'Sublet amount' : 'BOQ amount'}</th>
-              {view.lineBased && <th className="num muted" title="The client BOQ rate, for reference">Client rate</th>}
-              {view.lineBased && <th className="num">Margin</th>}
-              <th className="num" title={view.lineBased ? 'Executed quantity valued at the sublet rate' : 'Executed at BOQ rates'}>Executed</th>
-              <th className="num">RAR-billed</th><th className="num">Balance</th><th className="num">%</th>
-            </tr></thead>
-            <tbody>
-              {rows.map((r) => (
+      )}
+      <div className="muted small" style={{ marginBottom: 8 }}>
+        {view.lineBased
+          ? `${rows.length} sublet line(s) · quantities and rates as awarded to this subcontractor`
+          : 'legacy contract — no sublet BOQ recorded, showing the scope bills at client rates'}
+      </div>
+      <div className="table-scroll">
+        <table className="data-table measure-table" aria-label="Contractor BOQ">
+          <thead><tr>
+            <th>Code</th><th>Description</th>
+            <th className="num">{view.lineBased ? 'Sublet qty' : 'Qty'}</th><th>Unit</th>
+            <th className="num">{view.lineBased ? 'Sublet rate' : 'Rate'}</th>
+            <th className="num">{view.lineBased ? 'Sublet amount' : 'BOQ amount'}</th>
+            {view.lineBased && <th className="num muted" title="The client BOQ rate, for reference">Client rate</th>}
+            {view.lineBased && <th className="num">Margin</th>}
+            <th className="num">Executed</th><th className="num">RAR-billed</th><th style={{ minWidth: 90 }}>Progress</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((r) => {
+              const exec = Math.min(execByItem.get(r.boqItemId) ?? 0, r.subletQty) * r.subletRate;
+              return (
                 <tr key={r.boqItemId} className={r.billed > 0 ? 'row-billed' : undefined}>
                   <td className="mono small">{r.code}</td>
                   <td>{r.description}<div className="muted small">Bill {r.billNo} · {r.billName}</div></td>
@@ -109,46 +111,57 @@ export function ContractDetailModal({ projectId, contract, onClose }: { projectI
                   <td className="num small">{r.subletRate.toLocaleString('en-PK', { maximumFractionDigits: 2 })}</td>
                   <td className="num">{formatMoney(r.subletAmount)}</td>
                   {view.lineBased && <td className="num small muted">{r.clientRate.toLocaleString('en-PK', { maximumFractionDigits: 2 })}</td>}
-                  {view.lineBased && <td className={`num small ${r.negative ? 'neg' : ''}`}>{formatMoney(r.margin)}{r.negative ? ' ⚠' : ''}</td>}
-                  <td className="num small">{formatMoney(Math.min(execByItem.get(r.boqItemId) ?? 0, r.subletQty) * r.subletRate)}</td>
+                  {view.lineBased && <td className={`num small ${r.negative ? 'neg' : ''}`}>{formatMoney(r.margin)}{r.negative ? ' \u26a0' : ''}</td>}
+                  <td className="num small">{formatMoney(exec)}</td>
                   <td className="num">{formatMoney(r.billed)}</td>
-                  <td className="num small">{formatMoney(r.balance)}</td>
-                  <td className="num small">{r.pct.toFixed(0)}%</td>
+                  <td><ProgressMeter pct={r.pct} tone={r.pct > 100 ? 'danger' : r.pct > 0 ? 'good' : 'primary'} /></td>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot><tr>
-              <td colSpan={5}>Totals ({rows.length} items)</td>
-              <td className="num">{formatMoney(view.subletValue)}</td>
-              {view.lineBased && <td className="num muted small">at client rates</td>}
-              {view.lineBased && <td className={`num ${view.margin < 0 ? 'neg' : ''}`}>{formatMoney(view.margin)}</td>}
-              <td className="num">{formatMoney(executedTotal)}</td>
-              <td className="num">{formatMoney(billedTotal)}</td>
-              <td className="num">{formatMoney(view.balanceTotal)}</td>
-              <td className="num">{view.subletValue > 0 ? ((billedTotal / view.subletValue) * 100).toFixed(0) : '0'}%</td>
-            </tr></tfoot>
-          </table>
-        </div>
-
-        <h3 style={{ marginTop: 14 }}>RARs under this contract</h3>
-        {myRars.length === 0 ? (
-          <p className="muted small">No RARs billed under this contract yet.</p>
-        ) : (
-          <table className="data-table" aria-label="Contract RARs">
-            <thead><tr><th>RAR</th><th>Period</th><th>Status</th><th className="num">Gross</th><th className="num">Net payable</th></tr></thead>
-            <tbody>
-              {myRars.map((r) => (
-                <tr key={r.id}><td className="mono small">{r.rarNo}</td><td className="small">{r.period}</td>
-                  <td className="small">{RAR_STATUS_LABEL[r.status]}</td>
-                  <td className="num">{formatMoney(r.gross)}</td><td className="num">{formatMoney(r.netPayable)}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        <div style={{ marginTop: 14 }}><AuditTrail entity="Contract" reference={contract.contractNo} /></div>
-        <div className="modal-actions"><button className="btn" onClick={onClose}>Close</button></div>
+              );
+            })}
+          </tbody>
+          <tfoot><tr>
+            <td colSpan={5}>Totals ({rows.length} items)</td>
+            <td className="num">{formatMoney(view.subletValue)}</td>
+            {view.lineBased && <td className="num muted small">at client rates</td>}
+            {view.lineBased && <td className={`num ${view.margin < 0 ? 'neg' : ''}`}>{formatMoney(view.margin)}</td>}
+            <td className="num">{formatMoney(executedTotal)}</td>
+            <td className="num">{formatMoney(billedTotal)}</td>
+            <td><ProgressMeter pct={billedPct} tone={billedPct > 100 ? 'danger' : 'good'} /></td>
+          </tr></tfoot>
+        </table>
       </div>
-    </div>
+    </>
+  );
+
+  const rarsTab = (
+    myRars.length === 0 ? <p className="muted small">No RARs billed under this contract yet.</p> : (
+      <table className="data-table" aria-label="Contract RARs">
+        <thead><tr><th>RAR</th><th>Period</th><th>Status</th><th className="num">Gross</th><th className="num">Net payable</th></tr></thead>
+        <tbody>
+          {myRars.map((r) => (
+            <tr key={r.id}><td className="mono small">{r.rarNo}</td><td className="small">{r.period}</td>
+              <td className="small">{RAR_STATUS_LABEL[r.status]}</td>
+              <td className="num">{formatMoney(r.gross)}</td><td className="num">{formatMoney(r.netPayable)}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    )
+  );
+
+  const tabs: DrawerTab[] = [
+    { id: 'boq', label: 'Bill of Quantities', badge: rows.length, content: boqTab },
+    { id: 'rars', label: 'RARs', badge: myRars.length, content: rarsTab },
+    { id: 'audit', label: 'History', content: <AuditTrail entity="Contract" reference={contract.contractNo} /> },
+  ];
+
+  return (
+    <DetailDrawer
+      title={contract.contractNo}
+      subtitle={`${contract.title} · ${subName} · scope ${contract.scopeBills.length ? `bills ${contract.scopeBills.join(', ')}` : 'full BOQ'} · retention ${retentionPct}%`}
+      pill={<span className={`status-pill ${pillClass}`}>{STATUS_LABEL[contract.status]}</span>}
+      hero={hero}
+      tabs={tabs}
+      onClose={onClose}
+    />
   );
 }

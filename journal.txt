@@ -2578,3 +2578,60 @@ NLC Engineer Command Centre — work journal
 - Gate (chunked): domain+data 67 files/494, screens+components 13/152, root 17/95
   + 16/85 = 114 files, 843 tests, all passing. Server 9; typecheck clean;
   local + api builds green.
+
+2026-07-29 — #3: the WBS mapping gap (mostly plumbing, one real workflow add)
+- Investigated before building, and most of #3 already existed: MappingTab has a
+  suggestion engine (suggestAllocations/matchScore), a review queue with Confirm
+  all / Reject all, value-coverage bar, and an Unmapped filter. So the bulk-map
+  workflow was largely built — I did NOT duplicate it.
+- The REAL gaps found:
+  1. The unmapped-BOQ alert said "resolve in Mapping" but carried sub:\"planner\",
+     and CommercialAlerts.onNavigate only switches COMMERCIAL sub-tabs — Mapping
+     is a TOP-LEVEL project tab. So clicking the alert went to the wrong screen
+     (Distribution Planner) and could never reach Mapping. Fixed: alert now
+     targets sub:\"mapping\"; CommercialTab takes an onNavigateTab prop and routes
+     cross-tab targets up to ProjectView (URL navigate /node/:id/mapping), while
+     sub-tab targets stay local.
+  2. Clearing a large BOQ was still slow: the suggester only proposes matches
+     above threshold, and everything else had to be mapped one item at a time.
+     Added a bulk control — filter to a bill, pick one activity, and every
+     UNMAPPED item shown is confirmed to it in a single action (existing mappings
+     left untouched). On a road BOQ a whole bill usually maps to one activity, so
+     this is the fast path to 100% coverage that unblocks EVM and the S-curve.
+- Tests: domain/unmappedAlert.test.ts (3) — alert routes to mapping not planner,
+  counts only unconfirmed items, clears at full coverage. MappingAllocation.test
+  +1 — bulk map-to-activity confirms the filtered unmapped items and coverage does
+  not regress.
+- All three of the user's original items are now addressed: #1 committed vs
+  incurred (2026-07-28), #2 commitment-vs-plan + terminate (2026-07-28 b), #3 WBS
+  mapping (this).
+- Gate (chunked): domain+data 68 files/497, screens+components 13/153, root 17/95
+  + 16/85 = 115 files, 850 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+
+2026-07-29 (b) — Determine: completing a contract is now a deliberate act
+- Closes the #2 loose end. The register Advance button walked the status flow
+  blindly, so in_progress → completed was just the next arrow — a contract could
+  be marked complete with unexecuted quantity and no check.
+- A contract now ends two ways, both deliberate: TERMINATE (early, built earlier)
+  or DETERMINE (complete normally). Advance handles only the mechanical pre-
+  completion steps and is guarded so it can never step INTO completed.
+- NEW domain checkDetermination(contract, executedByItem) in contractTermination.ts:
+  complete only when every awarded qty is executed; reports awarded/executed/
+  outstanding value and per-line shortfalls; over-measurement counts as complete
+  (capped at awarded). 3 tests.
+- provider.determineContract(projectId, id, omitOutstanding=false): moves to
+  completed with a completionDate. REFUSES a contract with outstanding qty unless
+  omitOutstanding is set, which closes it out at the executed balance (shrinks
+  lines + value to what was built and releases the rest to the plan, like a
+  termination but ended by agreement as complete). Re-syncs the plan, audits
+  determine. Api stub POST /contracts/:id/determine. 6 provider tests.
+- Register UI: in_progress contracts show Determine (not a blind Advance);
+  awarded shows Advance →; completed shows Close. Determine opens a modal that
+  states whether the contract is fully executed or how much is outstanding, and
+  offers close-out-at-executed when it is not.
+- Both ways a contract can end are now explicit and checked — the plan/commitment
+  lifecycle from #2 is complete.
+- Gate (chunked): domain+data 68 files/506, screens+components 13/153, root 17/95
+  + 16/85 = 115 files, 859 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.

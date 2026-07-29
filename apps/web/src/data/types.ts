@@ -212,7 +212,7 @@ export interface Variation {
   appliedToBoq?: boolean;    // set when an approved VO has revised the BOQ
 }
 
-export type ContractStatus = 'draft' | 'awarded' | 'in_progress' | 'completed' | 'closed';
+export type ContractStatus = 'draft' | 'awarded' | 'in_progress' | 'completed' | 'closed' | 'terminated';
 /** A subcontract package with a unique number; RARs bill against a contract. */
 /** One line of a sublet/labor contract's own BOQ: an agreed quantity of a main
  *  BOQ item at the subcontractor's rate. Σ(qty×rate) is the contract value, and
@@ -244,6 +244,18 @@ export interface Contract {
   retentionPct?: number;
   /** Appointment approval chain (Requirements v2 §4) — present once submitted. */
   chain?: import('../domain/apptchain').ApptChainState;
+  /** Set when the contract was terminated early. Executed quantities stay locked
+   *  to it (work done and payable); unexecuted quantities were released back to
+   *  the plan and may be re-awarded. A terminated contract is never deleted — the
+   *  record of what was built under it must survive. */
+  termination?: {
+    date: string;
+    reason?: string;
+    /** Contract value frozen at the executed quantities (what remains owed). */
+    executedValue: number;
+    /** Value released (unexecuted qty × sublet rate) — re-awardable. */
+    releasedValue: number;
+  };
 }
 
 /**
@@ -1119,6 +1131,9 @@ export interface DataProvider {
   /** Remove a contract from the register. Refuses when RARs are billed against it —
    *  deleting would orphan those payment records. Releases any locked BOQ lines. */
   deleteContract(projectId: string, contractId: string): Promise<Contract[]>;
+  /** End an awarded contract early: executed quantities are retained and locked,
+   *  unexecuted quantities are released back to the plan for re-award. */
+  terminateContract(projectId: string, contractId: string, reason?: string): Promise<Contract>;
   setContractStatus(projectId: string, contractId: string, status: ContractStatus): Promise<void>;
   setContractRetention(projectId: string, contractId: string, retentionPct: number): Promise<void>;
   getCommercialConfig(projectId: string): Promise<CommercialConfig>;

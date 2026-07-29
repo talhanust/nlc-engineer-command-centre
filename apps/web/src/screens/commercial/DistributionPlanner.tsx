@@ -64,6 +64,9 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
     setAllocs([...next]);
   }
   async function patch(a: Allocation, p: Partial<Allocation>) {
+    // A contract-owned allocation is not editable here — the contract is the
+    // source of truth. (The row is read-only in the UI; this guards the handler.)
+    if (a.contractId) { toast({ message: 'This allocation is set by an awarded contract. Revise or terminate the contract to change it.', kind: 'error' }); return; }
     // Over-allocation guard: an item's allocations may never exceed its BOQ qty.
     let next2 = { ...a, ...p };
     if (p.qty !== undefined) {
@@ -81,10 +84,13 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
     setAllocs([...next]);
   }
   async function removeLine(id: string) {
+    const a = allocs.find((x) => x.id === id);
+    if (a?.contractId) { toast({ message: 'This allocation belongs to an awarded contract and cannot be removed from the plan.', kind: 'error' }); return; }
     setAllocs([...(await provider.deleteAllocation(projectId, id))]);
   }
   async function markFilteredSelf() {
     for (const item of filtered) {
+      if (allocs.some((x) => x.boqItemId === item.id && x.contractId)) continue; // don't override a committed item
       for (const a of allocs.filter((x) => x.boqItemId === item.id)) await provider.deleteAllocation(projectId, a.id);
       await provider.upsertAllocation(projectId, { boqItemId: item.id, executionType: 'nlc_direct', qty: item.qty, rate: 0 });
     }
@@ -188,6 +194,22 @@ export function DistributionPlanner({ projectId }: { projectId: string }) {
                               <tbody>
                                 {lines.map((a) => {
                                   const ctr = a.executionType === 'nlc_direct' ? undefined : contractForSub(a.contractorId);
+                                  // An allocation that came FROM a contract is read-only here: the
+                                  // awarded contract is the source of truth. Change it by revising or
+                                  // terminating the contract, not by editing the plan underneath it.
+                                  const owned = !!a.contractId;
+                                  const ownerNo = owned ? (regContracts.find((c) => c.id === a.contractId)?.contractNo ?? 'contract') : '';
+                                  if (owned) return (
+                                    <tr key={a.id} className="alloc-locked">
+                                      <td className="small">{EXECUTION_LABEL[a.executionType]}</td>
+                                      <td className="small">{subs.find((s) => s.id === a.contractorId)?.name ?? '—'}</td>
+                                      <td className="small"><span className="mono">{ownerNo}</span> <span className="lock-chip" title="Set by an awarded contract — edit via the contract">🔒 contract</span></td>
+                                      <td className="num small">{a.qty.toLocaleString('en-PK')}</td>
+                                      <td className="num small">{a.rate.toLocaleString('en-PK', { maximumFractionDigits: 2 })}</td>
+                                      <td className="num">{formatMoney(a.rate * a.qty)}</td>
+                                      <td></td>
+                                    </tr>
+                                  );
                                   return (
                                   <tr key={a.id}>
                                     <td>

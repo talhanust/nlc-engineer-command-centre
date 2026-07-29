@@ -2,17 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { ContractDetailModal } from '../../components/ContractDetailModal';
 import { useData } from '../../data/DataContext';
 import { canDeleteContract, type DeleteContractCheck } from '../../domain/contractDelete';
+import { computeTermination, executedByItem } from '../../domain/contractTermination';
 import { ReviseContractBoq } from './ReviseContractBoq';
 import { useToast } from '../../components/Toast';
 import { formatMoney } from '../../domain/money';
 import { SkeletonRows } from '../../components/Skeleton';
 import { ExportMenu } from '../../components/ExportMenu';
-import type { Contract, ContractStatus, Rar, Subcontractor } from '../../data/types';
+import type { Contract, ContractStatus, ProgressUpdate, Rar, Subcontractor } from '../../data/types';
 import { useRole } from '../../state/Role';
 import { ChainStatus, ChainControls } from '../../components/ApptChainControls';
 
 const STATUS_LABEL: Record<ContractStatus, string> = {
-  draft: 'Draft', awarded: 'Awarded', in_progress: 'In progress', completed: 'Completed', closed: 'Closed',
+  draft: 'Draft', awarded: 'Awarded', in_progress: 'In progress', completed: 'Completed', closed: 'Closed', terminated: 'Terminated',
 };
 const STATUS_FLOW: ContractStatus[] = ['draft', 'awarded', 'in_progress', 'completed', 'closed'];
 const pill = (s: ContractStatus) => (s === 'completed' || s === 'closed' ? 'paid' : s === 'in_progress' ? 'vetted' : 'draft');
@@ -31,15 +32,20 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
   const [value, setValue] = useState('');
   const [retention, setRetention] = useState('5');
   const [rars, setRars] = useState<Rar[]>([]);
+  const [progress, setProgress] = useState<ProgressUpdate[]>([]);
   const [pendingDelete, setPendingDelete] = useState<{ contract: Contract; check: DeleteContractCheck } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [revising, setRevising] = useState<Contract | null>(null);
+  const [pendingTerminate, setPendingTerminate] = useState<Contract | null>(null);
+  const [termReason, setTermReason] = useState('');
+  const [terminating, setTerminating] = useState(false);
 
   async function load() {
-    const [c, s, r] = await Promise.all([
+    const [c, s, r, pr] = await Promise.all([
       provider.listContracts(projectId), provider.listSubcontractors(projectId), provider.listRars(projectId),
+      provider.listProgress(projectId),
     ]);
-    setContracts(c); setSubs(s); setRars(r); setLoading(false);
+    setContracts(c); setSubs(s); setRars(r); setProgress(pr); setLoading(false);
     if (!subId && s[0]) setSubId(s[0].id);
   }
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [provider, projectId]);
@@ -126,6 +132,47 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
           </div>
         </div>
       )}
+      {pendingTerminate && (() => {
+        const exec = executedByItem(progress);
+        const t = computeTermination(pendingTerminate, exec);
+        return (
+          <div className="modal-backdrop" role="dialog" aria-label="Terminate contract" aria-modal="true" onClick={() => { setPendingTerminate(null); setTermReason(''); }}>
+            <div className="modal" style={{ maxWidth: 620 }} onClick={(e) => e.stopPropagation()}>
+              <div className="section-head"><h3>Terminate {pendingTerminate.contractNo}?</h3></div>
+              <p className="muted small" style={{ marginTop: 0 }}>
+                {pendingTerminate.title} · {subName(pendingTerminate.subcontractorId)}
+              </p>
+              <div className="kpi-row" style={{ marginBottom: 10 }}>
+                <div className="kpi-card"><div className="kpi-label">Executed — retained</div><div className="kpi-value">{formatMoney(t.executedValue)}</div><div className="muted small">stays locked to this contract</div></div>
+                <div className="kpi-card"><div className="kpi-label">Released — re-awardable</div><div className="kpi-value">{formatMoney(t.releasedValue)}</div><div className="muted small">unexecuted, returns to the plan</div></div>
+              </div>
+              <p className="small">
+                Executed quantities have been measured and are payable — they remain on this contract. The unexecuted
+                balance is released and can be awarded to another contractor. This cannot be undone.
+              </p>
+              <input className="input" style={{ width: '100%', marginBottom: 10 }} placeholder="Reason for termination (recorded in the audit trail)"
+                value={termReason} onChange={(e) => setTermReason(e.target.value)} aria-label="Termination reason" />
+              <div className="create-row" style={{ justifyContent: 'flex-end' }}>
+                <button className="btn-ghost" onClick={() => { setPendingTerminate(null); setTermReason(''); }}>Cancel</button>
+                <button className="btn btn-danger" disabled={terminating} aria-label={`Confirm terminate ${pendingTerminate.contractNo}`}
+                  onClick={async () => {
+                    setTerminating(true);
+                    try {
+                      await provider.terminateContract(projectId, pendingTerminate.id, termReason.trim() || undefined);
+                      setPendingTerminate(null); setTermReason('');
+                      await load();
+                      toast({ message: `${pendingTerminate.contractNo} terminated · ${formatMoney(t.releasedValue)} released`, kind: 'success' });
+                    } catch (e) {
+                      toast({ message: e instanceof Error ? e.message : 'Could not terminate.', kind: 'error' });
+                    } finally { setTerminating(false); }
+                  }}>
+                  {terminating ? 'Terminating…' : 'Terminate contract'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       <div className="section-head">
         <div>
           <h3>Contracts Register</h3>
@@ -185,8 +232,14 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
                     <button className="btn-ghost btn-mini" style={{ marginLeft: 6 }} aria-label={`Revise BOQ ${c.contractNo}`}
                       onClick={() => setRevising(c)}>Revise BOQ</button>
                   )}
-                  <button className="btn-ghost btn-mini" style={{ marginLeft: 6 }} aria-label={`Delete ${c.contractNo}`}
-                    onClick={() => setPendingDelete({ contract: c, check: canDeleteContract(c, rars) })}>Delete</button>
+                  {c.status === 'draft' && (
+                    <button className="btn-ghost btn-mini" style={{ marginLeft: 6 }} aria-label={`Delete ${c.contractNo}`}
+                      onClick={() => setPendingDelete({ contract: c, check: canDeleteContract(c, rars) })}>Delete</button>
+                  )}
+                  {(c.status === 'awarded' || c.status === 'in_progress' || c.status === 'completed') && (
+                    <button className="btn-ghost btn-mini" style={{ marginLeft: 6 }} aria-label={`Terminate ${c.contractNo}`}
+                      onClick={() => setPendingTerminate(c)}>Terminate</button>
+                  )}
                   {!c.chain && c.status === 'draft' && (
                     <button className="btn btn-mini" style={{ marginLeft: 6 }} aria-label={`Submit ${c.contractNo} for approval`}
                       onClick={async () => { await provider.submitContractApproval(projectId, c.id, user?.name ?? role); await load(); toast({ message: 'Submitted for approval', kind: 'success' }); }}>

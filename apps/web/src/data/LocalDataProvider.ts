@@ -26,6 +26,7 @@ import type { BaselineWorkflowState } from '../domain/schedulebaseline';
 import { ROLE_LABEL } from '../domain/chains';
 import { applyRarAction } from '../domain/rar';
 import { canDeleteContract } from '../domain/contractDelete';
+import { computeTermination, executedByItem } from '../domain/contractTermination';
 import { synthSeries } from '../domain/scurve';
 import { DEMAND_CHAIN, checkAdvance } from '../domain/chains';
 
@@ -948,6 +949,37 @@ export class LocalDataProvider implements DataProvider {
     audit(projectId, 'delete', 'Contract', c.contractNo,
       `${c.title} · PKR ${Math.round(c.value).toLocaleString('en-PK')} · ${c.status}${check.releasedLines ? ` · released ${check.releasedLines} BOQ line(s)` : ''}`);
     return next;
+  }
+  async terminateContract(projectId: string, contractId: string, reason?: string): Promise<Contract> {
+    const all = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? [])));
+    const c = all.find((x) => x.id === contractId);
+    if (!c) throw new Error('Contract not found.');
+    if (c.status === 'draft') throw new Error('A draft contract is deleted, not terminated.');
+    if (c.status === 'terminated' || c.status === 'closed') throw new Error('This contract has already ended.');
+
+    // Executed = validated progress on this contract's items. Only work actually
+    // measured stays locked; the rest is released for re-award.
+    const progress = readJson<ProgressUpdate[]>(progressKey(projectId), () => ((gen(projectId)?.progress ?? [])));
+    const exec = executedByItem(progress);
+    const t = computeTermination(c, exec);
+
+    c.lines = t.keptLines;                 // contract shrinks to what was built
+    c.value = t.executedValue;             // …and so does its value
+    c.status = 'terminated';
+    c.termination = {
+      date: new Date().toISOString().slice(0, 10),
+      reason,
+      executedValue: t.executedValue,
+      releasedValue: t.releasedValue,
+    };
+    writeJson(contractsRegKey(projectId), all);
+    // Re-sync the plan: the kept (executed) lines stay allocated to this contract;
+    // the released quantities disappear from its allocations and free up in the
+    // planner because itemLocks now sees a smaller committed quantity.
+    this.syncContractPlan(projectId, c);
+    audit(projectId, 'terminate', 'Contract', c.contractNo,
+      `executed PKR ${Math.round(t.executedValue).toLocaleString('en-PK')} retained · released PKR ${Math.round(t.releasedValue).toLocaleString('en-PK')} for re-award${reason ? ` · ${reason}` : ''}`);
+    return c;
   }
   async setContractStatus(projectId: string, contractId: string, status: Contract['status']): Promise<void> {
     const all = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? [])));

@@ -58,15 +58,13 @@ describe('Deleting a contract from the register', () => {
     expect(screen.getByText(contractNo)).toBeInTheDocument(); // still there
   });
 
-  it('warns that an awarded contract records a real commitment, but still allows it', async () => {
+  it('refuses to DELETE an awarded contract — it must be terminated instead', async () => {
     const { provider, contractId, contractNo } = await seedCommercial('proj-f14f15', { lines: 1 });
     await provider.setContractStatus('proj-f14f15', contractId, 'awarded');
-    const user = await openRegister();
-
-    await user.click(screen.getByRole('button', { name: `Delete ${contractNo}` }));
-    const dialog = await screen.findByRole('dialog', { name: 'Delete contract' });
-    expect(within(dialog).getByLabelText('Deletion consequences').textContent).toMatch(/awarded/);
-    expect(within(dialog).getByRole('button', { name: `Confirm delete ${contractNo}` })).toBeEnabled();
+    // The provider is the source of truth: an awarded contract is never deleted.
+    await expect(provider.deleteContract('proj-f14f15', contractId)).rejects.toThrow(/terminate/i);
+    expect((await provider.listContracts('proj-f14f15')).find((c) => c.id === contractId)).toBeTruthy();
+    void contractNo;
   });
 });
 

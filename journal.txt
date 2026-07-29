@@ -2635,3 +2635,36 @@ NLC Engineer Command Centre — work journal
 - Gate (chunked): domain+data 68 files/506, screens+components 13/153, root 17/95
   + 16/85 = 115 files, 859 tests, all passing. Server 9; typecheck clean;
   local + api builds green.
+
+2026-07-29 (c) — BOQ line types as first-class data
+- The theme running under this whole session: the app treated every BOQ line as a
+  measured item. The Toll Plaza saga (a provisional sum with no code) was a
+  symptom. A real BOQ carries measured items, lump sums, provisional sums,
+  prime-cost sums and dayworks, and they behave differently for payment and EVM.
+- data/types.ts: BoqLineType = measured|lump_sum|provisional|prime_cost|dayworks;
+  BoqItem.lineType?:BoqLineType (absent = measured, fully back-compatible).
+- NEW domain/boqLineType.ts — the single source of truth for behaviour:
+  lineType() (defaults measured), isRemeasured() (measured only), 
+  countsToEarnedValue() (measured + lump_sum; allowances excluded), isAllocable()
+  (measured + lump_sum), earnedValueBase() (splits BOQ into EV-scope vs held-out
+  allowances by value), inferLineType() (PS/PC/DW/LS units + description keywords,
+  else measured). 10 tests. No screen sniffs the unit any more.
+- replaceBoq now infers lineType on import (so a PS row is recognised) and
+  preserves an explicit one across re-import; interface + both providers updated.
+- NEW provider setBoqLineType(projectId, boqItemId, lineType): change one item,
+  audited. Local + API. 3 provider tests incl. the Toll Plaza classifying as
+  provisional on import and thus excluded from EV.
+- unmappedBoqAlert now counts only EV-scope items: a provisional/prime-cost sum
+  has no scheduled physical progress, so flagging it as "unmapped work blocking
+  earned value" was a permanent false alarm. +2 tests.
+- BOQ register UI: a coloured short badge (LS/PS/PC/DW) beside non-measured
+  descriptions with a tooltip noting EV exclusion, and a hover-revealed dropdown
+  to change the type inline. Measured lines stay unbadged to avoid noise.
+- Gate (chunked): domain+data 70 files/521, screens+components 13/153, root 17/95
+  + 16/85 = 116 files, 872 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- STILL OPEN (flagged, not built): remeasurement/RAR and S-curve consumers do not
+  yet READ isRemeasured/countsToEarnedValue to change payment behaviour — the
+  rules exist and EVM/coverage + the alert honour them, but the IPC/RAR
+  measurement path still treats every line the same. That is the natural next
+  step once payment behaviour per type is specified.

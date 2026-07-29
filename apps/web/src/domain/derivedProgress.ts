@@ -1,4 +1,5 @@
 import type { BoqItem, BoqWbsLink, ProgressUpdate, ScheduleActivity } from '../data/types';
+import { countsToEarnedValue } from './boqLineType';
 import { linksByItem, effectiveWeight } from './mapping';
 import { cumulativeExecuted } from './progress';
 import type { Alert } from './alerts';
@@ -90,7 +91,10 @@ export function divergenceAlerts(rows: ActivityDerivedRow[], tolerancePct: numbe
 /** Unmapped-BOQ alert (req 3i(1)) — raised while any BOQ value has no confirmed WBS link. */
 export function unmappedBoqAlert(items: BoqItem[], links: BoqWbsLink[]): Alert | null {
   const confirmed = new Set(links.filter((l) => l.confidence === 'confirmed').map((l) => l.boqItemId));
-  const unmapped = items.filter((i) => !confirmed.has(i.id));
+  // Only lines that DRIVE earned value need a WBS link. A provisional or prime-
+  // cost sum is an allowance with no scheduled physical progress, so it is not
+  // "unmapped work" — flagging it would be a permanent false alarm.
+  const unmapped = items.filter((i) => countsToEarnedValue(i) && !confirmed.has(i.id));
   if (unmapped.length === 0) return null;
   const value = unmapped.reduce((s, i) => s + i.amount, 0);
   return {

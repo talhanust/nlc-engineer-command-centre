@@ -32,3 +32,25 @@ describe('unmappedBoqAlert', () => {
     expect(unmappedBoqAlert(items, links)).toBeNull();
   });
 });
+
+describe('unmappedBoqAlert — allowance lines are not "unmapped work"', () => {
+  const typed = (id: string, amount: number, lineType?: BoqItem['lineType']): BoqItem => ({
+    id, projectId: 'p', billNo: '1', billName: 'B', section: '', code: id,
+    description: id, unit: 'CM', qty: 1, rate: amount, amount, lineType,
+  } as BoqItem);
+
+  it('excludes a provisional sum from the unmapped count', () => {
+    // One measured item mapped, one provisional sum unmapped → nothing to flag.
+    const items = [typed('m1', 1000), typed('ps1', 176_000_000, 'provisional')];
+    const links = [link('m1', 'confirmed')];
+    expect(unmappedBoqAlert(items, links)).toBeNull();
+  });
+
+  it('still flags an unmapped MEASURED item, ignoring the allowance value', () => {
+    const items = [typed('m1', 1000), typed('ps1', 176_000_000, 'provisional')];
+    const a = unmappedBoqAlert(items, [])!;
+    expect(a.title).toMatch(/1 BOQ item unmapped/);
+    expect(a.detail).toMatch(/1,000/);           // only the measured value
+    expect(a.detail).not.toMatch(/176,000,000/); // the PS is not counted
+  });
+});

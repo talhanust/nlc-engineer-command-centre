@@ -8,7 +8,7 @@ import { DetailDrawer, ProgressMeter, type DrawerTab } from './DetailDrawer';
 import type { Contract, BoqItem, ProgressUpdate, Rar, Subcontractor } from '../data/types';
 
 const STATUS_LABEL: Record<Contract['status'], string> = {
-  draft: 'Draft', awarded: 'Awarded', in_progress: 'In progress', completed: 'Completed', closed: 'Closed',
+  draft: 'Draft', awarded: 'Awarded', in_progress: 'In progress', completed: 'Completed', closed: 'Closed', terminated: 'Terminated',
 };
 
 export function ContractDetailModal({ projectId, contract, onClose }: { projectId: string; contract: Contract; onClose: () => void }) {

@@ -2536,3 +2536,45 @@ NLC Engineer Command Centre — work journal
 - Gate (chunked): domain+data 65 files/479+9, screens+components 13/152, root
   17/95 + 16/85 = 112 files, 820 tests, all passing. Server 9; typecheck clean;
   local + api builds green.
+
+2026-07-28 (b) — #2: commitment vs plan, with terminate-not-delete
+- User answers that shaped the model:
+  1. An awarded contract is NEVER deleted — it is determined (completed) or
+     TERMINATED (ended early). On termination executed quantities stay locked to
+     it; unexecuted quantities release for re-award.
+  2. While a contract owns an item, the planner is READ-ONLY for it (contract is
+     source of truth).
+  3. One BOQ item can be split across several contracts — ownership is per
+     QUANTITY, not per item. itemLocks already summed qty across contracts and
+     computed unallocatedQty, so the split model was already present.
+- ContractStatus gained "terminated"; Contract gained a termination record
+  {date, reason, executedValue, releasedValue}.
+- NEW domain/contractTermination.ts: computeTermination(contract, executedByItem)
+  keeps min(executed, awarded) per line, releases the rest, shrinks the contract's
+  lines + value to what was built, reports executed/released value. executedByItem
+  sums only VALIDATED progress — draft measurements do not lock. 6 tests.
+- provider.terminateContract(): rewrites lines to executed, value to executedValue,
+  status terminated, then syncContractPlan so released qty frees up in the planner
+  (itemLocks now sees a smaller committed qty). Keeps the contract in the register.
+  Api provider stubs POST /contracts/:id/terminate.
+- canDeleteContract now HARD-BLOCKS any non-draft: an awarded contract is
+  terminated, not deleted. Draft deletion (incl. the RAR-on-draft block) unchanged.
+- Register UI: Delete shown only for drafts; Terminate for awarded/in-progress/
+  completed, opening a preview modal (executed retained vs released re-awardable,
+  reason field) before confirming.
+- Distribution planner: a contract-owned allocation (contractId set) renders as a
+  READ-ONLY row with a 🔒 contract chip naming the owner; patch/removeLine refuse
+  to mutate it and Mark-filtered-100%-Self skips committed items. The contract is
+  the source of truth; the plan underneath it is not editable.
+- Tests: domain contractTermination 6; data contractTerminate 9 (award→execute
+  400→terminate→600 releases→re-award to a 2nd contractor; nothing-executed full
+  release; audit; refuse re-terminate; awarded cannot be deleted → directs to
+  terminate; draft still deletable) + read-only ownership tag. Obsolete "awarded
+  contract still deletable" tests (domain + screen) rewritten to assert the block.
+- NOTE: #2 as delivered covers the commitment→plan direction and one-directional
+  ownership. A soft pre-award plan that a contract SUPERSEDES on award (and the
+  determine/close lifecycle) remains partially modelled — determine is still the
+  generic Advance flow, not yet a distinct action. Flagged for follow-up.
+- Gate (chunked): domain+data 67 files/494, screens+components 13/152, root 17/95
+  + 16/85 = 114 files, 843 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.

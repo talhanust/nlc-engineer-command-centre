@@ -97,7 +97,7 @@ export function unmappedBoqAlert(items: BoqItem[], links: BoqWbsLink[]): Alert |
     id: 'um-boq',
     severity: 'warning',
     title: `${unmapped.length} BOQ item${unmapped.length === 1 ? '' : 's'} unmapped to WBS`,
-    detail: `PKR ${Math.round(value).toLocaleString('en-PK')} of BOQ value not reflected in schedule progress — resolve in Mapping`,
-    sub: 'planner',
+    detail: `PKR ${Math.round(value).toLocaleString('en-PK')} of BOQ value not reflected in schedule progress — open Mapping to resolve`,
+    sub: 'mapping',
   };
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Contract, ProgressUpdate } from '../data/types';
-import { computeTermination, executedByItem } from './contractTermination';
+import { computeTermination, executedByItem, checkDetermination } from './contractTermination';
 
 const contract = (lines: Array<[string, number, number]>): Contract => ({
   id: 'c1', projectId: 'p', contractNo: 'NLC/X/SC-01', title: 'T', subcontractorId: 's1',
@@ -61,5 +61,37 @@ describe('executedByItem — only validated work locks', () => {
   it('sums validated progress and ignores drafts', () => {
     const m = executedByItem([prog('i1', 300), prog('i1', 100), prog('i1', 999, 'draft')]);
     expect(m.get('i1')).toBe(400); // drafts excluded
+  });
+});
+
+describe('checkDetermination — completing a contract normally', () => {
+  const c = (lines: Array<[string, number, number]>): Contract => ({
+    id: 'c1', projectId: 'p', contractNo: 'NLC/X/SC-01', title: 'T', subcontractorId: 's1',
+    scopeBills: ['1'], status: 'in_progress', kind: 'sublet',
+    value: lines.reduce((s, [, q, r]) => s + q * r, 0),
+    lines: lines.map(([boqItemId, qty, rate]) => ({ boqItemId, qty, rate })),
+  });
+
+  it('is complete when every awarded quantity is executed', () => {
+    const d = checkDetermination(c([['i1', 1000, 90], ['i2', 500, 200]]),
+      new Map([['i1', 1000], ['i2', 500]]));
+    expect(d.complete).toBe(true);
+    expect(d.outstanding).toHaveLength(0);
+    expect(d.executedValue).toBe(d.awardedValue);
+    expect(d.outstandingValue).toBe(0);
+  });
+
+  it('is NOT complete while any quantity is outstanding, and names the shortfall', () => {
+    const d = checkDetermination(c([['i1', 1000, 90], ['i2', 500, 200]]),
+      new Map([['i1', 1000], ['i2', 300]]));
+    expect(d.complete).toBe(false);
+    expect(d.outstanding).toEqual([{ boqItemId: 'i2', awardedQty: 500, executedQty: 300, shortfall: 200 }]);
+    expect(d.outstandingValue).toBe(200 * 200);
+  });
+
+  it('treats over-measurement as complete (capped at awarded)', () => {
+    const d = checkDetermination(c([['i1', 1000, 90]]), new Map([['i1', 1200]]));
+    expect(d.complete).toBe(true);
+    expect(d.executedValue).toBe(1000 * 90);
   });
 });

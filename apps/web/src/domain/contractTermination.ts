@@ -77,3 +77,42 @@ export function executedByItem(progress: ProgressUpdate[]): Map<string, number> 
   }
   return m;
 }
+
+
+export interface DeterminationCheck {
+  /** Fully executed — every awarded quantity has been measured and validated. */
+  complete: boolean;
+  executedValue: number;
+  awardedValue: number;
+  /** Awarded but not yet executed — what stands between here and completion. */
+  outstandingValue: number;
+  /** Per-line shortfalls, so the user can see exactly what is not finished. */
+  outstanding: Array<{ boqItemId: string; awardedQty: number; executedQty: number; shortfall: number }>;
+}
+
+/**
+ * Can this contract be DETERMINED (completed normally)?
+ *
+ * Determination is the clean end: all awarded work done, measured and payable.
+ * A contract with unexecuted quantity is not complete — those quantities are
+ * either still to be built (not done) or were dropped (a variation/termination,
+ * not a determination). So determination reports the outstanding balance and lets
+ * the caller decide, rather than silently marking a half-built contract complete.
+ */
+export function checkDetermination(contract: Contract, executedByItem: Map<string, number>): DeterminationCheck {
+  let executedValue = 0, awardedValue = 0;
+  const outstanding: DeterminationCheck['outstanding'] = [];
+  for (const l of contract.lines ?? []) {
+    const executed = Math.max(0, Math.min(executedByItem.get(l.boqItemId) ?? 0, l.qty));
+    awardedValue += l.qty * l.rate;
+    executedValue += executed * l.rate;
+    const shortfall = l.qty - executed;
+    if (shortfall > 1e-6) outstanding.push({ boqItemId: l.boqItemId, awardedQty: l.qty, executedQty: executed, shortfall });
+  }
+  return {
+    complete: outstanding.length === 0,
+    executedValue, awardedValue,
+    outstandingValue: awardedValue - executedValue,
+    outstanding,
+  };
+}

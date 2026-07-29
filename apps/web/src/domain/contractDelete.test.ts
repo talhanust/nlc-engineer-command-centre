@@ -56,10 +56,10 @@ describe('canDeleteContract', () => {
     expect(r.warnings.join(' ')).toMatch(/released/);
   });
 
-  it('warns that an awarded contract records a real commitment, but still allows it', () => {
+  it('BLOCKS deletion of an awarded contract — it must be terminated, not deleted', () => {
     const r = canDeleteContract(contract({ status: 'awarded', awardDate: '2026-01-01' }), []);
-    expect(r.allowed).toBe(true);
-    expect(r.warnings.join(' ')).toMatch(/awarded/);
+    expect(r.allowed).toBe(false);
+    expect(r.blockedReason).toMatch(/terminate/i);
   });
 
   it('warns that an in-progress contract is not a draft', () => {

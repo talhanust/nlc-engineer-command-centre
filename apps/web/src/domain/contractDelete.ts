@@ -43,10 +43,20 @@ export function canDeleteContract(contract: Contract, rars: Rar[]): DeleteContra
     warnings.push('Its appointment-approval chain will be deleted with it.');
   }
 
+  if (contract.status !== 'draft') {
+    // Only a DRAFT can be deleted. Once awarded, a contract is a commitment that
+    // was actually made; it ends by being determined (completed) or terminated
+    // (ended early, executed work retained) — never erased.
+    return {
+      allowed: false,
+      blockedReason: `This contract is ${contract.status.replace('_', ' ')}, not a draft. An awarded contract is not deleted — determine it (complete) or terminate it (end early, keeping the work done). Use Terminate.`,
+      warnings, rarCount: linked.length, releasedLines: lineCount,
+    };
+  }
   if (linked.length > 0) {
     return {
       allowed: false,
-      blockedReason: `${linked.length} RAR(s) are billed against this contract (${linked.map((r) => r.rarNo).slice(0, 5).join(', ')}${linked.length > 5 ? '…' : ''}). Deleting it would leave those payment records without a contract. Remove the RARs first, or close the contract instead.`,
+      blockedReason: `${linked.length} RAR(s) are billed against this draft (${linked.map((r) => r.rarNo).slice(0, 5).join(', ')}${linked.length > 5 ? '…' : ''}). Remove the RARs first.`,
       warnings, rarCount: linked.length, releasedLines: lineCount,
     };
   }

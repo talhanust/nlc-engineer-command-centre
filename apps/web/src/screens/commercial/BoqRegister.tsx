@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../data/DataContext';
 import { ExportMenu } from '../../components/ExportMenu';
 import { formatMoney } from '../../domain/money';
+import { LINE_TYPE_LABEL, LINE_TYPE_SHORT, lineType, countsToEarnedValue } from '../../domain/boqLineType';
+import type { BoqLineType } from '../../data/types';
 import {
   buildBoqRows, groupBoq, filterBoqRows, boqTotals,
   MODE_LABEL, STATUS_LABEL, type BoqRow,
@@ -23,6 +25,9 @@ export function BoqRegister({ projectId }: { projectId: string }) {
   const [progress, setProgress] = useState<ProgressUpdate[]>([]);
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
   const [importing, setImporting] = useState(false);
+  async function setType(boqItemId: string, lt: BoqLineType) {
+    setItems(await provider.setBoqLineType(projectId, boqItemId, lt));
+  }
   const [baselineLocked, setBaselineLocked] = useState(false);
   const [workflowLocked, setWorkflowLocked] = useState(false);
   const locked = baselineLocked || workflowLocked;
@@ -121,7 +126,7 @@ export function BoqRegister({ projectId }: { projectId: string }) {
                     <td />
                   </tr>
                   {b.sections.map((s) => (
-                    <BoqSection key={`${b.billNo}-${s.section}`} section={s.section} rows={s.rows} />
+                    <BoqSection key={`${b.billNo}-${s.section}`} section={s.section} rows={s.rows} onSetType={setType} />
                   ))}
                 </tbody>
               ))}
@@ -149,7 +154,7 @@ export function BoqRegister({ projectId }: { projectId: string }) {
   );
 }
 
-function BoqSection({ section, rows }: { section: string; rows: BoqRow[] }) {
+function BoqSection({ section, rows, onSetType }: { section: string; rows: BoqRow[]; onSetType: (id: string, lt: BoqLineType) => void }) {
   return (
     <>
       {section !== '—' && (
@@ -158,7 +163,18 @@ function BoqSection({ section, rows }: { section: string; rows: BoqRow[] }) {
       {rows.map((r) => (
         <tr key={r.item.id}>
           <td className="mono small">{r.item.code}</td>
-          <td>{r.item.description}{r.item.revisedByVo && <span className="status-pill st-vetted" style={{ marginLeft: 6, fontSize: 10 }} title={`Revised by approved ${r.item.revisedByVo}`}>{r.item.revisedByVo}</span>}{r.item.section?.startsWith('VO ') && !r.item.revisedByVo && <span className="status-pill st-paid" style={{ marginLeft: 6, fontSize: 10 }} title="Added by variation">added</span>}</td>
+          <td>
+            {r.item.description}
+            {lineType(r.item) !== 'measured' && (
+              <span className={`lt-badge lt-${lineType(r.item)}`} title={`${LINE_TYPE_LABEL[lineType(r.item)]}${countsToEarnedValue(r.item) ? '' : ' — excluded from earned value'}`}>{LINE_TYPE_SHORT[lineType(r.item)]}</span>
+            )}
+            {r.item.revisedByVo && <span className="status-pill st-vetted" style={{ marginLeft: 6, fontSize: 10 }} title={`Revised by approved ${r.item.revisedByVo}`}>{r.item.revisedByVo}</span>}{r.item.section?.startsWith('VO ') && !r.item.revisedByVo && <span className="status-pill st-paid" style={{ marginLeft: 6, fontSize: 10 }} title="Added by variation">added</span>}
+            <select className="lt-select" aria-label={`Line type ${r.item.code}`} value={lineType(r.item)} onChange={(e) => onSetType(r.item.id, e.target.value as BoqLineType)}>
+              {(['measured', 'lump_sum', 'provisional', 'prime_cost', 'dayworks'] as BoqLineType[]).map((t) => (
+                <option key={t} value={t}>{LINE_TYPE_LABEL[t]}</option>
+              ))}
+            </select>
+          </td>
           <td className="small">{r.item.unit}</td>
           <td className="num">{num(r.item.qty)}</td>
           <td className="num">{num(r.item.rate)}</td>

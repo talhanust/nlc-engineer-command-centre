@@ -87,6 +87,23 @@ export interface NodeComment {
 }
 
 // ---- Commercial (Phase 3) ----
+/**
+ * The kind of a BOQ line. A bill of quantities is not homogeneous: most lines are
+ * measured items, but a real BOQ also carries lump sums, provisional sums, prime-
+ * cost sums and dayworks — and they behave differently for payment and progress.
+ * Treating them all as measured items is what makes a provisional sum sit in the
+ * S-curve as if it were progressing earthworks.
+ *
+ *  - measured    remeasured by executed quantity × rate (the default, most lines)
+ *  - lump_sum    a fixed price for defined work; paid by % complete, not remeasured
+ *  - provisional an allowance for work not yet defined; adjusted or omitted on
+ *                instruction, NOT measured against a quantity, and excluded from
+ *                earned-value until it becomes real (converted to measured/lump)
+ *  - prime_cost  a supply allowance to be replaced by an actual cost, like PS
+ *  - dayworks    time-and-materials, recorded as incurred, not from the BOQ qty
+ */
+export type BoqLineType = 'measured' | 'lump_sum' | 'provisional' | 'prime_cost' | 'dayworks';
+
 export interface BoqItem {
   id: string;
   projectId: string;
@@ -99,6 +116,8 @@ export interface BoqItem {
   qty: number;
   rate: number;
   amount: number; // derived = qty * rate
+  /** The kind of line. Absent = 'measured' (back-compatible with all existing data). */
+  lineType?: BoqLineType;
   revisedByVo?: string; // voNo of the approved variation that last revised this item
 }
 
@@ -1074,8 +1093,10 @@ export interface DataProvider {
   listBoq(projectId: string): Promise<BoqItem[]>;
   replaceBoq(
     projectId: string,
-    items: Array<Pick<BoqItem, 'billNo' | 'code' | 'description' | 'unit' | 'qty' | 'rate'>>,
+    items: Array<Pick<BoqItem, 'billNo' | 'code' | 'description' | 'unit' | 'qty' | 'rate' | 'lineType'>>,
   ): Promise<BoqItem[]>;
+  /** Set one BOQ item's line type (measured / lump sum / provisional / …). */
+  setBoqLineType(projectId: string, boqItemId: string, lineType: BoqLineType): Promise<BoqItem[]>;
   getBoqWorkflow(projectId: string): Promise<BoqWorkflowState>;
   advanceBoqWorkflow(projectId: string, role: string): Promise<BoqWorkflowState>;
   raiseBoqVo(projectId: string): Promise<BoqWorkflowState>;

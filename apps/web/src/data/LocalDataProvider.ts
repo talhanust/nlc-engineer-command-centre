@@ -27,6 +27,8 @@ import { ROLE_LABEL } from '../domain/chains';
 import { applyRarAction } from '../domain/rar';
 import { canDeleteContract } from '../domain/contractDelete';
 import { computeTermination, executedByItem, checkDetermination } from '../domain/contractTermination';
+import { inferLineType } from '../domain/boqLineType';
+import type { BoqLineType } from './types';
 import { synthSeries } from '../domain/scurve';
 import { DEMAND_CHAIN, checkAdvance } from '../domain/chains';
 
@@ -390,7 +392,7 @@ export class LocalDataProvider implements DataProvider {
   }
   async replaceBoq(
     projectId: string,
-    items: Array<Pick<BoqItem, 'billNo' | 'code' | 'description' | 'unit' | 'qty' | 'rate'>>,
+    items: Array<Pick<BoqItem, 'billNo' | 'code' | 'description' | 'unit' | 'qty' | 'rate' | 'lineType'>>,
   ): Promise<BoqItem[]> {
     // BOQ item identity must be STABLE across a re-import. Contract lines, RAR
     // lines, allocations and schedule mappings all store boqItemId, so minting ids
@@ -427,6 +429,9 @@ export class LocalDataProvider implements DataProvider {
         qty: r.qty,
         rate: r.rate,
         amount: itemAmount(r.qty, r.rate),
+        // Keep an explicit type; otherwise infer from the unit/description so an
+        // imported provisional or lump sum is recognised, not treated as measured.
+        lineType: r.lineType ?? inferLineType({ unit: r.unit, description: r.description, code: r.code }),
       };
     });
     writeJson(boqKey(projectId), rows);
@@ -1010,6 +1015,12 @@ export class LocalDataProvider implements DataProvider {
     audit(projectId, 'determine', 'Contract', c.contractNo,
       `completed · executed PKR ${Math.round(check.executedValue).toLocaleString('en-PK')}${omitOutstanding && !check.complete ? ` · omitted PKR ${Math.round(check.outstandingValue).toLocaleString('en-PK')}` : ''}`);
     return c;
+  }
+  async setBoqLineType(projectId: string, boqItemId: string, lineType: BoqLineType): Promise<BoqItem[]> {
+    const items = readJson<BoqItem[]>(boqKey(projectId), () => ((gen(projectId)?.boq ?? [])));
+    const it = items.find((x) => x.id === boqItemId);
+    if (it) { it.lineType = lineType; writeJson(boqKey(projectId), items); audit(projectId, 'update', 'BoqItem', it.code, `line type → ${lineType}`); }
+    return items;
   }
   async setContractStatus(projectId: string, contractId: string, status: Contract['status']): Promise<void> {
     const all = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? [])));

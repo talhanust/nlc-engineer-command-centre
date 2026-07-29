@@ -772,6 +772,13 @@ code { font-family: var(--font-mono); font-size: .9em; }
 .meter-warn { background: var(--rag-amber, var(--warning)); }
 .meter-danger { background: var(--rag-red); }
 .alloc-locked td { background: color-mix(in srgb, var(--primary) 4%, transparent); }
+.lt-badge { display: inline-block; margin-left: 6px; font-size: 9.5px; font-weight: 800; letter-spacing: .04em;
+  padding: 1px 5px; border-radius: 5px; vertical-align: middle; background: var(--surface-3); color: var(--muted); }
+.lt-provisional, .lt-prime_cost { background: color-mix(in srgb, var(--warning) 22%, transparent); color: var(--warning); }
+.lt-dayworks { background: color-mix(in srgb, var(--info) 20%, transparent); color: var(--info); }
+.lt-lump_sum { background: color-mix(in srgb, var(--primary) 16%, transparent); color: var(--primary); }
+.lt-select { margin-left: 8px; font-size: 11px; padding: 1px 4px; opacity: 0; transition: opacity .12s; }
+tr:hover .lt-select, .lt-select:focus { opacity: 1; }
 .lock-chip { font-size: 10px; font-weight: 700; color: var(--muted); background: var(--surface-3); padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
 .meter-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   font-size: 10.5px; font-weight: 700; font-family: var(--font-mono); color: var(--text); mix-blend-mode: var(--meter-blend, normal); }

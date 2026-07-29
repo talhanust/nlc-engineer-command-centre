@@ -55,11 +55,16 @@ const SUBS = [
 ] as const;
 type Sub = (typeof SUBS)[number][0];
 
-export function CommercialTab({ projectId }: { projectId: string }) {
+export function CommercialTab({ projectId, onNavigateTab }: { projectId: string; onNavigateTab?: (tab: string) => void }) {
   const [sub, setSub] = useState<Sub>('boq');
   return (
     <div>
-      <CommercialAlerts projectId={projectId} onNavigate={(s) => setSub(s as Sub)} />
+      <CommercialAlerts projectId={projectId} onNavigate={(s) => {
+        // Some alerts point at a DIFFERENT top-level tab (mapping), not a
+        // commercial sub-tab. Route those up; keep sub-tab targets local.
+        if (s === 'mapping' && onNavigateTab) { onNavigateTab('mapping'); return; }
+        setSub(s as Sub);
+      }} />
       <div className="subtabs" role="tablist">
         {SUBS.map(([id, label]) => (
           <button

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ContractDetailModal } from '../../components/ContractDetailModal';
 import { useData } from '../../data/DataContext';
 import { canDeleteContract, type DeleteContractCheck } from '../../domain/contractDelete';
-import { computeTermination, executedByItem } from '../../domain/contractTermination';
+import { computeTermination, executedByItem, checkDetermination } from '../../domain/contractTermination';
 import { ReviseContractBoq } from './ReviseContractBoq';
 import { useToast } from '../../components/Toast';
 import { formatMoney } from '../../domain/money';
@@ -37,6 +37,8 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
   const [deleting, setDeleting] = useState(false);
   const [revising, setRevising] = useState<Contract | null>(null);
   const [pendingTerminate, setPendingTerminate] = useState<Contract | null>(null);
+  const [pendingDetermine, setPendingDetermine] = useState<Contract | null>(null);
+  const [determining, setDetermining] = useState(false);
   const [termReason, setTermReason] = useState('');
   const [terminating, setTerminating] = useState(false);
 
@@ -68,7 +70,11 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
     toast({ message: `${c.contractNo} created`, kind: 'success' });
   }
   async function advance(c: Contract) {
+    // Advance walks the mechanical steps only. The step INTO 'completed' is a
+    // deliberate act (Determine) that checks the work is actually done, so it is
+    // never reached by a blind arrow.
     const next = STATUS_FLOW[Math.min(STATUS_FLOW.length - 1, STATUS_FLOW.indexOf(c.status) + 1)];
+    if (next === 'completed') return; // guarded — use Determine
     await provider.setContractStatus(projectId, c.id, next);
     setContracts((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: next } : x)));
     toast({ message: `${c.contractNo} → ${STATUS_LABEL[next]}`, kind: 'success' });
@@ -132,6 +138,49 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
           </div>
         </div>
       )}
+      {pendingDetermine && (() => {
+        const chk = checkDetermination(pendingDetermine, executedByItem(progress));
+        return (
+          <div className="modal-backdrop" role="dialog" aria-label="Determine contract" aria-modal="true" onClick={() => setPendingDetermine(null)}>
+            <div className="modal" style={{ maxWidth: 600 }} onClick={(e) => e.stopPropagation()}>
+              <div className="section-head"><h3>Determine {pendingDetermine.contractNo}?</h3></div>
+              <p className="muted small" style={{ marginTop: 0 }}>Complete the contract — all awarded work done and payable.</p>
+              {chk.complete ? (
+                <div className="card" style={{ borderColor: 'var(--rag-green)' }}>
+                  <strong>Fully executed.</strong>
+                  <div className="muted small">Executed {formatMoney(chk.executedValue)} of {formatMoney(chk.awardedValue)} awarded. Nothing outstanding.</div>
+                </div>
+              ) : (
+                <div className="card" style={{ borderColor: 'var(--warning)' }} aria-label="Outstanding work">
+                  <strong className="neg">{chk.outstanding.length} line(s) not fully executed — {formatMoney(chk.outstandingValue)} outstanding.</strong>
+                  <div className="muted small" style={{ marginTop: 4 }}>
+                    A contract is normally determined only when the work is done. You can either finish the remaining
+                    quantities first, or close it out at what was built — the outstanding balance is omitted and released
+                    back to the plan for re-award, exactly like a termination.
+                  </div>
+                </div>
+              )}
+              <div className="create-row" style={{ marginTop: 14, justifyContent: 'flex-end' }}>
+                <button className="btn-ghost" onClick={() => setPendingDetermine(null)}>Cancel</button>
+                <button className="btn" disabled={determining} aria-label={`Confirm determine ${pendingDetermine.contractNo}`}
+                  onClick={async () => {
+                    setDetermining(true);
+                    try {
+                      await provider.determineContract(projectId, pendingDetermine.id, !chk.complete);
+                      setPendingDetermine(null);
+                      await load();
+                      toast({ message: `${pendingDetermine.contractNo} determined`, kind: 'success' });
+                    } catch (e) {
+                      toast({ message: e instanceof Error ? e.message : 'Could not determine.', kind: 'error' });
+                    } finally { setDetermining(false); }
+                  }}>
+                  {determining ? 'Completing…' : chk.complete ? 'Determine (complete)' : 'Close out at executed'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {pendingTerminate && (() => {
         const exec = executedByItem(progress);
         const t = computeTermination(pendingTerminate, exec);
@@ -252,7 +301,9 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
                     onReturn={async (rm) => { await provider.returnContract(projectId, c.id, user?.name ?? role, rm); await load(); }}
                     onResubmit={async () => { await provider.resubmitContract(projectId, c.id, user?.name ?? role); await load(); toast({ message: 'Resubmitted — ladder rebuilt at current value', kind: 'success' }); }}
                   />
-                  {c.status !== 'closed' && c.status !== 'draft' ? <button className="btn-ghost btn-mini" style={{ marginLeft: 6 }} aria-label={`Advance ${c.contractNo}`} onClick={() => advance(c)}>Advance →</button> : null}
+                  {(c.status === 'awarded') && <button className="btn-ghost btn-mini" style={{ marginLeft: 6 }} aria-label={`Advance ${c.contractNo}`} onClick={() => advance(c)}>Advance →</button>}
+                  {c.status === 'in_progress' && <button className="btn-ghost btn-mini" style={{ marginLeft: 6 }} aria-label={`Determine ${c.contractNo}`} onClick={() => setPendingDetermine(c)}>Determine</button>}
+                  {c.status === 'completed' && <button className="btn-ghost btn-mini" style={{ marginLeft: 6 }} aria-label={`Close ${c.contractNo}`} onClick={() => advance(c)}>Close</button>}
                 </td>
               </tr>
             ))}

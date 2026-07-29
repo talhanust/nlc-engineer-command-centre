@@ -136,7 +136,7 @@ export function ProjectView({ nodeId }: { nodeId: string }) {
       )}
       {active === 'gallery' && <PhotoGallery projectId={nodeId} />}
 
-      {active === 'commercial' && <CommercialTab projectId={nodeId} />}
+      {active === 'commercial' && <CommercialTab projectId={nodeId} onNavigateTab={(t) => navigate(`/node/${nodeId}/${t}`)} />}
       {active === 'execution' && <ExecutionTab projectId={nodeId} />}
       {active === 'mapping' && <MappingTab projectId={nodeId} />}
       {active === 'financial' && <FinancialTab projectId={nodeId} />}

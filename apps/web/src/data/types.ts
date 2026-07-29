@@ -1134,6 +1134,9 @@ export interface DataProvider {
   /** End an awarded contract early: executed quantities are retained and locked,
    *  unexecuted quantities are released back to the plan for re-award. */
   terminateContract(projectId: string, contractId: string, reason?: string): Promise<Contract>;
+  /** Complete a contract normally. Refuses if awarded quantities are still
+   *  unexecuted, unless `omitOutstanding` closes it out at what was built. */
+  determineContract(projectId: string, contractId: string, omitOutstanding?: boolean): Promise<Contract>;
   setContractStatus(projectId: string, contractId: string, status: ContractStatus): Promise<void>;
   setContractRetention(projectId: string, contractId: string, retentionPct: number): Promise<void>;
   getCommercialConfig(projectId: string): Promise<CommercialConfig>;

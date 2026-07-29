@@ -26,7 +26,7 @@ import type { BaselineWorkflowState } from '../domain/schedulebaseline';
 import { ROLE_LABEL } from '../domain/chains';
 import { applyRarAction } from '../domain/rar';
 import { canDeleteContract } from '../domain/contractDelete';
-import { computeTermination, executedByItem } from '../domain/contractTermination';
+import { computeTermination, executedByItem, checkDetermination } from '../domain/contractTermination';
 import { synthSeries } from '../domain/scurve';
 import { DEMAND_CHAIN, checkAdvance } from '../domain/chains';
 
@@ -979,6 +979,36 @@ export class LocalDataProvider implements DataProvider {
     this.syncContractPlan(projectId, c);
     audit(projectId, 'terminate', 'Contract', c.contractNo,
       `executed PKR ${Math.round(t.executedValue).toLocaleString('en-PK')} retained · released PKR ${Math.round(t.releasedValue).toLocaleString('en-PK')} for re-award${reason ? ` · ${reason}` : ''}`);
+    return c;
+  }
+  async determineContract(projectId: string, contractId: string, omitOutstanding = false): Promise<Contract> {
+    const all = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? [])));
+    const c = all.find((x) => x.id === contractId);
+    if (!c) throw new Error('Contract not found.');
+    if (c.status === 'draft' || c.status === 'awarded') throw new Error('A contract is determined once it is in progress and the work is done.');
+    if (c.status === 'terminated' || c.status === 'closed' || c.status === 'completed') throw new Error('This contract has already ended.');
+
+    const progress = readJson<ProgressUpdate[]>(progressKey(projectId), () => ((gen(projectId)?.progress ?? [])));
+    const check = checkDetermination(c, executedByItem(progress));
+    if (!check.complete && !omitOutstanding) {
+      // Refuse to silently mark a half-built contract complete. The caller must
+      // either finish the work or explicitly OMIT the outstanding balance (which
+      // shrinks the contract to what was built, like a mutually-agreed close-out).
+      throw new Error(`${check.outstanding.length} line(s) still have unexecuted quantity (PKR ${Math.round(check.outstandingValue).toLocaleString('en-PK')}). Finish the work, or determine with the balance omitted.`);
+    }
+    if (omitOutstanding && !check.complete) {
+      // Omit: keep only executed quantities, exactly like a termination but ended
+      // by agreement as complete rather than early.
+      const t = computeTermination(c, executedByItem(progress));
+      c.lines = t.keptLines;
+      c.value = t.executedValue;
+    }
+    c.status = 'completed';
+    c.completionDate = new Date().toISOString().slice(0, 10);
+    writeJson(contractsRegKey(projectId), all);
+    this.syncContractPlan(projectId, c);
+    audit(projectId, 'determine', 'Contract', c.contractNo,
+      `completed · executed PKR ${Math.round(check.executedValue).toLocaleString('en-PK')}${omitOutstanding && !check.complete ? ` · omitted PKR ${Math.round(check.outstandingValue).toLocaleString('en-PK')}` : ''}`);
     return c;
   }
   async setContractStatus(projectId: string, contractId: string, status: Contract['status']): Promise<void> {

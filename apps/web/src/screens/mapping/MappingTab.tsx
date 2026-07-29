@@ -188,6 +188,17 @@ function WbsMapping({ projectId, locked }: { projectId: string; locked?: boolean
       setSuggesting(false);
     }
   }
+  const [bulkAct, setBulkAct] = useState('');
+  async function mapVisibleUnmappedTo(activityId: string) {
+    if (locked || !activityId) return;
+    // Only touch items that have NO link yet — never override existing mapping.
+    const targets = rows.filter((it) => (byItem.get(it.id)?.length ?? 0) === 0);
+    for (const it of targets) {
+      await provider.setBoqWbs(projectId, { boqItemId: it.id, projectId, activityId, confidence: 'confirmed' });
+    }
+    setLinks(await provider.listBoqWbs(projectId));
+    setBulkAct('');
+  }
   async function confirmAll() {
     for (const l of pending) await provider.setBoqWbs(projectId, { ...l, confidence: 'confirmed' });
     setLinks(await provider.listBoqWbs(projectId));
@@ -221,6 +232,28 @@ function WbsMapping({ projectId, locked }: { projectId: string; locked?: boolean
             {suggesting ? 'Suggesting…' : '✨ Suggest mappings & quantities'}
           </button>
         </div>
+      </div>
+
+      <div className="card" style={{ margin: '8px 0', padding: '10px 12px' }}>
+        <div className="head-tools" style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span className="muted small">
+            Map the {rows.filter((it) => (byItem.get(it.id)?.length ?? 0) === 0).length} unmapped item(s) shown
+            {bill !== 'all' ? ` in bill ${bill}` : ''} straight to one activity:
+          </span>
+          <select aria-label="Bulk-map to activity" value={bulkAct} onChange={(e) => setBulkAct(e.target.value)} disabled={locked}>
+            <option value="">— choose activity —</option>
+            {acts.filter((a) => !a.isMilestone).map((a) => (
+              <option key={a.activityId} value={a.activityId}>{a.activityId} · {a.name}</option>
+            ))}
+          </select>
+          <button className="btn btn-mini" disabled={locked || !bulkAct} onClick={() => mapVisibleUnmappedTo(bulkAct)}>
+            Map these to activity
+          </button>
+        </div>
+        <p className="muted small" style={{ margin: '6px 0 0' }}>
+          Filter to a bill first, then map the whole bill to its activity in one step — the fast way to clear a large BOQ.
+          Only unmapped items are touched; anything already mapped is left alone.
+        </p>
       </div>
       <div className="coverage">
         <div className="coverage-track"><div className="coverage-fill" style={{ width: `${vc.pct}%` }} /></div>

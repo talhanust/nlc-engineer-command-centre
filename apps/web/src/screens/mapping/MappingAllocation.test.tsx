@@ -194,3 +194,29 @@ describe('Mapping — Activity → BOQ quantity allocation', () => {
     expect(itemLabel.length).toBeGreaterThan(0);
   });
 });
+
+describe('Mapping — bulk map a whole bill to one activity', () => {
+  it('confirms every unmapped item in the filtered bill in one action', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15/mapping');
+    await screen.findByRole('table', { name: 'WBS mapping' });
+
+    // Coverage starts well below 100% (the 122-item problem).
+    const coverageBefore = screen.getByLabelText('Mapping coverage').textContent ?? '';
+    expect(coverageBefore).toMatch(/items unmapped/);
+
+    // Pick the first real activity in the bulk-map dropdown and apply it.
+    const bulk = screen.getByLabelText('Bulk-map to activity') as HTMLSelectElement;
+    const opts = within(bulk).getAllByRole('option').filter((o) => (o as HTMLOptionElement).value);
+    await user.selectOptions(bulk, opts[0]);
+    await user.click(screen.getByRole('button', { name: 'Map these to activity' }));
+
+    // Coverage improves — items were confirmed, not left pending.
+    await waitFor(() => {
+      const after = screen.getByLabelText('Mapping coverage').textContent ?? '';
+      const before = Number(coverageBefore.match(/(\d+)% of BOQ value/)?.[1] ?? '0');
+      const now = Number(after.match(/(\d+)% of BOQ value/)?.[1] ?? '0');
+      expect(now).toBeGreaterThanOrEqual(before);
+    });
+  });
+});

@@ -128,3 +128,69 @@ describe('a contract-owned allocation is read-only in the plan', () => {
     void itemId;
   });
 });
+
+describe('determineContract — completing normally', () => {
+  it('completes a fully-executed contract', async () => {
+    const { p, c, itemId } = await setup();
+    await p.upsertProgress(P, { boqItemId: itemId, period: 'M1', executedQty: 1000, role: 'sc' });
+    for (const pr of await p.listProgress(P)) await p.validateProgress(P, pr.id, 'pm');
+
+    const done = await p.determineContract(P, c.id);
+    expect(done.status).toBe('completed');
+    expect(done.completionDate).toBeTruthy();
+    expect(done.value).toBe(1000 * 88); // unchanged — all executed
+  });
+
+  it('REFUSES to determine a contract with unexecuted quantity', async () => {
+    const { p, c, itemId } = await setup();
+    await p.upsertProgress(P, { boqItemId: itemId, period: 'M1', executedQty: 400, role: 'sc' });
+    for (const pr of await p.listProgress(P)) await p.validateProgress(P, pr.id, 'pm');
+
+    await expect(p.determineContract(P, c.id)).rejects.toThrow(/unexecuted/i);
+    expect((await p.listContracts(P)).find((x) => x.id === c.id)!.status).toBe('in_progress'); // unchanged
+  });
+
+  it('can close out at the executed balance when the outstanding work is omitted', async () => {
+    const { p, c, itemId } = await setup();
+    await p.upsertProgress(P, { boqItemId: itemId, period: 'M1', executedQty: 400, role: 'sc' });
+    for (const pr of await p.listProgress(P)) await p.validateProgress(P, pr.id, 'pm');
+
+    const done = await p.determineContract(P, c.id, true); // omit the outstanding 600
+    expect(done.status).toBe('completed');
+    expect(done.value).toBe(400 * 88);        // shrunk to what was built
+    expect(done.lines).toEqual([{ boqItemId: itemId, qty: 400, rate: 88 }]);
+
+    // The omitted 600 frees up in the planner, just like a termination.
+    const lock = itemLocks(await p.listBoq(P), await p.listContracts(P)).get(itemId)!;
+    expect(lock.unallocatedQty).toBe(600);
+  });
+
+  it('audits the determination', async () => {
+    const { p, c, itemId } = await setup();
+    await p.upsertProgress(P, { boqItemId: itemId, period: 'M1', executedQty: 1000, role: 'sc' });
+    for (const pr of await p.listProgress(P)) await p.validateProgress(P, pr.id, 'pm');
+    await p.determineContract(P, c.id);
+    expect((await p.listAudit()).some((a) => a.action === 'determine' && a.ref === c.contractNo)).toBe(true);
+  });
+
+  it('refuses to determine a draft or an already-ended contract', async () => {
+    const { p, c } = await setup();
+    await p.terminateContract(P, c.id);
+    await expect(p.determineContract(P, c.id)).rejects.toThrow(/already ended/);
+  });
+});
+
+describe('advance no longer force-completes', () => {
+  it('setContractStatus can still set completed, but the register Advance button stops before it', async () => {
+    // Provider-level: determineContract is the only path that checks completeness.
+    // A blind advance into completed is prevented in the UI (advance() guards it);
+    // here we assert the provider distinguishes the two ways a contract ends.
+    const { p, c, itemId } = await setup();
+    await p.upsertProgress(P, { boqItemId: itemId, period: 'M1', executedQty: 1000, role: 'sc' });
+    for (const pr of await p.listProgress(P)) await p.validateProgress(P, pr.id, 'pm');
+    const done = await p.determineContract(P, c.id);
+    expect(done.status).toBe('completed');
+    // determine is idempotent-safe: a second call is refused.
+    await expect(p.determineContract(P, c.id)).rejects.toThrow(/already ended/);
+  });
+});

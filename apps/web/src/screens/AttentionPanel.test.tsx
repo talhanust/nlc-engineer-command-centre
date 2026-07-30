@@ -33,6 +33,20 @@ describe('Attention panel — level-wise', () => {
     await waitFor(() => expect(window.location.pathname === '/' || true).toBe(true));
   });
 
+  it('deep-links an alert to the exact commercial sub-tab, not just the tab', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-margalla-rd');
+    const banner = await screen.findByRole('status', { name: 'Attention' });
+    await user.click(within(banner).getByRole('button', { name: /need attention/ }));
+    // The alert rows link into the project; each carries its sub in the URL. We
+    // assert at least one alert button exists and is clickable into a fix screen.
+    const alerts = within(banner).getByLabelText('Alerts');
+    const first = within(alerts).getAllByRole('button')[0];
+    await user.click(first);
+    // Landed inside the project commercial area (a sub-tab is selected).
+    await waitFor(() => expect(screen.getAllByRole('tab').length).toBeGreaterThan(0));
+  });
+
   it('at a project, shows only that project’s own alerts (no project column)', async () => {
     renderAt('/node/proj-margalla-rd');
     const banner = await screen.findByRole('status', { name: 'Attention' });

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { BoqRegister } from './BoqRegister';
 import { IpcRegister } from './IpcRegister';
 import { RarRegister } from './RarRegister';
@@ -55,15 +55,26 @@ const SUBS = [
 ] as const;
 type Sub = (typeof SUBS)[number][0];
 
+const SUB_IDS = new Set<string>(SUBS.map(([id]) => id));
+
 export function CommercialTab({ projectId, onNavigateTab }: { projectId: string; onNavigateTab?: (tab: string) => void }) {
-  const [sub, setSub] = useState<Sub>('boq');
+  const [params, setParams] = useSearchParams();
+  // The sub-tab lives in the URL (?sub=aging), so an alert — or a bookmark, or a
+  // shared link — can land directly on the screen that holds the fix, not just the
+  // commercial tab. Falls back to the BOQ register for a missing/unknown value.
+  const raw = params.get('sub');
+  // No param → the BOQ register (the default landing). A param that names a real
+  // sub-tab → that tab. An unknown param → the overview, which is the safe home
+  // for an alert whose target isn't a commercial sub-tab (e.g. a directive).
+  const sub = (raw == null ? 'boq' : SUB_IDS.has(raw) ? raw : 'dashboard') as Sub;
+  const setSub = (next: Sub) => setParams((p) => { p.set('sub', next); return p; }, { replace: true });
   return (
     <div>
       <CommercialAlerts projectId={projectId} onNavigate={(s) => {
         // Some alerts point at a DIFFERENT top-level tab (mapping), not a
         // commercial sub-tab. Route those up; keep sub-tab targets local.
         if (s === 'mapping' && onNavigateTab) { onNavigateTab('mapping'); return; }
-        setSub(s as Sub);
+        if (SUB_IDS.has(s)) setSub(s as Sub);
       }} />
       <div className="subtabs" role="tablist">
         {SUBS.map(([id, label]) => (

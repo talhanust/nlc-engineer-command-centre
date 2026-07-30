@@ -2668,3 +2668,156 @@ NLC Engineer Command Centre — work journal
   rules exist and EVM/coverage + the alert honour them, but the IPC/RAR
   measurement path still treats every line the same. That is the natural next
   step once payment behaviour per type is specified.
+
+2026-07-29 (d) — lump sums billed by percentage complete (the payment path)
+- User decision: a lump sum is paid by % complete. Built the measurement path so
+  the last place the "everything is measured" assumption lived is now type-aware.
+- Key realisation: value is always executedQty × rate, and a lump sum is modelled
+  qty × rate (usually qty 1). So x% complete = x% of qty as the executed value,
+  and the whole downstream chain (RAR/IPC/EVM/margin) already yields x% of the
+  money with NO special-casing. The only thing wrong was the ENTRY UI presenting a
+  quantity field for something that is a percentage.
+- domain/boqLineType.ts += measureMode(item) → quantity | percent | none
+  (measured→quantity, lump_sum→percent, provisional/PC/DW→none);
+  percentToExecuted(item, pct) clamps 0..100 and returns pct/100 × qty;
+  executedToPercent(item, executed) is the inverse, capped at 100. 3 test blocks.
+- ProgressTab entry cell now switches by measureMode: measured → qty input
+  (unchanged); lump_sum → a "% cum." input pre-filled with current % complete,
+  interpreted as CUMULATIVE % and posted as the delta over what is already booked
+  (enter 60% after 40% books 20%, not another 60%); none → "n/a" with a tooltip
+  saying the line is adjusted on instruction, not remeasured here.
+- Tests: boqLineType +2 blocks (measure mode; percent⇄executed round-trip with
+  100% clamp). data/boqLineType.provider +2 (a lump at 40% earns 40% of value;
+  full lump at 100%, never beyond). NEW screens/execution/LumpSumProgress.test.tsx
+  (2) — through the real app: measured shows a qty field, lump shows a % field,
+  provisional shows no field; entering 40% books the converted 0.4 as a draft.
+- This closes the line-type work: provisional/PC/dayworks are held out of EV and
+  of remeasurement; lump sums bill by percentage; measured lines unchanged. Every
+  BOQ line is now handled according to what it actually is, from import through
+  planning, measurement, payment and earned value.
+- Gate (chunked): domain+data 70 files/527, screens+components 14/155, root 17/95
+  + 16/85 = 117 files, 887 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+
+2026-07-30 — global Attention system (alerts roll up the org tree, level-wise)
+- Requirement: alerts shown level-wise. A project shows its own alerts; a PD HQ
+  shows every alert across the projects it commands; HQ Engineers and HQ NLC
+  aggregate their whole subtree. Attention rolls UP the hierarchy so a commander
+  never opens a project just to find it was fine.
+- NEW domain/attention.ts (pure):
+  * projectActiveAlerts(input) — one project's active, triaged alerts, assembled
+    from the SAME logic CommercialAlerts uses (commercialAlerts + divergence +
+    unmapped, merged with alert states, filtered to open/ack) so the roll-up can
+    never disagree with a project's own banner.
+  * projectsUnder(nodeId, nodes) — the project subtree (a project → itself; a
+    branch → every project beneath it).
+  * rollUpAttention(nodeId, nodes, alertsByProject) → AttentionRollup: every alert
+    tagged with its originating project, worst-first; per-project breakdown; 
+    critical/warning/total; affectedProjects. 9 tests.
+- provider.attentionFor(nodeId): loads each descendant project via the canonical
+  list* methods (so keys/seeds/fallbacks live in one place) and rolls up. Local +
+  API (GET /api/nodes/:id/attention). 4 provider tests over seeded data: a project
+  = its own; a PD HQ = exact sum of its projects; HQ NLC = sum over all PD HQs;
+  ordering + affectedProjects.
+- NEW components/AttentionPanel.tsx, mounted in NodeScreen for BOTH branch and
+  project nodes. Collapsed summary (N items · critical/warning · across M projects
+  at a branch). Expanded: at a branch, a By-project / All-alerts toggle; the
+  by-project view lists affected projects worst-first with critical/warning pips,
+  each row a jump into that project; the all-alerts view lists every alert with
+  its origin project, each a deep link to the project commercial (or mapping) tab.
+  At a project it shows just that project's alerts, no origin column.
+  Refreshes on nlc:audit.
+- One existing HR test tightened: it asserted /need attention/ which now also
+  matches the Attention summary; scoped to /credentials? need attention/.
+- Gate (chunked): domain+data 72 files/540, screens+components 15/158, root 17/95
+  + 16/85 = 119 files, 902 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- NEXT (flagged, not built): deep-link alerts to the exact sub-tab (the alert's
+  `sub` is carried but the landing is the commercial tab, not yet the sub-tab);
+  alert triage (mute/resolve) from the panel; a standalone Attention screen with
+  filters. The three earlier UI asks (full-window drawer, salients read/edit,
+  header command bar) remain open per the user's staged plan.
+
+2026-07-30 (b) — drawer: full-window record workspace, no more "black strip"
+- User issue #1 from the screenshots: opening a contract showed a side panel over
+  a wide opaque dark band (justify-content:flex-end + 920px panel), which read as
+  broken on a desktop — a black strip you cannot see behind.
+- DetailDrawer width prop is now full | wide | narrow (was wide | narrow):
+  * full — fills the window, a record workspace; the backdrop becomes opaque
+    surface (.drawer-backdrop-full) so there IS no band beside the panel;
+  * wide — a broad right panel (min(960px, 82vw)) with a light click-to-close dim
+    (scrim softened .32→.28), the list visible behind;
+  * narrow — the slim person/org peek, unchanged.
+  A header ⤢/⇥ button expands/collapses between full and wide (narrow stays a
+  fixed peek, no control). Full mode centres its header/toolbar/hero/tabs/body in
+  a 1180px column so a 4K monitor does not stretch the content edge to edge.
+- ContractDetailModal now opens width="full" — a contract is a record you work
+  INSIDE, so it opens as the whole window and can be collapsed to a side panel to
+  keep the register in view.
+- Existing person/project drawers untouched (default width still wide; narrow
+  where set). Contract-detail tests unaffected (table contents unchanged).
+- Tests DetailDrawer +3: a record opens full and toggles full↔wide; a full drawer
+  uses the opaque backdrop (no black strip); a narrow drawer has no resize control.
+- Gate (chunked): domain+data 72 files/540, screens+components 15/161, root 17/95
+  + 16/85 = 119 files, 905 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- REMAINING from the user's staged UI plan: #2 salients read/edit toggle;
+  #3 header command bar (collapse the two identity selectors, surface the command
+  palette, fold display controls). Deep-link-to-sub-tab + drawer prev/next also
+  still open.
+
+2026-07-30 (c) — project salients: read/edit fact sheet (user issue #2)
+- The card was a permanent form: every fact a live <input> autosaving on blur, so
+  it looked forever-unsaved and a stray keystroke silently changed a project fact.
+- Rebuilt as master-data should behave — viewed by default, edited deliberately:
+  * READ mode: a clean two-column <dl> fact sheet (label / value), an Edit button,
+    and a "no salients" empty state. No inputs, nothing to fat-finger.
+  * EDIT mode: rows become label/value inputs with a per-row ✕, an "+ Add fact"
+    row, and Save / Cancel. Edits are staged in local draft state and only
+    written on Save (delete-then-upsert diff against the saved set); Cancel
+    restores exactly what was there. Nothing hits the provider until Save.
+- CSS: .fact-sheet / .fact-row two-column grid, stacks on narrow screens.
+- Tests: components/SalientsCard.test.tsx (3) — read view has no textboxes;
+  Cancel discards an edit (nothing written); a removed fact only disappears on
+  Save. CrossCutting salients test rewritten from the old always-edit API
+  (Add salient / New salient label) to the new Edit → Add fact → Save flow.
+- Gate (chunked): domain+data 72 files/540, screens+components 16/164, root 17/95
+  + 16/85 = 120 files, 908 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- REMAINING from the staged UI plan: #3 header command bar — collapse the two
+  identity selectors (user + acting role) into one, surface the existing command
+  palette with a visible search field, fold zoom/density/theme/presentation into a
+  single Display menu. Also still open: deep-link alerts to the exact sub-tab,
+  drawer prev/next, salient typed values + provenance (the richer fact-sheet).
+
+2026-07-30 (d) — header command bar (user issue #3): one identity, one Display menu, visible search
+- The strip was ~10 loose controls, incl. TWO identity selectors (signed-in user
+  "System Admin" + acting role "Admin (all)") that read as duplication, and four
+  separate display buttons (zoom group, density, presentation, fullscreen) plus a
+  hidden Ctrl-K palette.
+- NEW components/HeaderMenu.tsx: a small header dropdown (close on outside-click /
+  Escape, optional aria-label) so related controls group behind one labelled
+  trigger instead of scattering.
+- Header rebuilt:
+  * a visible SEARCH field in the centre ("Search or jump to… ⌘K") that dispatches
+    nlc:command-palette — the palette existed but was undiscoverable; now it has a
+    front door.
+  * ONE identity menu: trigger shows user name + role badge; the panel holds both
+    the user select (Signed in as) and the acting-role select (Act as role, with a
+    hint). The two selectors are no longer side-by-side clutter.
+  * ONE Display menu folding zoom, density (Comfortable/Compact rows), theme,
+    presentation and fullscreen.
+  * Approvals bell, Settings and the mode pill remain.
+- Tests: NEW components/HeaderBar.test.tsx (4) — search opens the palette; identity
+  collapses to one control holding both selects; Display groups zoom/density/theme/
+  presentation; menu closes on outside click. Updated call sites that drove the old
+  loose controls to open the relevant menu first: 8 files switching identity (open
+  the identity menu), Commercial density (Display → Compact rows), Workspace zoom +
+  presentation (Display menu). aria-label added to HeaderMenu triggers for stable
+  targeting.
+- All THREE of the user's original UI issues from the screenshots are now done:
+  #1 full-window drawer (no black strip), #2 salients read/edit fact sheet,
+  #3 header command bar.
+- Gate (chunked): domain+data 72 files/540, screens+components 17/168, root 17/95
+  + 16/85 = 121 files, 921 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.

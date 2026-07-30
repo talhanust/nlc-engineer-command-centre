@@ -38,11 +38,21 @@ export function DetailDrawer({
   hero?: ReactNode;
   tabs?: DrawerTab[];
   initialTab?: string;
-  /** 'wide' for records (contracts, IPCs), 'narrow' for people/orgs. */
-  width?: 'wide' | 'narrow';
+  /**
+   * Starting size:
+   *  - 'full'   fills the window — a record workspace, no dead scrim (best for a
+   *             dense record like a contract, which is a thing you work INSIDE);
+   *  - 'wide'   a broad right-hand panel with the list dimmed but visible behind;
+   *  - 'narrow' a slim peek for light records (a person, an org node).
+   * The user can expand/collapse between full and wide from the header, so the
+   * choice is theirs per moment, not fixed.
+   */
+  width?: 'full' | 'wide' | 'narrow';
   children?: ReactNode;
 }) {
   const [active, setActive] = useState(initialTab ?? tabs?.[0]?.id);
+  // A narrow (person/org) drawer stays a peek; records open full and can shrink.
+  const [size, setSize] = useState<'full' | 'wide' | 'narrow'>(width);
 
   useEffect(() => {
     if (!open) return;
@@ -54,10 +64,12 @@ export function DetailDrawer({
   if (!open) return null;
 
   const current = tabs?.find((t) => t.id === active) ?? tabs?.[0];
+  const canResize = size !== 'narrow';
+  const isFull = size === 'full';
 
   return (
-    <div className="drawer-backdrop" onClick={onClose}>
-      <aside className={`drawer drawer-${width}`} role="dialog"
+    <div className={`drawer-backdrop ${isFull ? 'drawer-backdrop-full' : ''}`} onClick={onClose}>
+      <aside className={`drawer drawer-${size}`} role="dialog"
         aria-label={typeof title === 'string' ? title : 'Detail'} aria-modal="true"
         onClick={(e) => e.stopPropagation()}>
         <header className="drawer-head">
@@ -69,6 +81,13 @@ export function DetailDrawer({
             {subtitle && <p className="muted small drawer-sub">{subtitle}</p>}
           </div>
           {badge}
+          {canResize && (
+            <button className="drawer-resize" onClick={() => setSize(isFull ? 'wide' : 'full')}
+              aria-label={isFull ? 'Collapse to side panel' : 'Expand to full window'}
+              title={isFull ? 'Collapse to side panel' : 'Expand to full window'}>
+              {isFull ? '⇥' : '⤢'}
+            </button>
+          )}
           <button className="drawer-close" onClick={onClose} aria-label="Close details">✕</button>
         </header>
 

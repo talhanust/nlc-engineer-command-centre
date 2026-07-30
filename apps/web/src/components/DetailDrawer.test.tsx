@@ -65,3 +65,32 @@ describe('ProgressMeter', () => {
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
   });
 });
+
+describe('DetailDrawer — sizing', () => {
+  it('a record opens full-window and can collapse to a side panel', async () => {
+    const user = userEvent.setup();
+    render(<DetailDrawer title="NLC/X/SC-01" width="full" tabs={tabs} onClose={() => {}} />);
+    const panel = screen.getByRole('dialog');
+    expect(panel).toHaveClass('drawer-full');
+
+    // Collapse to a side panel…
+    await user.click(screen.getByRole('button', { name: 'Collapse to side panel' }));
+    expect(screen.getByRole('dialog')).toHaveClass('drawer-wide');
+
+    // …and expand back to full.
+    await user.click(screen.getByRole('button', { name: 'Expand to full window' }));
+    expect(screen.getByRole('dialog')).toHaveClass('drawer-full');
+  });
+
+  it('a full-window drawer removes the dark scrim (no black strip)', () => {
+    render(<DetailDrawer title="T" width="full" tabs={tabs} onClose={() => {}} />);
+    // The backdrop of a full drawer is opaque surface, not a translucent band.
+    expect(screen.getByRole('dialog').parentElement).toHaveClass('drawer-backdrop-full');
+  });
+
+  it('a narrow (person) drawer is a fixed peek with no resize control', () => {
+    render(<DetailDrawer title="Someone" width="narrow" onClose={() => {}}><p>x</p></DetailDrawer>);
+    expect(screen.getByRole('dialog')).toHaveClass('drawer-narrow');
+    expect(screen.queryByRole('button', { name: /Expand|Collapse/ })).toBeNull();
+  });
+})

@@ -161,6 +161,7 @@ export function ContractDetailModal({ projectId, contract, onClose }: { projectI
       pill={<span className={`status-pill ${pillClass}`}>{STATUS_LABEL[contract.status]}</span>}
       hero={hero}
       tabs={tabs}
+      width="full"
       onClose={onClose}
     />
   );

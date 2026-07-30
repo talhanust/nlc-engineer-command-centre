@@ -12,6 +12,7 @@ import { useRole, SWITCHABLE_ROLES } from '../state/Role';
 import type { AppUser } from '../data/types';
 import { useWorklist } from '../screens/Worklist';
 import { ROLE_LABEL } from '../domain/chains';
+import { HeaderMenu } from './HeaderMenu';
 
 function isTypingTarget(e: KeyboardEvent): boolean {
   const t = e.target as HTMLElement | null;
@@ -137,52 +138,68 @@ export function AppLayout() {
             <div className="brand-app">Engineer <span className="accent">Command Centre</span></div>
           </div>
         </div>
+        <button className="header-search" onClick={() => window.dispatchEvent(new CustomEvent('nlc:command-palette'))}
+          aria-label="Search or jump to (Ctrl-K)" title="Search or jump to — Ctrl-K">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" />
+          </svg>
+          <span className="header-search-text">Search or jump to…</span>
+          <span className="header-search-kbd" aria-hidden>⌘K</span>
+        </button>
+
         <div className="header-right">
-          <div className="zoom-control" role="group" aria-label="Content zoom">
-            <button className="icon-btn" onClick={() => setZoom(zoom - 0.1)} disabled={zoom <= 0.8} aria-label="Zoom out" title="Zoom out">−</button>
-            <button className="zoom-value" onClick={() => setZoom(1)} aria-label="Reset zoom" title="Reset to 100%">{Math.round(zoom * 100)}%</button>
-            <button className="icon-btn" onClick={() => setZoom(zoom + 0.1)} disabled={zoom >= 1.4} aria-label="Zoom in" title="Zoom in">+</button>
-          </div>
-          <button className="icon-btn" onClick={() => setDensity(density === 'compact' ? 'comfortable' : 'compact')}
-            aria-label="Toggle row density" aria-pressed={density === 'compact'} title={density === 'compact' ? 'Comfortable rows' : 'Compact rows'}>
-            {density === 'compact' ? '≡' : '☰'}
-          </button>
           <button className="icon-btn" style={{ position: 'relative' }} aria-label={`My approvals (${worklist.length} pending)`} title="My approvals — pending actions awaiting your role" onClick={() => navigate('/worklist')}>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </svg>
             {worklist.length > 0 && <span className="bell-badge" aria-hidden="true">{worklist.length > 99 ? '99+' : worklist.length}</span>}
           </button>
-          <label className="role-switch" title="Signed-in user — sets role and organisational scope">
-            <select aria-label="Switch user" value={user?.name ?? ''} onChange={(e) => {
-              const u = users.find((x) => x.name === e.target.value);
-              setUser(u ? { name: u.name, role: u.role, nodeId: u.nodeId, appointmentId: u.appointmentId } : null);
-            }}>
-              <option value="">No user (dev)</option>
-              {users.map((u) => <option key={u.id} value={u.name}>{u.name}</option>)}
-            </select>
-          </label>
-          <label className="role-switch" title="Acting role (dev)">
-            <span className="role-badge" aria-hidden>{ROLE_LABEL[role] ?? (role === 'admin' ? 'Admin' : role)}</span>
-            <select aria-label="Switch acting role" value={role} onChange={(e) => setRole(e.target.value)}>
-              {SWITCHABLE_ROLES.map((r) => <option key={r} value={r}>{r === 'admin' ? 'Admin (all)' : ROLE_LABEL[r] ?? r}</option>)}
-            </select>
-          </label>
-          <button className="icon-btn" onClick={() => setPresentation(true)} aria-label="Enter presentation mode" title="Presentation mode">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" />
-            </svg>
-          </button>
-          <button className="icon-btn" onClick={toggleFullscreen} aria-label={isFull ? 'Exit full screen' : 'Enter full screen'} aria-pressed={isFull} title={isFull ? 'Exit full screen' : 'Full screen'}>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              {isFull ? <path d="M9 3v6H3M21 9h-6V3M3 15h6v6M15 21v-6h6" /> : <path d="M8 3H3v5M21 8V3h-5M3 16v5h5M16 21h5v-5" />}
-            </svg>
-          </button>
+
+          <HeaderMenu
+            label={<span className="identity-label"><span className="identity-name">{user?.name ?? 'No user'}</span><span className="role-badge">{ROLE_LABEL[role] ?? (role === 'admin' ? 'Admin' : role)}</span></span>}
+            title="Signed-in user and acting role" ariaLabel="Signed-in user and acting role">
+            {() => (
+              <div className="menu-section">
+                <div className="menu-heading">Signed in as</div>
+                <select className="menu-select" aria-label="Switch user" value={user?.name ?? ''} onChange={(e) => {
+                  const u = users.find((x) => x.name === e.target.value);
+                  setUser(u ? { name: u.name, role: u.role, nodeId: u.nodeId, appointmentId: u.appointmentId } : null);
+                }}>
+                  <option value="">No user (dev)</option>
+                  {users.map((u) => <option key={u.id} value={u.name}>{u.name}</option>)}
+                </select>
+                <div className="menu-heading" style={{ marginTop: 10 }}>Act as role</div>
+                <div className="menu-hint muted small">Preview the app as a role — affects what you can approve.</div>
+                <select className="menu-select" aria-label="Switch acting role" value={role} onChange={(e) => setRole(e.target.value)}>
+                  {SWITCHABLE_ROLES.map((r) => <option key={r} value={r}>{r === 'admin' ? 'Admin (all)' : ROLE_LABEL[r] ?? r}</option>)}
+                </select>
+              </div>
+            )}
+          </HeaderMenu>
+
+          <HeaderMenu label={<span aria-hidden>⚙︎ Display</span>} title="Display settings" ariaLabel="Display settings">
+            {(close) => (
+              <div className="menu-section">
+                <div className="menu-heading">Zoom</div>
+                <div className="zoom-control" role="group" aria-label="Content zoom">
+                  <button className="icon-btn" onClick={() => setZoom(zoom - 0.1)} disabled={zoom <= 0.8} aria-label="Zoom out" title="Zoom out">−</button>
+                  <button className="zoom-value" onClick={() => setZoom(1)} aria-label="Reset zoom" title="Reset to 100%">{Math.round(zoom * 100)}%</button>
+                  <button className="icon-btn" onClick={() => setZoom(zoom + 0.1)} disabled={zoom >= 1.4} aria-label="Zoom in" title="Zoom in">+</button>
+                </div>
+                <button className="menu-item" role="menuitem" onClick={() => setDensity(density === 'compact' ? 'comfortable' : 'compact')} aria-pressed={density === 'compact'}>
+                  {density === 'compact' ? 'Comfortable rows' : 'Compact rows'}
+                </button>
+                <button className="menu-item" role="menuitem" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+                  {theme === 'light' ? 'Dark theme' : 'Light theme'}
+                </button>
+                <button className="menu-item" role="menuitem" onClick={() => { close(); setPresentation(true); }}>Presentation mode</button>
+                <button className="menu-item" role="menuitem" onClick={() => { close(); toggleFullscreen(); }}>{isFull ? 'Exit full screen' : 'Full screen'}</button>
+              </div>
+            )}
+          </HeaderMenu>
+
           <button className="btn-ghost" onClick={() => navigate('/settings')}>Settings</button>
           <span className="pill">{provider.mode} mode</span>
-          <button className="btn" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
-            {theme === 'light' ? 'Dark' : 'Light'} theme
-          </button>
         </div>
       </header>
       <DockProvider>

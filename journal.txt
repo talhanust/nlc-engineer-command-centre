@@ -2821,3 +2821,52 @@ NLC Engineer Command Centre — work journal
 - Gate (chunked): domain+data 72 files/540, screens+components 17/168, root 17/95
   + 16/85 = 121 files, 921 tests, all passing. Server 9; typecheck clean;
   local + api builds green.
+
+2026-07-30 (e) — deep-link alerts to the exact sub-tab (finishes the Attention system)
+- The Attention panel landed an alert on /node/:id/commercial — the right project,
+  but the commercial LANDING page, leaving the user to hunt for Aging / Advances /
+  Reconciliation. The alert already carries its target sub in `sub`; nothing used it.
+- Made the commercial sub-tab URL-driven: CommercialTab reads ?sub=<id> via
+  useSearchParams instead of useState, and setSub writes it back (replace). So the
+  sub-tab is now deep-linkable, bookmarkable and shareable. Fallbacks: no param →
+  BOQ register (unchanged default); a real sub id → that tab; an unknown value
+  (e.g. the directive alert sub "command", which is not a commercial sub-tab) →
+  the overview dashboard, a safe home.
+- AttentionPanel.openAlert now navigates to /commercial?sub=<sub> (mapping still
+  routes to the top-level mapping tab). An alert is now one click from the exact
+  screen that fixes it, cross-project.
+- The per-project banner already routed via setSub, which now updates the URL too,
+  so in-project alert clicks are deep-linkable as well — no separate change.
+- Tests: NEW screens/commercial/DeepLinkSubtab.test.tsx (4) — ?sub=aging lands on
+  Aging; no param lands on BOQ; unknown sub falls back to Dashboard; clicking a
+  sub-tab updates the URL. AttentionPanel +1 — an alert row links into a project
+  and selects a sub-tab. All 44 existing commercial-tab tests still pass unchanged
+  (setSub writing the URL is transparent to them).
+- Gate (chunked): domain+data 72 files/540, screens+components 18/173, root 17/95
+  + 16/85 = 122 files, 928 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- REMAINING flagged: drawer prev/next (review records without closing); richer
+  salient typed values + provenance; alert triage (mute/resolve) from the panel.
+
+2026-07-30 (f) — drawer bug: header controls missing / panel not covering the window
+- User screenshot: opening a contract showed the hero cards + BOQ table but NO
+  drawer header — no ✕ close, no ⤢/⇥ resize, no title bar — and the app header was
+  still visible above it. The full-window drawer was not actually covering the
+  viewport.
+- ROOT CAUSE: the drawer rendered inside <main className="content" style={{ zoom }}>
+  (ContractsRegister is deep in that subtree). CSS `zoom` on an ancestor
+  establishes a containing block and scales/offsets descendants, so the drawer's
+  position:fixed backdrop no longer resolved to the viewport — it was scaled and
+  pushed below the app header, and .content's max-width:1280px constrained it too.
+  The header row ended up scrolled/clipped out of view.
+- FIX: DetailDrawer now renders through createPortal(…, document.body), so it
+  escapes the zoomed, max-width-constrained content tree entirely. position:fixed
+  inset:0 z-index:1200 now covers the true viewport, above the app header (z 20),
+  and the drawer header (title, ⤢/⇥ resize, ✕ close) shows at the top as intended.
+  Because every detail view shares DetailDrawer, all of them are fixed at once.
+- Tests DetailDrawer +2: the dialog is portalled to document.body (NOT nested in a
+  zoomed parent subtree); a full drawer shows its close + resize controls. Existing
+  drawer/contract tests unaffected (Testing Library queries the whole document).
+- Gate (chunked): domain+data 72 files/540, screens+components 18/175, root 17/95
+  + 16/85 = 122 files, 932 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.

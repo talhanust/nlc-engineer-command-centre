@@ -32,9 +32,10 @@ export function AttentionPanel({ nodeId, isProject }: { nodeId: string; isProjec
   const worst = roll.critical > 0 ? 'critical' : 'warning';
 
   function openAlert(projectId: string, sub: string) {
-    // Mapping is a top-level tab; everything else is a commercial sub-tab. Land on
-    // the project's commercial view (or mapping) so the fix is right there.
-    navigate(sub === 'mapping' ? `/node/${projectId}/mapping` : `/node/${projectId}/commercial`);
+    // Land on the exact screen that holds the fix. Mapping is a top-level tab;
+    // every other alert targets a commercial sub-tab, carried in the URL so the
+    // deep link lands there directly rather than on the commercial landing page.
+    navigate(sub === 'mapping' ? `/node/${projectId}/mapping` : `/node/${projectId}/commercial?sub=${sub}`);
   }
 
   return (

@@ -94,3 +94,25 @@ describe('DetailDrawer — sizing', () => {
     expect(screen.queryByRole('button', { name: /Expand|Collapse/ })).toBeNull();
   });
 })
+
+describe('DetailDrawer — escapes the content area', () => {
+  it('renders at document.body via a portal, not nested in the caller', () => {
+    const { container } = render(
+      <div style={{ zoom: 1.1 as unknown as number }} data-testid="zoomed-parent">
+        <DetailDrawer title="NLC/X/SC-01" width="full" tabs={tabs} onClose={() => {}} />
+      </div>,
+    );
+    // The dialog is NOT inside the caller's (zoomed) subtree…
+    expect(within(container).queryByRole('dialog')).toBeNull();
+    // …it's portalled to the body, so position:fixed covers the real viewport.
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="zoomed-parent"]')!.contains(dialog)).toBe(false);
+  });
+
+  it('a full drawer still shows its header controls (close + resize)', () => {
+    render(<DetailDrawer title="NLC/X/SC-01" width="full" tabs={tabs} onClose={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Close details' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Collapse to side panel' })).toBeInTheDocument();
+  });
+});

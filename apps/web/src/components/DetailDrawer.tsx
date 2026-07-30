@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 export interface DrawerTab {
   id: string;
@@ -67,7 +68,7 @@ export function DetailDrawer({
   const canResize = size !== 'narrow';
   const isFull = size === 'full';
 
-  return (
+  return createPortal(
     <div className={`drawer-backdrop ${isFull ? 'drawer-backdrop-full' : ''}`} onClick={onClose}>
       <aside className={`drawer drawer-${size}`} role="dialog"
         aria-label={typeof title === 'string' ? title : 'Detail'} aria-modal="true"
@@ -113,7 +114,8 @@ export function DetailDrawer({
 
         {actions && !hero && tabs === undefined && <footer className="drawer-actions">{actions}</footer>}
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

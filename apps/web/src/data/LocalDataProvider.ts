@@ -28,6 +28,7 @@ import { applyRarAction } from '../domain/rar';
 import { canDeleteContract } from '../domain/contractDelete';
 import { computeTermination, executedByItem, checkDetermination } from '../domain/contractTermination';
 import { inferLineType } from '../domain/boqLineType';
+import { rollUpAttention, projectsUnder, projectActiveAlerts, type AttentionRollup } from '../domain/attention';
 import type { BoqLineType } from './types';
 import { synthSeries } from '../domain/scurve';
 import { DEMAND_CHAIN, checkAdvance } from '../domain/chains';
@@ -1940,7 +1941,28 @@ export class LocalDataProvider implements DataProvider {
     writeJson(USERS_KEY, all);
     return all;
   }
-  async listAlertStates(projectId: string): Promise<AlertState[]> {
+  async attentionFor(nodeId: string): Promise<AttentionRollup> {
+    const nodes = readJson<OrgNode[]>(nodesKey, () => NODES);
+    const projects = projectsUnder(nodeId, nodes);
+    const byProject = new Map<string, ReturnType<typeof projectActiveAlerts>>();
+    const today = new Date();
+    // Reuse the canonical list methods so keys, seeds and fallbacks stay in one
+    // place — the roll-up can never drift from what a project's own screens show.
+    for (const proj of projects) {
+      const id = proj.id;
+      const [ipcs, rars, epcs, dists, boq, subs, bgs, links, sched, progress, cfg, states] = await Promise.all([
+        this.listIpcs(id), this.listRars(id), this.listEpcs(id), this.listDistributions(id),
+        this.listBoq(id), this.listSubcontractors(id), this.listBankGuarantees(id), this.listBoqWbs(id),
+        this.listSchedule(id), this.listProgress(id), this.getCommercialConfig(id), this.listAlertStates(id),
+      ]);
+      byProject.set(id, projectActiveAlerts({
+        projectId: id, ipcs, rars, epcs, dists, boq, subs, bgs, links, sched, progress,
+        divergenceTolerancePct: cfg.divergenceTolerancePct, states,
+      }, today));
+    }
+    return rollUpAttention(nodeId, nodes, byProject);
+  }
+    async listAlertStates(projectId: string): Promise<AlertState[]> {
     return readJson(alertStateKey(projectId), () => []);
   }
   async setAlertState(projectId: string, state: Omit<AlertState, 'updatedAt'>): Promise<AlertState[]> {

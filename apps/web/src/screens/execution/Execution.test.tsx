@@ -663,7 +663,7 @@ describe('HR cockpit + organogram', () => {
     await user.click(screen.getByRole('tab', { name: 'Skills' }));
     const table = await screen.findByRole('table', { name: 'Credentials' });
     expect(within(table).getByText('CIVIL/12345')).toBeInTheDocument();
-    expect(screen.getByText(/need attention/)).toBeInTheDocument();
+    expect(screen.getByText(/credentials? need attention/)).toBeInTheDocument();
     // Delete with undo restores the credential.
     await user.click(screen.getByRole('button', { name: 'Delete credential CIVIL/12345' }));
     await waitFor(() => expect(screen.queryByText('CIVIL/12345')).not.toBeInTheDocument());

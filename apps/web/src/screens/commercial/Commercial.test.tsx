@@ -304,6 +304,7 @@ describe('Phase 3 — Commercial tab', () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
     await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('button', { name: /Signed-in user and acting role/ }));
     await user.selectOptions(screen.getAllByLabelText("Switch acting role")[0], 'fm');
     await user.click(screen.getByRole('tab', { name: 'IPC register' }));
     const table = await screen.findByRole('table', { name: 'IPC register' });
@@ -318,6 +319,7 @@ describe('Phase 3 — Commercial tab', () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
     await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('button', { name: /Signed-in user and acting role/ }));
     await user.selectOptions(screen.getAllByLabelText('Switch acting role')[0], 'fm');
     await user.click(screen.getByRole('tab', { name: 'RAR Register' }));
     const table = await screen.findByRole('table', { name: 'RAR register' });
@@ -332,6 +334,7 @@ describe('Phase 3 — Commercial tab', () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15/commercial');
     await screen.findByText('BOQ lifecycle');
+    await user.click(screen.getByRole('button', { name: /Signed-in user and acting role/ }));
     await user.selectOptions(screen.getAllByLabelText('Switch acting role')[0], 'fm');
     await user.click(screen.getByRole('tab', { name: 'Variations' }));
     const table = await screen.findByRole('table', { name: 'Variations register' });
@@ -426,14 +429,16 @@ describe('Phase 3 — Commercial tab', () => {
     await waitFor(() => expect(within(row).getByText('Recommended')).toBeInTheDocument());
   });
 
-  it('toggles row density from the workspace toolbar', async () => {
+  it('toggles row density from the Display menu', async () => {
     const user = userEvent.setup();
-    renderAt('/node/proj-f14f15/commercial');
+    const { container } = renderAt('/node/proj-f14f15/commercial');
     await screen.findByText('BOQ lifecycle');
-    const toggle = screen.getByRole('button', { name: 'Toggle row density' });
-    expect(toggle).toHaveAttribute('aria-pressed', 'false');
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    const layout = container.querySelector('.layout')!;
+    expect(layout.className).toMatch(/density-comfortable/);
+
+    await user.click(screen.getByRole('button', { name: 'Display settings' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Compact rows' }));
+    expect(layout.className).toMatch(/density-compact/);
   });
 
   it('sorts the IPC register by a column header', async () => {

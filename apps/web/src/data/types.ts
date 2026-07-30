@@ -1316,6 +1316,9 @@ export interface DataProvider {
   upsertUser(input: Omit<AppUser, 'id'> & { id?: string }): Promise<AppUser[]>;
   deleteUser(id: string): Promise<AppUser[]>;
   listAlertStates(projectId: string): Promise<AlertState[]>;
+  /** Roll up active alerts for every project at or under a node (level-wise):
+   *  a project → its own; a PD HQ → all it commands; HQ → the whole subtree. */
+  attentionFor(nodeId: string): Promise<import('../domain/attention').AttentionRollup>;
   setAlertState(projectId: string, state: Omit<AlertState, 'updatedAt'>): Promise<AlertState[]>;
   /** Write an authorised-override entry to the audit trail (req 3b(4)). */
   recordOverride(projectId: string, entity: string, ref: string, detail: string): Promise<void>;

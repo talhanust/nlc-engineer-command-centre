@@ -1,6 +1,7 @@
 import { useParams } from 'react-router-dom';
 import { useData } from '../data/DataContext';
 import { nodeById, isBranch } from '../domain/org';
+import { AttentionPanel } from '../components/AttentionPanel';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { CommentsPanel } from '../components/CommentsPanel';
 import { CommandDashboard } from './CommandDashboard';
@@ -15,6 +16,7 @@ export function NodeScreen() {
   return (
     <>
       <Breadcrumb nodeId={nodeId} />
+      <AttentionPanel nodeId={nodeId} isProject={!isBranch(node)} />
       {isBranch(node) ? <CommandDashboard nodeId={nodeId} /> : <ProjectView nodeId={nodeId} />}
       <CommentsPanel nodeId={nodeId} />
     </>

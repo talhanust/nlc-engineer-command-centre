@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { measureMode, percentToExecuted, executedToPercent, lineType, LINE_TYPE_LABEL } from '../../domain/boqLineType';
 import { useData } from '../../data/DataContext';
 import { formatMoney } from '../../domain/money';
 import { ROLE_LABEL } from '../../domain/chains';
@@ -25,11 +26,24 @@ export function ProgressTab({ projectId }: { projectId: string }) {
   const physical = physicalProgressPct(items, updates);
   const earned = executedValueToDate(items, updates);
 
-  async function enter(item: BoqItem, qty: string) {
+  async function enter(item: BoqItem, raw: string) {
     setError('');
-    const v = Number(qty);
-    if (!v) return;
-    setUpdates([...(await provider.upsertProgress(projectId, { boqItemId: item.id, period, executedQty: v, role }))]);
+    const v = Number(raw);
+    if (!Number.isFinite(v) || raw.trim() === '') return;
+    const mode = measureMode(item);
+    let deltaQty: number;
+    if (mode === 'percent') {
+      // The field is CUMULATIVE % complete for a lump sum. Convert to the target
+      // executed quantity, then post the delta over what has already been booked,
+      // so entering 60% after 40% books the extra 20% (not another 60%).
+      const already = cumulativeExecuted(updates, item.id);
+      const target = percentToExecuted(item, v);
+      deltaQty = +(target - already).toFixed(6);
+      if (deltaQty === 0) return;
+    } else {
+      deltaQty = v; // measured line: the field is this period's quantity
+    }
+    setUpdates([...(await provider.upsertProgress(projectId, { boqItemId: item.id, period, executedQty: deltaQty, role }))]);
   }
   async function validate(id: string) {
     setError('');
@@ -72,7 +86,17 @@ export function ProgressTab({ projectId }: { projectId: string }) {
                 <td className="num">{i.qty}</td>
                 <td className="num">{cumulativeExecuted(updates, i.id)}</td>
                 <td className="num">{itemPctComplete(i, updates)}%</td>
-                <td className="num"><input className="qty-input" aria-label={`Enter executed ${i.code}`} placeholder="qty" disabled={role !== 'sqs'} onBlur={(e) => { enter(i, e.target.value); e.currentTarget.value = ''; }} /></td>
+                <td className="num">{(() => {
+                  const mode = measureMode(i);
+                  if (mode === 'none') return <span className="muted small" title={`${LINE_TYPE_LABEL[lineType(i)]} — adjusted on instruction, not remeasured here`}>n/a</span>;
+                  if (mode === 'percent') return (
+                    <input className="qty-input" aria-label={`Enter percent complete ${i.code}`} placeholder="% cum."
+                      disabled={role !== 'sqs'} title="Lump sum — enter cumulative % complete"
+                      defaultValue={executedToPercent(i, cumulativeExecuted(updates, i.id)) || ''}
+                      onBlur={(e) => { enter(i, e.target.value); }} />
+                  );
+                  return <input className="qty-input" aria-label={`Enter executed ${i.code}`} placeholder="qty" disabled={role !== 'sqs'} onBlur={(e) => { enter(i, e.target.value); e.currentTarget.value = ''; }} />;
+                })()}</td>
               </tr>
             ))}
         </tbody>

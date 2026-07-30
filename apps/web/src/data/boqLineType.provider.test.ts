@@ -39,3 +39,37 @@ describe('BOQ line type through the provider', () => {
     expect((await p.listAudit()).some((a) => a.entity === 'BoqItem' && /line type/.test(a.detail ?? ''))).toBe(true);
   });
 });
+
+describe('lump sum billed by percentage complete — end to end', () => {
+  let p2: LocalDataProvider;
+  const PP = 'proj-lump';
+  beforeEach(async () => {
+    setKvStore(memKv());
+    p2 = new LocalDataProvider();
+    await p2.replaceBoq(PP, [
+      { billNo: '7', code: 'SP-701a', description: 'Provide surveying & allied instruments', unit: 'LS', qty: 1, rate: 2_000_000, lineType: 'lump_sum' },
+    ]);
+  });
+
+  it('a lump sum at 40% complete earns 40% of its value', async () => {
+    const boq = await p2.listBoq(PP);
+    const id = boq[0].id;
+    // Progress stores the executed "quantity"; 40% of a qty-1 lump = 0.4.
+    await p2.upsertProgress(PP, { boqItemId: id, period: 'M1', executedQty: 0.4, role: 'sc' });
+    for (const pr of await p2.listProgress(PP)) await p2.validateProgress(PP, pr.id, 'pm');
+
+    const { executedValueToDate } = await import('../domain/progress');
+    const items = await p2.listBoq(PP);
+    const updates = await p2.listProgress(PP);
+    expect(executedValueToDate(items, updates)).toBeCloseTo(0.4 * 2_000_000, 2); // Rs 800,000
+  });
+
+  it('the incurred value reaches the full lump at 100%, not beyond', async () => {
+    const boq = await p2.listBoq(PP);
+    const id = boq[0].id;
+    await p2.upsertProgress(PP, { boqItemId: id, period: 'M1', executedQty: 1, role: 'sc' });
+    for (const pr of await p2.listProgress(PP)) await p2.validateProgress(PP, pr.id, 'pm');
+    const { executedValueToDate } = await import('../domain/progress');
+    expect(executedValueToDate(await p2.listBoq(PP), await p2.listProgress(PP))).toBeCloseTo(2_000_000, 2);
+  });
+});

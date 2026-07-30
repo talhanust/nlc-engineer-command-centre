@@ -269,6 +269,9 @@ export class ApiDataProvider implements DataProvider {
   async terminateContract(projectId: string, contractId: string, reason?: string): Promise<Contract> {
     return this.send<Contract>(`/api/projects/${projectId}/contracts/${contractId}/terminate`, 'POST', { reason });
   }
+  async attentionFor(nodeId: string): Promise<import('../domain/attention').AttentionRollup> {
+    return this.send(`/api/nodes/${nodeId}/attention`, 'GET', undefined);
+  }
   async setBoqLineType(projectId: string, boqItemId: string, lineType: import('./types').BoqLineType): Promise<import('./types').BoqItem[]> {
     return this.send(`/api/projects/${projectId}/boq/${boqItemId}/line-type`, 'POST', { lineType });
   }

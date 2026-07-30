@@ -92,6 +92,7 @@ describe('baseline lock banner UI', () => {
     const banner = await screen.findByRole('status', { name: 'BOQ lock' });
     expect(within(banner).getByText(/Draft — not yet locked/)).toBeInTheDocument();
     // sign in as SQS to start the lock
+    await user.click(screen.getByRole('button', { name: /Signed-in user and acting role/ }));
     await user.selectOptions(screen.getAllByLabelText('Switch user')[0], 'Senior Quantity Surveyor');
     await user.click(await within(await screen.findByRole('status', { name: 'BOQ lock' })).findByLabelText('Submit boq for lock'));
     await waitFor(() => expect(within(screen.getByRole('status', { name: 'BOQ lock' })).getByText(/Locking in progress/)).toBeInTheDocument());

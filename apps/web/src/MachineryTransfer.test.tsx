@@ -80,6 +80,7 @@ describe('machinery transfer UI', () => {
     const booked = await screen.findByRole('table', { name: 'Booked machinery' });
     expect(within(booked).getByText('EXC-320')).toBeInTheDocument();
     // sign in as SM Proc PD to see the initiate control
+    await user.click(screen.getByRole('button', { name: /Signed-in user and acting role/ }));
     await user.selectOptions(screen.getAllByLabelText('Switch user')[0], 'SM/Manager Procurement (HQ PD)');
     await waitFor(() => expect(screen.getByLabelText('Transfer asset')).toBeInTheDocument());
   }, 30000);

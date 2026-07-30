@@ -70,6 +70,7 @@ describe('project staff lock UI', () => {
     const proj = await p.createProject({ pdHqId: 'pd-north', name: 'Test Locked Project', clientName: 'CDA', contractValue: '100000000' });
 
     // Site Engineer (project-level appointment) → locked
+    await user.click(screen.getByRole('button', { name: /Signed-in user and acting role/ }));
     await user.selectOptions(screen.getAllByLabelText('Switch user')[0], 'Site Engineer');
     window.history.pushState({}, '', '/');
     renderAt(`/node/${proj.id}`);

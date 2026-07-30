@@ -49,6 +49,7 @@ describe('worklist screen + bell', () => {
     const user = userEvent.setup();
     renderAt('/worklist');
     await screen.findByRole('heading', { name: /My approvals/ });
+    await user.click(screen.getByRole('button', { name: /Signed-in user and acting role/ }));
     await user.selectOptions(screen.getAllByLabelText('Switch acting role')[0], 'pm');
     const table = await screen.findByRole('table', { name: 'My approvals' });
     await waitFor(() => expect(within(table).getAllByRole('row').length).toBeGreaterThan(1));

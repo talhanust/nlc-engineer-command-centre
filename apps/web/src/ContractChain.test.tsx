@@ -85,11 +85,13 @@ describe('contracts register chain UI', () => {
     await waitFor(() => expect(within(screen.getByRole('table', { name: 'Contracts register' })).getByLabelText(`Chain ${draft.contractNo}`).textContent).toMatch(/Deputy Project Manager · step 1\/5/));
 
     // sign in as DPM and validate
+    await user.click(screen.getByRole('button', { name: /Signed-in user and acting role/ }));
     await user.selectOptions(screen.getAllByLabelText('Switch user')[0], 'Deputy Project Manager');
     await user.click(await screen.findByLabelText(`validate ${draft.contractNo}`));
     await waitFor(() => expect(screen.getByLabelText(`Chain ${draft.contractNo}`).textContent).toMatch(/Senior Project Manager · step 2\/5/));
 
     // SPM returns for correction with remarks
+    await user.click(screen.getByRole('button', { name: /Signed-in user and acting role/ }));
     await user.selectOptions(screen.getAllByLabelText('Switch user')[0], 'PM — F-14/F-15'); // holds the SPM appointment
     await user.click(await screen.findByLabelText(`Return ${draft.contractNo}`));
     const dialog = await screen.findByRole('dialog', { name: `Return ${draft.contractNo} for correction` });

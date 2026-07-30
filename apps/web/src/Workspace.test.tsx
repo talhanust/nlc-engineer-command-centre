@@ -36,10 +36,12 @@ describe('workspace interactivity', () => {
     expect(layout.classList.contains('sidebar-collapsed')).toBe(false);
   });
 
-  it('changes and resets content zoom', async () => {
+  it('changes and resets content zoom from the Display menu', async () => {
     const user = userEvent.setup();
     renderAt('/node/hq-nlc');
     await screen.findByRole('heading', { name: 'HQ NLC' });
+    // Zoom lives in the Display menu; it stays open across clicks inside it.
+    await user.click(screen.getByRole('button', { name: 'Display settings' }));
     expect(screen.getByRole('button', { name: 'Reset zoom' })).toHaveTextContent('100%');
 
     await user.click(screen.getByRole('button', { name: 'Zoom in' }));
@@ -77,14 +79,17 @@ describe('workspace interactivity', () => {
     await screen.findByRole('heading', { name: 'HQ NLC' });
     const layout = document.querySelector('.layout')!;
 
-    await user.click(screen.getByRole('button', { name: 'Enter presentation mode' }));
+    // Presentation lives in the Display menu now.
+    await user.click(screen.getByRole('button', { name: 'Display settings' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Presentation mode' }));
     expect(layout.classList.contains('presentation')).toBe(true);
 
     await user.click(screen.getByRole('button', { name: 'Exit presentation mode' }));
     expect(layout.classList.contains('presentation')).toBe(false);
 
     // Esc also exits.
-    await user.click(screen.getByRole('button', { name: 'Enter presentation mode' }));
+    await user.click(screen.getByRole('button', { name: 'Display settings' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Presentation mode' }));
     expect(layout.classList.contains('presentation')).toBe(true);
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(layout.classList.contains('presentation')).toBe(false);

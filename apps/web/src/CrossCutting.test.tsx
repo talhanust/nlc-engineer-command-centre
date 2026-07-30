@@ -50,15 +50,25 @@ describe('Phase 7 — governance', () => {
     expect(within(table).getByLabelText('pm can approve_ipc')).not.toBeChecked();
   });
 
-  it('edits project salients on the executive tab', async () => {
+  it('views salients as a fact sheet, then edits and saves a new one', async () => {
     const user = userEvent.setup();
     renderAt('/node/proj-f14f15');
-    const table = await screen.findByRole('table', { name: 'Salients' });
-    expect(within(table).getByText('Scope')).toBeInTheDocument();
-    await user.type(screen.getByLabelText('New salient label'), 'EOT status');
-    await user.type(screen.getByLabelText('New salient value'), '45 days approved');
-    await user.click(screen.getByRole('button', { name: 'Add salient' }));
+    // Read view: a fact sheet, not a form.
+    const sheet = await screen.findByLabelText('Salients');
+    expect(within(sheet).getByText('Scope')).toBeInTheDocument();
+
+    // Enter edit mode, add a fact, save.
+    await user.click(screen.getByRole('button', { name: 'Edit salients' }));
+    await user.click(screen.getByRole('button', { name: 'Add salient row' }));
+    const labels = screen.getAllByLabelText(/Salient label \d+/);
+    const values = screen.getAllByLabelText(/Salient value \d+/);
+    await user.type(labels[labels.length - 1], 'EOT status');
+    await user.type(values[values.length - 1], '45 days approved');
+    await user.click(screen.getByRole('button', { name: 'Save salients' }));
+
+    // Back in read view, the new fact is shown.
     expect(await screen.findByText('EOT status')).toBeInTheDocument();
+    expect(screen.getByText('45 days approved')).toBeInTheDocument();
   });
 });
 

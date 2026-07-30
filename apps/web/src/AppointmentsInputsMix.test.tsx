@@ -68,6 +68,7 @@ describe('mark-input minute with acknowledgement (A9)', () => {
     renderAt('/node/proj-f14f15');
     await screen.findByText('Inputs to command (proper channel)');
     // sign in as SQS (project scope)
+    await user.click(screen.getByRole('button', { name: /Signed-in user and acting role/ }));
     await user.selectOptions(screen.getAllByLabelText('Switch user')[0], 'Senior Quantity Surveyor');
     const box = await screen.findByLabelText('Input text');
     expect((box as HTMLInputElement).placeholder).toMatch(/Deputy Project Manager/);
@@ -75,6 +76,7 @@ describe('mark-input minute with acknowledgement (A9)', () => {
     await user.click(screen.getByRole('button', { name: 'Mark input ↑' }));
     await screen.findByRole('table', { name: 'My inputs' });
     // switch to DPM — the input awaits acknowledgement
+    await user.click(screen.getByRole('button', { name: /Signed-in user and acting role/ }));
     await user.selectOptions(screen.getAllByLabelText('Switch user')[0], 'Deputy Project Manager');
     const pending = await screen.findByRole('table', { name: 'Inputs awaiting acknowledgement' });
     const row = within(pending).getByText(/RAR-03 recovery/).closest('tr')! as HTMLElement;

@@ -67,6 +67,7 @@ describe('organisational scoping (req 3j(3))', () => {
     renderAt('/node/hq-nlc');
     await screen.findByRole('table', { name: 'Breakdown' });
     // sign in as Project Director — North (scope pd-north)
+    await user.click(screen.getByRole('button', { name: /Signed-in user and acting role/ }));
     await user.selectOptions(screen.getAllByLabelText('Switch user')[0], 'Project Director — North');
     const notice = await screen.findByRole('alert', { name: 'Out of scope' });
     expect(within(notice).getByText(/Outside your scope/)).toBeInTheDocument();

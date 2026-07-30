@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { BoqItem, BoqLineType } from '../data/types';
 import {
   lineType, isRemeasured, countsToEarnedValue, isAllocable, earnedValueBase, inferLineType, LINE_TYPE_LABEL,
+  measureMode, percentToExecuted, executedToPercent,
 } from './boqLineType';
 
 const item = (lt: BoqLineType | undefined, amount = 100): BoqItem => ({
@@ -81,5 +82,37 @@ describe('labels', () => {
   it('names every type', () => {
     expect(LINE_TYPE_LABEL.provisional).toBe('Provisional sum');
     expect(LINE_TYPE_LABEL.prime_cost).toBe('Prime cost');
+  });
+});
+
+describe('measurement mode by type', () => {
+  it('maps each type to how it is measured', () => {
+    expect(measureMode(item('measured'))).toBe('quantity');
+    expect(measureMode(item('lump_sum'))).toBe('percent');
+    expect(measureMode(item('provisional'))).toBe('none');
+    expect(measureMode(item('prime_cost'))).toBe('none');
+    expect(measureMode(item('dayworks'))).toBe('none');
+    expect(measureMode(item(undefined))).toBe('quantity'); // legacy
+  });
+});
+
+describe('lump-sum percent ⇄ executed', () => {
+  const lump = { qty: 1 };       // the usual lump: qty 1, rate = full value
+  const lumpN = { qty: 4 };      // a lump modelled over several units
+
+  it('converts % complete to the executed quantity that yields that % of value', () => {
+    expect(percentToExecuted(lump, 40)).toBe(0.4);   // 40% of a qty-1 lump
+    expect(percentToExecuted(lumpN, 25)).toBe(1);    // 25% of qty 4
+  });
+
+  it('clamps a lump sum at 100% — never over-billed', () => {
+    expect(percentToExecuted(lump, 140)).toBe(1);
+    expect(percentToExecuted(lump, -10)).toBe(0);
+  });
+
+  it('round-trips back to a percentage', () => {
+    expect(executedToPercent(lump, 0.4)).toBe(40);
+    expect(executedToPercent(lumpN, 1)).toBe(25);
+    expect(executedToPercent(lump, 2)).toBe(100); // capped
   });
 });

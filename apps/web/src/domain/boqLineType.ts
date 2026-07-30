@@ -88,3 +88,39 @@ export function inferLineType(row: { unit?: string; description?: string; code?:
   if (unit === 'ls' || unit === 'sum' || unit === 'item' || /\blump sum\b/.test(desc)) return 'lump_sum';
   return 'measured';
 }
+
+/**
+ * How a line is measured for payment, given its type — the shape the entry UI and
+ * the RAR/IPC path both need so they stop treating every line as a quantity.
+ *
+ *  - 'quantity'   enter the executed quantity this period (measured lines)
+ *  - 'percent'    enter % complete; the value is that % of the lump (lump sums)
+ *  - 'none'       not remeasured from the BOQ — a provisional/PC sum is adjusted
+ *                 on instruction, dayworks are booked as incurred cost elsewhere
+ */
+export type MeasureMode = 'quantity' | 'percent' | 'none';
+
+export function measureMode(item: Pick<BoqItem, 'lineType'>): MeasureMode {
+  const t = lineType(item);
+  if (t === 'measured') return 'quantity';
+  if (t === 'lump_sum') return 'percent';
+  return 'none';
+}
+
+/**
+ * Convert a CUMULATIVE % complete on a lump sum into the cumulative executed
+ * "quantity" the progress store holds. A lump sum is modelled as qty × rate, so
+ * x% complete is x% of that quantity — and the existing executedQty × rate
+ * arithmetic then yields x% of the money with no special-casing downstream.
+ * Clamped to [0, qty] so a lump can never be over-billed past 100%.
+ */
+export function percentToExecuted(item: Pick<BoqItem, 'qty'>, percent: number): number {
+  const pct = Math.max(0, Math.min(100, Number.isFinite(percent) ? percent : 0));
+  return +((pct / 100) * item.qty).toFixed(6);
+}
+
+/** The inverse: the cumulative executed quantity expressed as % of the lump. */
+export function executedToPercent(item: Pick<BoqItem, 'qty'>, executed: number): number {
+  if (item.qty <= 0) return 0;
+  return Math.max(0, Math.min(100, +((executed / item.qty) * 100).toFixed(1)));
+}

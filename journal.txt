@@ -3158,3 +3158,33 @@ NLC Engineer Command Centre — work journal
 - Both remaining backlog items now done: dayworks→IPC (turn p) and contract
   revisions as versions (this turn). The pending-suggestions list from the start
   of the project is fully cleared.
+
+2026-07-30 (r) — FIX: seeded projects now show in the real app (not just tests)
+- User reported HQ Engineers showing 0 projects / Rs 0 everywhere despite the 25
+  seeded projects. ROOT CAUSE: demoSeedEnabled was `import.meta.env.MODE ===
+  "test"` — the demo portfolio was deliberately TEST-ONLY. Every real build (dev/
+  local/api/production) shipped with SEED = [] and a clean-slate migration that
+  even PURGED demo projects from existing stores. So all 1000 tests passed while
+  the deployed app came up empty — the seed data only ever existed under the test
+  fixture.
+- FIX: demoSeedEnabled = MODE === "test" || import.meta.env.VITE_DEMO_SEED !==
+  "off". Now the demo portfolio ships ENABLED by default (test mode on as before;
+  dev/prod on; a real empty deployment builds with VITE_DEMO_SEED=off).
+  setDemoSeed(true|false) runtime override unchanged, so seedDisabled + clean-
+  slate tests still work. The purge branch (if !demoSeedEnabled) now only runs
+  when explicitly disabled.
+- Bumped SEED_VERSION v16 → v17-demo-seed-on so an existing browser store (which
+  may have loaded empty under the old test-only gate) re-reconciles on next load:
+  reconcileSeed appends the 25 projects + org nodes (no purge, since seed is on),
+  and per-project commercial data regenerates lazily via gen(). User-created real
+  projects are preserved (not in LEGACY_SEED_IDS).
+- Verified: production build contains the seed (project names in the bundle); the
+  boolean resolves true for a normal build (MODE=production ≠ test; unset
+  VITE_DEMO_SEED is undefined !== "off"). seedDisabled/fivePerPd/seedReconcile/
+  NewProjectCleanSlate all green.
+- Gate (chunked): domain+data 77/575, screens+components 23/194, root 17/95 + 16/85
+  = 133 files, 1000 tests, all passing. Server 9; typecheck clean; local + api
+  builds green.
+- NOTE for deployment: the live GitHub Pages site must be REBUILT from this
+  version for the fix to take effect; a user on an old browser store also needs
+  the new build (then the version bump repopulates their store automatically).

@@ -3,6 +3,7 @@ import { useData } from '../../data/DataContext';
 import { ExportMenu } from '../../components/ExportMenu';
 import { formatMoney } from '../../domain/money';
 import { LINE_TYPE_LABEL, LINE_TYPE_SHORT, lineType, countsToEarnedValue } from '../../domain/boqLineType';
+import { dayworkValueByItem } from '../../domain/dayworks';
 import type { BoqLineType } from '../../data/types';
 import {
   buildBoqRows, groupBoq, filterBoqRows, boqTotals,
@@ -23,6 +24,7 @@ export function BoqRegister({ projectId }: { projectId: string }) {
   const [items, setItems] = useState<BoqItem[]>([]);
   const [dists, setDists] = useState<Distribution[]>([]);
   const [progress, setProgress] = useState<ProgressUpdate[]>([]);
+  const [dayworks, setDayworks] = useState<import('../../data/types').DayworkSheet[]>([]);
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
   const [importing, setImporting] = useState(false);
   async function setType(boqItemId: string, lt: BoqLineType) {
@@ -42,12 +44,14 @@ export function BoqRegister({ projectId }: { projectId: string }) {
       provider.listDistributions(projectId),
       provider.listProgress(projectId),
       provider.listIpcs(projectId),
-    ]).then(([b, d, p, i]) => { if (alive) { setItems(b); setDists(d); setProgress(p); setIpcs(i); } });
+      provider.listDayworks(projectId),
+    ]).then(([b, d, p, i, dw]) => { if (alive) { setItems(b); setDists(d); setProgress(p); setIpcs(i); setDayworks(dw); } });
     return () => { alive = false; };
   }, [provider, projectId]);
 
   const vp = useMemo(() => ipcVettedPaidByItem(ipcs), [ipcs]);
-  const allRows = useMemo(() => buildBoqRows(items, dists, progress, vp), [items, dists, progress, vp]);
+  const dwValue = useMemo(() => Object.fromEntries(dayworkValueByItem(dayworks)), [dayworks]);
+  const allRows = useMemo(() => buildBoqRows(items, dists, progress, { ...vp, dayworkValue: dwValue }), [items, dists, progress, vp, dwValue]);
   const rows = useMemo(() => filterBoqRows(allRows, { search, bill, status }), [allRows, search, bill, status]);
   const bills = useMemo(() => groupBoq(rows), [rows]);
   const grand = useMemo(() => boqTotals(rows), [rows]);

@@ -82,7 +82,19 @@ export function ContractsRegister({ projectId }: { projectId: string }) {
 
   return (
     <div>
-      {detail && <ContractDetailModal projectId={projectId} contract={detail} onClose={() => setDetail(null)} />}
+      {detail && (() => {
+        const i = contracts.findIndex((c) => c.id === detail.id);
+        return (
+          <ContractDetailModal
+            projectId={projectId}
+            contract={detail}
+            position={i >= 0 ? `${i + 1} / ${contracts.length}` : undefined}
+            onPrev={i > 0 ? () => setDetail(contracts[i - 1]) : undefined}
+            onNext={i >= 0 && i < contracts.length - 1 ? () => setDetail(contracts[i + 1]) : undefined}
+            onClose={() => setDetail(null)}
+          />
+        );
+      })()}
 
       {revising && (
         <ReviseContractBoq projectId={projectId} contract={revising}

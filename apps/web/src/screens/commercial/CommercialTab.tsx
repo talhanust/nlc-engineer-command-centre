@@ -21,6 +21,7 @@ import { NewSubletContract } from './NewSubletContract';
 import { ContractsRegister } from './ContractsRegister';
 import { CommercialConfigTab } from './CommercialConfigTab';
 import { RevenueComposition } from './RevenueComposition';
+import { DayworksTab } from './DayworksTab';
 import { CommercialAlerts } from './CommercialAlerts';
 import { CalendarTab } from './CalendarTab';
 import { ContractorProfiles } from './ContractorProfiles';
@@ -46,6 +47,7 @@ const SUBS = [
   ['config', 'Deductions & retention'],
   ['planner', 'Distribution planner'],
   ['exectrack', 'Execution tracker'],
+  ['dayworks', 'Dayworks'],
   ['variations', 'Variations'],
   ['dist', 'Distributions'],
   ['adv', 'Advances'],
@@ -110,6 +112,7 @@ export function CommercialTab({ projectId, onNavigateTab }: { projectId: string;
       {sub === 'exectrack' && <ExecutionTracker projectId={projectId} onManageDistribution={() => setSub('dist')} />}
       {sub === 'dist' && <DistributionsTab projectId={projectId} />}
       {sub === 'adv' && <AdvancesTab projectId={projectId} />}
+      {sub === 'dayworks' && <DayworksTab projectId={projectId} />}
       {sub === 'variations' && <VariationsTab projectId={projectId} />}
       {sub === 'aging' && <AgingTab projectId={projectId} />}
       {sub === 'margin' && <MarginAnalyticsTab projectId={projectId} />}

@@ -4,6 +4,8 @@ import { useToast } from '../../components/Toast';
 import { formatMoney } from '../../domain/money';
 import { ipcDeductionBreakdown, ipcClaimedQtyByItem, deductionsFromConfig, DEFAULT_COMMERCIAL_CONFIG } from '../../domain/ipc';
 import { claimCap, approvedVariationQtyByItem } from '../../domain/billing';
+import { lineType } from '../../domain/boqLineType';
+import { dayworkBilling } from '../../domain/dayworks';
 import { useRole } from '../../state/Role';
 import type { BoqItem, Ipc, ProgressUpdate, CommercialConfig, Variation } from '../../data/types';
 
@@ -21,6 +23,8 @@ export function GenerateIpc({ projectId, onGenerated }: { projectId: string; onG
   const [bill, setBill] = useState('all');
   const [search, setSearch] = useState('');
   const [sel, setSel] = useState<Record<string, number>>({});
+  const [dayworks, setDayworks] = useState<import('../../data/types').DayworkSheet[]>([]);
+  const [inclDayworks, setInclDayworks] = useState(true);
   const [cfg, setCfg] = useState<CommercialConfig>(DEFAULT_COMMERCIAL_CONFIG);
   const [busy, setBusy] = useState(false);
   const [variations, setVariations] = useState<Variation[]>([]);
@@ -28,8 +32,8 @@ export function GenerateIpc({ projectId, onGenerated }: { projectId: string; onG
   const { role } = useRole();
 
   async function load() {
-    const [b, p, i, c, v] = await Promise.all([provider.listBoq(projectId), provider.listProgress(projectId), provider.listIpcs(projectId), provider.getCommercialConfig(projectId), provider.listVariations(projectId)]);
-    setItems(b); setProgress(p); setIpcs(i); setCfg(c); setVariations(v);
+    const [b, p, i, c, v, dw] = await Promise.all([provider.listBoq(projectId), provider.listProgress(projectId), provider.listIpcs(projectId), provider.getCommercialConfig(projectId), provider.listVariations(projectId), provider.listDayworks(projectId)]);
+    setItems(b); setProgress(p); setIpcs(i); setCfg(c); setVariations(v); setDayworks(dw);
   }
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [provider, projectId]);
 
@@ -69,7 +73,13 @@ export function GenerateIpc({ projectId, onGenerated }: { projectId: string; onG
     const it = items.find((x) => x.id === id);
     return a + (it ? qty * it.rate : 0);
   }, 0), [sel, items]);
-  const ded = ipcDeductionBreakdown(gross, { d: deductionsFromConfig(cfg) });
+  const dwPending = useMemo(() => {
+    const dwIds = items.filter((i) => lineType(i) === 'dayworks').map((i) => i.id);
+    return dayworkBilling(dayworks, ipcs, dwIds);
+  }, [items, dayworks, ipcs]);
+  const dwTotal = useMemo(() => (inclDayworks ? dwPending.reduce((a, l) => a + l.pending, 0) : 0), [dwPending, inclDayworks]);
+  const grossWithDw = gross + dwTotal;
+  const ded = ipcDeductionBreakdown(grossWithDw, { d: deductionsFromConfig(cfg) });
 
   function setQty(id: string, qty: number) {
     setSel((prev) => ({ ...prev, [id]: Math.max(0, qty) }));
@@ -88,14 +98,18 @@ export function GenerateIpc({ projectId, onGenerated }: { projectId: string; onG
   function clearAll() { setSel({}); }
 
   async function generate(overrideReason?: string) {
-    const lines = Object.entries(sel).filter(([, q]) => q > 0).map(([id, qty]) => {
+    const measuredLines = Object.entries(sel).filter(([, q]) => q > 0).map(([id, qty]) => {
       const it = items.find((x) => x.id === id)!;
       return { boqItemId: id, qty, rate: it.rate, amount: +(qty * it.rate).toFixed(2) };
     });
+    // Dayworks bill at their pending validated value: qty 1 × amount, so they flow
+    // through the measurement sheet and deduction waterfall like any other line.
+    const dwLines = inclDayworks ? dwPending.map((l) => ({ boqItemId: l.boqItemId, qty: 1, rate: l.pending, amount: l.pending })) : [];
+    const lines = [...measuredLines, ...dwLines];
     if (lines.length === 0) return;
     if (breaches.length > 0 && !overrideReason) { setOverride({ open: true, reason: '' }); return; }
     setBusy(true);
-    const created = await provider.createIpc(projectId, { period: period.trim() || date, date, gross, lines });
+    const created = await provider.createIpc(projectId, { period: period.trim() || date, date, gross: grossWithDw, lines });
     if (breaches.length > 0 && overrideReason) {
       await provider.recordOverride(projectId, 'IPC', created.ipcNo,
         `over-claim authorised by ${role}: ${breaches.map((b) => `${b.item.code} qty ${b.qty} > cap ${b.cap}`).join('; ')} — reason: ${overrideReason}`);
@@ -173,10 +187,37 @@ export function GenerateIpc({ projectId, onGenerated }: { projectId: string; onG
             </table>
           </div>
 
+          {dwPending.length > 0 && (
+            <div className="card" aria-label="Dayworks to bill" style={{ marginBottom: 10 }}>
+              <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <input type="checkbox" checked={inclDayworks} onChange={(e) => setInclDayworks(e.target.checked)} aria-label="Include dayworks in this IPC" />
+                <strong>Dayworks to bill</strong><span className="muted">{formatMoney(dwTotal)}</span>
+              </label>
+              <table className="data-table" aria-label="Dayworks pending">
+                <thead><tr><th>Line</th><th className="num">Validated</th><th className="num">Billed</th><th className="num">This IPC</th></tr></thead>
+                <tbody>
+                  {dwPending.map((l) => {
+                    const it = items.find((x) => x.id === l.boqItemId);
+                    return (
+                      <tr key={l.boqItemId}>
+                        <td className="small">{it?.code} · {it?.description}</td>
+                        <td className="num small">{money(l.validated)}</td>
+                        <td className="num small">{money(l.billed)}</td>
+                        <td className="num">{formatMoney(l.pending)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           <div className="ipc-net card" aria-label="IPC deduction summary">
             <h4 style={{ margin: '0 0 8px' }}>This IPC · deduction to net</h4>
             <table className="kv-table">
               <tbody>
+                {dwTotal > 0 && <tr><th>Measured work</th><td className="num">{money(gross)}</td></tr>}
+                {dwTotal > 0 && <tr><th>Dayworks</th><td className="num">{money(dwTotal)}</td></tr>}
                 <tr><th>Gross claimed</th><td className="num">{formatMoney(ded.gross)}</td></tr>
                 <tr><th>Less retention @ {ded.retentionPct}%</th><td className="num neg">− {money(ded.retention)}</td></tr>
                 <tr><th>Less income tax @ {ded.incomeTaxPct}%</th><td className="num neg">− {money(ded.incomeTax)}</td></tr>
@@ -193,7 +234,7 @@ export function GenerateIpc({ projectId, onGenerated }: { projectId: string; onG
                 </p>
               </div>
             )}
-            <button className="btn" style={{ marginTop: 10 }} disabled={busy || gross <= 0 || (breaches.length > 0 && !canOverride)}
+            <button className="btn" style={{ marginTop: 10 }} disabled={busy || grossWithDw <= 0 || (breaches.length > 0 && !canOverride)}
               onClick={() => generate()}>
               {breaches.length > 0 ? (canOverride ? 'Generate with override…' : 'Blocked — over-claim') : 'Generate IPC'}
             </button>

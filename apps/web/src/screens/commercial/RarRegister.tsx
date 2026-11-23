@@ -102,7 +102,19 @@ export function RarRegister({ projectId }: { projectId: string }) {
 
   return (
     <div>
-      {detailRar && <RarDetailModal projectId={projectId} rar={detailRar} onClose={() => setDetailRar(null)} />}
+      {detailRar && (() => {
+        const i = sorted.findIndex((x) => x.rarNo === detailRar.rarNo);
+        return (
+          <RarDetailModal
+            projectId={projectId}
+            rar={detailRar}
+            position={i >= 0 ? `${i + 1} / ${sorted.length}` : undefined}
+            onPrev={i > 0 ? () => setDetailRar(sorted[i - 1]) : undefined}
+            onNext={i >= 0 && i < sorted.length - 1 ? () => setDetailRar(sorted[i + 1]) : undefined}
+            onClose={() => setDetailRar(null)}
+          />
+        );
+      })()}
       <div className="section-head">
         <div>
           <h3>RAR Register <span className="muted" style={{ fontWeight: 400 }}>(Subcontractor &amp; Labour Billing)</span></h3>

@@ -102,7 +102,19 @@ export function IpcRegister({ projectId }: { projectId: string }) {
 
   return (
     <div>
-      {detailIpc && <IpcDetailModal projectId={projectId} ipc={detailIpc} onClose={() => setDetailIpc(null)} />}
+      {detailIpc && (() => {
+        const i = sorted.findIndex((x) => x.ipcNo === detailIpc.ipcNo);
+        return (
+          <IpcDetailModal
+            projectId={projectId}
+            ipc={detailIpc}
+            position={i >= 0 ? `${i + 1} / ${sorted.length}` : undefined}
+            onPrev={i > 0 ? () => setDetailIpc(sorted[i - 1]) : undefined}
+            onNext={i >= 0 && i < sorted.length - 1 ? () => setDetailIpc(sorted[i + 1]) : undefined}
+            onClose={() => setDetailIpc(null)}
+          />
+        );
+      })()}
       <div className="section-head">
         <h3>IPC register</h3>
         <div className="head-tools">

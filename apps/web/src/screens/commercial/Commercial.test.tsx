@@ -137,7 +137,7 @@ describe('Phase 3 — Commercial tab', () => {
     await user.click(screen.getByRole('tab', { name: 'IPC register' }));
     await screen.findByRole('table', { name: 'IPC register' });
     await user.click(screen.getByRole('button', { name: 'Details for IPC-03' }));
-    const dialog = await screen.findByRole('dialog', { name: 'IPC-03 detail' });
+    const dialog = await screen.findByRole('dialog', { name: /IPC-03/ });
     expect(within(dialog).getByRole('table', { name: 'IPC detail deductions' })).toBeInTheDocument();
     expect(within(dialog).getByRole('heading', { name: 'Activity' })).toBeInTheDocument();
   });

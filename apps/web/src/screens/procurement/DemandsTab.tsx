@@ -61,7 +61,18 @@ export function DemandsTab({ projectId, role }: { projectId: string; role: strin
 
   return (
     <div>
-      {detailDemand && <DemandDetailModal demand={detailDemand} onClose={() => setDetailDemand(null)} />}
+      {detailDemand && (() => {
+        const i = demands.findIndex((x) => x.demandNo === detailDemand.demandNo);
+        return (
+          <DemandDetailModal
+            demand={detailDemand}
+            position={i >= 0 ? `${i + 1} / ${demands.length}` : undefined}
+            onPrev={i > 0 ? () => setDetailDemand(demands[i - 1]) : undefined}
+            onNext={i >= 0 && i < demands.length - 1 ? () => setDetailDemand(demands[i + 1]) : undefined}
+            onClose={() => setDetailDemand(null)}
+          />
+        );
+      })()}
       <div className="section-head"><h3>Demands</h3><span className="muted">{demands.length} demands</span></div>
 
       <div className="card">

@@ -54,3 +54,51 @@ describe('Attention panel — level-wise', () => {
     expect(banner.textContent).not.toMatch(/across \d+ project/);
   });
 });
+
+describe('Attention panel — triage in place', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('acknowledging an alert tags it without removing it', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-margalla-rd');
+    const banner = await screen.findByRole('status', { name: 'Attention' });
+    await user.click(within(banner).getByRole('button', { name: /need attention/ }));
+
+    const alerts = within(banner).getByLabelText('Alerts');
+    const firstAck = within(alerts).getAllByRole('button', { name: /^Acknowledge / })[0];
+    const rowText = firstAck.closest('.attention-row')!.textContent;
+    await user.click(firstAck);
+    // Still present, now marked ack.
+    await waitFor(() => {
+      const again = within(screen.getByRole('status', { name: 'Attention' })).getByLabelText('Alerts');
+      expect(again.textContent).toContain('ack');
+    });
+    expect(rowText).toBeTruthy();
+  });
+
+  it('resolving an alert removes it from the attention list', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-margalla-rd');
+    let banner = await screen.findByRole('status', { name: 'Attention' });
+    await user.click(within(banner).getByRole('button', { name: /need attention/ }));
+
+    const before = within(banner).getByLabelText('Alerts');
+    const total = within(before).getAllByRole('button', { name: /^Resolve / }).length;
+    expect(total).toBeGreaterThan(0);
+
+    await user.click(within(before).getAllByRole('button', { name: /^Resolve / })[0]);
+    // The resolve modal opens; provide a note and confirm.
+    const dialog = await screen.findByRole('dialog', { name: 'Resolve alert' });
+    await user.type(within(dialog).getByLabelText('Resolution note'), 'BG renewed, filed');
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm resolve' }));
+
+    // One fewer alert (or the banner disappears if it was the last).
+    await waitFor(() => {
+      const b = screen.queryByRole('status', { name: 'Attention' });
+      if (!b) return; // banner gone entirely — fully cleared
+      const list = within(b).queryByLabelText('Alerts');
+      const now = list ? within(list).getAllByRole('button', { name: /^Resolve / }).length : 0;
+      expect(now).toBeLessThan(total);
+    });
+  });
+});

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useRole } from '../../state/Role';
 import { useData } from '../../data/DataContext';
 import { formatMoney } from '../../domain/money';
 import { readWorkbook } from '../../domain/xlsxImport';
@@ -29,6 +30,8 @@ export function ReviseContractBoq({ projectId, contract, onClose, onSaved }: {
   const { provider } = useData();
   const [items, setItems] = useState<BoqItem[]>([]);
   const [proposed, setProposed] = useState<ContractLine[] | null>(null);
+  const [reason, setReason] = useState('');
+  const { role } = useRole();
   const [recon, setRecon] = useState<SubletImportResult | null>(null);
   const [uploaded, setUploaded] = useState<ReturnType<typeof parseSubletGrid>['rows']>([]);
   const [resolutions, setResolutions] = useState<Map<string, string>>(new Map());
@@ -84,7 +87,7 @@ export function ReviseContractBoq({ projectId, contract, onClose, onSaved }: {
     if (!proposed) return;
     setBusy(true); setError('');
     try {
-      await provider.updateContractLines(projectId, contract.id, proposed);
+      await provider.updateContractLines(projectId, contract.id, proposed, role, reason.trim() || undefined);
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not revise the contract.');
@@ -188,9 +191,12 @@ export function ReviseContractBoq({ projectId, contract, onClose, onSaved }: {
         <div className="create-row" style={{ marginTop: 14, justifyContent: 'flex-end' }}>
           <button className="btn-ghost" onClick={onClose}>Cancel</button>
           {isDraft && diff && !diff.identical && (
-            <button className="btn" disabled={busy} aria-label="Apply revision" onClick={apply}>
-              {busy ? 'Applying…' : `Apply revision · ${formatMoney(diff.toValue)}`}
-            </button>
+            <>
+              <input className="revise-reason" aria-label="Revision reason" placeholder="Reason for this revision (optional)" value={reason} onChange={(e) => setReason(e.target.value)} style={{ flex: 1, minWidth: 200, marginRight: 8 }} />
+              <button className="btn" disabled={busy} aria-label="Apply revision" onClick={apply}>
+                {busy ? 'Applying…' : `Apply revision · ${formatMoney(diff.toValue)}`}
+              </button>
+            </>
           )}
         </div>
       </div>

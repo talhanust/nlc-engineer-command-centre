@@ -2870,3 +2870,291 @@ NLC Engineer Command Centre — work journal
 - Gate (chunked): domain+data 72 files/540, screens+components 18/175, root 17/95
   + 16/85 = 122 files, 932 tests, all passing. Server 9; typecheck clean;
   local + api builds green.
+
+2026-07-30 (g) — alert triage from the Attention panel (a list you clear)
+- The Attention panel showed alerts but you could only navigate to them; clearing
+  one meant opening the project and using the Alert Centre. Now you triage in place.
+- Reused the existing alert-state lifecycle (AlertStatus open|ack|resolved|muted;
+  provider.setAlertState(projectId,{alertId,status,by,note}); activeAlerts() already
+  filters resolved/muted out of the roll-up). Each Attention item is tagged with
+  its originating projectId + alertId, so triage targets the right project.
+- AttentionPanel per-row actions (hover-revealed): Ack (one click → status ack,
+  the row stays but shows a "· ack" tag) and Resolve (opens a note modal; on
+  confirm → status resolved with who/why, and the alert leaves the list). After
+  either, the panel re-rolls via attentionFor so counts and the by-project
+  breakdown update immediately. Resolving the last alert removes the banner.
+- Acting role (useRole) is recorded as `by`. Resolve note is optional here (the
+  Alert Centre still enforces its own flow); the modal explains that resolving
+  records who cleared it and that a recurring condition raises a fresh alert.
+- Tests AttentionPanel +2: Ack tags an alert in place without removing it;
+  Resolve (with a note) removes it from the list (or clears the banner if last).
+- Gate (chunked): domain+data 72 files/540, screens+components 18/177, root 17/95
+  + 16/85 = 122 files, 938 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- REMAINING flagged: drawer prev/next (J/K through records); richer salient typed
+  values + provenance; a standalone cross-project Attention screen with filters.
+
+2026-07-30 (h) — drawer prev/next: step through records without closing
+- Completes the record-workspace vision: open one contract, review it, step to the
+  next in the register without closing and reopening.
+- DetailDrawer gained optional onPrev/onNext + position ("3 / 12"). When present:
+  ‹ › step buttons appear in the header with the position between them, and J/K
+  keys step next/previous. Keyboard handler ignores keystrokes while typing in an
+  input/textarea/select/contenteditable, so J/K never fire mid-edit. Ends of the
+  list disable the appropriate arrow (omit the handler). Standalone records (no
+  handlers) show no step controls.
+- ContractDetailModal passes the three props through. ContractsRegister derives
+  the current index from the contracts list and wires onPrev/onNext to setDetail
+  the neighbour, with position `${i+1} / ${n}`. The drawer content swaps in place.
+- Tests: DetailDrawer +4 (controls call handlers; J/K from the keyboard; ends
+  disable the arrow; standalone shows none). NEW ContractStep.test.tsx (2) — seed
+  two contracts, open the first, step to the next via the button and via J; the
+  dialog swaps to a different contract and stays open.
+- Gate (chunked): domain+data 72 files/540, screens+components 19/183, root 17/95
+  + 16/85 = 123 files, 942 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- REMAINING flagged: richer salient typed values + provenance; a standalone
+  cross-project Attention screen with filters + mute; prev/next on other record
+  drawers (IPC/RAR/demand) once they adopt DetailDrawer.
+
+2026-07-30 (i) — richer salients: typed values + provenance
+- Salient model gained updatedAt?/updatedBy?. provider.upsertSalient now takes an
+  optional `by` and stamps {updatedAt: now, updatedBy: by} on every save (local +
+  api signature). SalientsCard passes by: role from useRole.
+- NEW domain/salientValue.ts (pure): typeSalient(label, value) → date | money |
+  percent | text, inferred from the value shape and a label hint (no per-fact
+  schema). Percent exposes a 0-100 pct for a bar. relativeUpdated(iso) → "just
+  now" / "30m ago" / "3d ago", switching to an absolute date past a month; null
+  for missing/bad. 9 tests.
+- SalientsCard read view now renders typed values: money in tabular mono, dates
+  tabular, a percentage with a small progress bar, and a quiet "· <relative>"
+  provenance note (title: updated <when> by <role>). Edit mode unchanged.
+- Tests: salientValue 9; SalientsCard +2 (a % fact draws a bar; a save stamps
+  provenance shown as "just now"). Existing salient + CrossCutting tests pass
+  unchanged (typed display is transparent to text matching).
+- Container was replaced before this turn; recovered from the canonical outputs
+  zip (turn h) and reinstalled deps. Baseline verified green before building.
+- BUGFIX (exposed by the container's timezone changing on reset, not by this
+  work): domain/calendar.ts addDays parsed `${date}T00:00:00` as LOCAL midnight
+  then formatted via toISOString() (UTC), dropping a day in any timezone ahead of
+  UTC (e.g. Asia/Karachi +5) — the DLP retention date came out one day early.
+  Fixed to parse as `...T00:00:00Z` (UTC) so the result is timezone-stable.
+  Scanned domain/ for the same pattern; no other instances.
+- Gate (chunked): domain+data 73 files/549, screens+components 19/185, root 17/95
+  + 16/85 = 125 files, 950 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- REMAINING flagged: standalone cross-project Attention screen (filters + mute);
+  bring IPC/RAR/demand drawers onto DetailDrawer (they'd inherit full-window/
+  resize/prev-next/portal).
+
+2026-07-30 (j) — standalone cross-project Attention screen (the triage desk)
+- The per-node AttentionPanel answers "what needs attention here"; this is the
+  whole command in one filterable list — the morning triage desk.
+- domain/attention.ts += AlertCategory (guarantee|aging|directive|over-claim|
+  divergence|unmapped|other), ALERT_CATEGORY_LABEL, alertCategory(a) derived from
+  the alert id prefix (bg-/ag-/dov-/oc-/dv-/um-). 1 test.
+- NEW screens/AttentionScreen.tsx at routes /attention and /attention/:nodeId
+  (defaults to hq-nlc = whole org). Rolls up via provider.attentionFor(nodeId) and
+  shows every open alert as a table row: severity pip, title+detail (deep-links to
+  the exact sub-tab), type, project. Filters by severity, type and project — each
+  select only offers facets actually present in the data; a Clear-filters button
+  and a live "N shown · M critical" count. Triage in place: Ack (one click), Mute
+  (note: known/accepted situation), Resolve (note: cleared + why). Re-rolls on
+  action and on nlc:audit.
+- AttentionPanel header gained a "Triage desk →" link to /attention/<nodeId>, so
+  the inline panel and the full desk connect at the same scope.
+- Mute uses the existing AlertStatus muted; activeAlerts already filters muted +
+  resolved out of the roll-up, so a muted/resolved alert leaves every level at
+  once; a recurring condition raises a fresh alert.
+- Tests: NEW screens/AttentionScreen.test.tsx (3) — aggregates the command with
+  filter controls; severity filter narrows to criticals; muting removes an item.
+  attention domain +1; AttentionPanel 6 still pass with the new link.
+- Gate (chunked): domain+data 73 files/550, screens+components 20/188, root 17/95
+  + 16/85 = 126 files, 956 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- REMAINING flagged: bring IPC/RAR/demand record drawers onto DetailDrawer (they'd
+  inherit full-window/resize/prev-next/portal); a sidebar/nav entry to the triage
+  desk (currently reached via the panel link or direct URL).
+
+2026-07-30 (k) — IPC / RAR / Demand detail onto the shared DetailDrawer
+- The three record modals were bespoke modal-backdrop/modal shells rendered inside
+  the zoomed content area — so they carried the SAME latent zoom/portal bug the
+  contract drawer had (position:fixed broken by ancestor `zoom`). Converting them
+  to DetailDrawer fixes that and gives each full-window + resize + prev/next +
+  the document.body portal in one move.
+- IpcDetailModal: body becomes DetailDrawer children; title "IPC-xx · period",
+  status pill, width=full. Register (IpcRegister) derives the index from its
+  `sorted` display list and wires onPrev/onNext + position `${i+1} / ${n}`.
+- RarDetailModal: same, title is JSX (RAR no · period · Final bill) so it sets
+  ariaLabel="RAR <no> detail"; width=full; prev/next from RarRegister `sorted`.
+- DemandDetailModal: lighter record → width="wide" (side panel, expandable);
+  ariaLabel="Demand <no> detail", total as the header badge. (No register list
+  wired for prev/next yet — can add later.)
+- DetailDrawer gained an optional ariaLabel prop for when `title` is not a plain
+  string (used by RAR + Demand); falls back to the string title, then "Detail".
+- Each converted modal keeps its full body (KPIs, measurement sheet, deduction
+  waterfall, approval chain, attachments, audit trail) unchanged — only the shell
+  swapped. The drawer supplies the close button, so the old modal-actions Close
+  was removed.
+- Existing tests pass unchanged: the aria-labels were preserved, so the 72 tests
+  across Commercial / Procurement / DetailModals / ContractRarDetail / DlpFinalBill
+  / RarChain / SupplierBillChain still find their dialogs. One IPC test selector
+  loosened to /IPC-03/ (title now carries the period).
+- Gate (chunked): domain+data 73 files/550, screens+components 20/188, root 17/95
+  + 16/85 = 126 files, 956 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- The record-workspace shell is now shared by contracts, IPCs, RARs and demands:
+  all open full-window (demand wide), resize, step with prev/next + J/K, and
+  portal out of the zoomed content so the header always renders.
+- REMAINING flagged: a sidebar/nav entry to the triage desk; Demand prev/next from
+  its register; dayworks register; contract revisions as retained versions.
+
+2026-07-30 (l) — portfolio balanced to five projects per PD HQ (25 total)
+- User asked for 5 seeded projects per HQ PD, each with full hypothetical data.
+  Was uneven: north 5, centre 5, kpk 4, sindh 3, bln 3 = 20.
+- Added 5 Seed rows (kpk +1, sindh +2, bln +2): Kohat Tunnel Rehabilitation (kpk),
+  Sukkur-Hyderabad Motorway Section + Sukkur Barrage Rehabilitation (sindh),
+  Khuzdar-Basima Road N-30 + Makran Coastal Highway Repair (bln). Realistic CV /
+  billed / received / planned% / actual% for each.
+- Each new Seed row auto-gets a SeedProfile (buildProfiles) → seedFor() generates
+  full data: BOQ, progress, IPCs, bank guarantees, schedule, salients, escalation.
+  (Contracts/RARs/variations stay empty by design — projects start as NLC self-
+  execution, created via the contract+RAR flow.) Added COORDS (map lat/lng) and
+  DATES (start/finish) entries for all five.
+- Bumped SEED_VERSION 2026-07-23.v15 → 2026-07-30.v16-five-per-pd so reconcileSeed
+  appends the new project rows + org nodes to existing stores (fresh stores get
+  them automatically; per-project commercial data generates lazily via gen()).
+- Tests: NEW data/fivePerPd.test.ts (3) — every PD HQ commands exactly 5 (25 total);
+  a new project carries BOQ/progress/BGs/salients + populated header figures; new
+  projects roll up into their PD HQ attention. Updated hard-coded counts: 
+  seedReconcile (20→25 projects, 21→26 nodes-with-user-project), rollup (20→25,
+  kpk descendants +kohat-tunnel), App (Projects KPI 20→25, x2).
+- Gate (chunked): domain+data 74 files/553, screens+components 20/188, root 17/95
+  + 16/85 = 127 files, 964 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- REMAINING flagged: sidebar/nav entry to the triage desk; Demand prev/next;
+  dayworks register; contract revisions as retained versions.
+
+2026-07-30 (m) — sidebar quick links + Demand drawer prev/next
+- Sidebar (OrgNavigator) gained a quick-links section above the org tree: a
+  "Triage desk" entry → /attention (whole-org attention desk) and "My approvals"
+  → /worklist, each active-highlighted by pathname, with an "Organisation"
+  heading over the tree. The triage desk is now a first-class destination, not
+  only reachable via the panel link or a typed URL.
+- DemandsTab wires prev/next into DemandDetailModal (converted to DetailDrawer
+  last turn): index from the demands display list, onPrev/onNext to the neighbour,
+  position `${i+1} / ${n}`. Demands now step like contracts/IPCs/RARs.
+- Tests: NEW components/OrgNavigator.test.tsx (2) — Triage desk link opens the
+  attention desk; My approvals link present (scoped to the nav, since the header
+  bell shares the label). Procurement suite still green with demand stepping.
+- Gate (chunked): domain+data 74 files/553, screens+components 21/190, root 17/95
+  + 16/85 = 128 files, 966 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- REMAINING flagged (older domain items): dayworks register (book dayworks as
+  incurred cost); contract revisions as retained versions (R0/R1/R2 with diff).
+
+2026-07-30 (n) — dayworks register (time-and-materials booked as incurred cost)
+- Closes the long-standing gap: dayworks BOQ lines are not remeasured from a
+  quantity (measureMode=none), and boqLineType.ts said they are "booked as
+  incurred cost elsewhere" — elsewhere now exists.
+- data/types.ts: DayworkKind (labour|plant|material), DayworkResource
+  {kind,description,unit,qty,rate}, DayworkSheet {id,projectId,boqItemId,date,ref?,
+  description,resources[],status:draft|validated,enteredBy?,validatedBy?}.
+  GeneratedSeed gained dayworks:[] (user-created, none seeded).
+- NEW domain/dayworks.ts (pure): resourceAmount, sheetTotal, sheetCategoryTotals,
+  validatedDayworkValue(sheets,boqItemId) (ONLY validated sheets count — a draft
+  never inflates the account), dayworkValueByItem, dayworkSummary (booked vs
+  validated vs draft + category split). 5 tests.
+- Provider CRUD (local + api): listDayworks, upsertDaywork (new or edit; editing
+  a sheet resets it to draft so a changed sheet must be re-validated),
+  validateDaywork(id,by), deleteDaywork. Audited. Key nlc-ecc.dayworks.<pid>.
+  5 provider tests incl. the draft→validated value lifecycle + edit-resets-draft.
+- NEW screens/commercial/DayworksTab.tsx at commercial sub-tab "Dayworks": KPI band
+  (validated/draft/labour/plant/material), a per-line table showing each dayworks
+  BOQ line's validated value, a booking form (pick line, date, ref, description,
+  add labour/plant/material resource rows with live amounts), and a sheets list
+  with Validate (PM only) / delete. Guidance card when the BOQ has no dayworks
+  lines. 3 UI tests.
+- Scoped deliberately: the Dayworks register is the authoritative view of incurred
+  dayworks value. Folding that value into the main BOQ register's executed-value
+  column / IPC billing would touch the heavily-tested boqrollup math, so it is
+  left as a flagged follow-on rather than risked here.
+- Gate (chunked): domain+data 76 files/563, screens+components 22/193, root 17/95
+  + 16/85 = 131 files, 981 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- REMAINING flagged: fold validated dayworks value into BOQ executed-value/EVM/IPC;
+  contract revisions as retained versions (R0/R1/R2 with diff).
+
+2026-07-30 (o) — fold validated dayworks value into the BOQ executed value
+- Completes the dayworks loop: a dayworks line now shows its validated daywork-
+  sheet total as its executed value in the BOQ register, instead of 0.
+- domain/boqrollup.buildBoqRows gained an optional opts.dayworkValue record. For a
+  line with lineType=dayworks, executedValue = dayworkValue[id] (not qty×rate,
+  which is 0); pct = amount>0 ? value/amount : (value>0?1:0); and status follows
+  the booked value INDEPENDENT of distribution mode (dayworks are incurred cost,
+  not distributed work, so the unassigned-mode gate is skipped for them).
+  Fully back-compatible: callers that pass no dayworkValue get the old behaviour,
+  and measured lines are untouched (proven by a back-compat test).
+- BoqRegister loads dayworks (provider.listDayworks) and passes
+  dayworkValueByItem(dayworks) as opts.dayworkValue, so the register, bill totals
+  and grand total all reflect validated dayworks incurred cost.
+- Tests: boqrollup +3 (dayworks value used as executed value; unbooked=not_started;
+  measured lines unchanged with dayworkValue present). dayworks.provider +1 end-to-
+  end (book → validate → appears as the dayworks line executed value, status
+  complete). All existing boqrollup/BOQ-register tests pass unchanged.
+- Gate (chunked): domain+data 76 files/567, screens+components 22/193, root 17/95
+  + 16/85 = 131 files, 985 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- The dayworks feature is now complete end to end: book time-and-materials →
+  validate → flows into the BOQ earned-value picture as incurred cost.
+- REMAINING flagged: dayworks into the IPC client bill (currently BOQ register +
+  EVM only); contract revisions as retained versions (R0/R1/R2 with diff).
+
+2026-07-30 (p) — dayworks into the IPC client bill
+- Final step of the dayworks loop: validated dayworks now bill to the client
+  through an IPC, not just the BOQ/EVM view.
+- domain/dayworks.ts += dayworkBilledByItem(ipcs) (sum of IPC line amounts per
+  item) and dayworkBilling(sheets, ipcs, dayworkItemIds) → per dayworks line the
+  validated value, already-billed, and pending (validated − billed, >0 only).
+  Dayworks bill as qty 1 × pending amount so they flow through the measurement
+  sheet + deduction waterfall + net exactly like measured work. 3 tests.
+- GenerateIpc: loads dayworks, computes dwPending, shows a "Dayworks to bill"
+  panel (per-line validated/billed/this-IPC, an include toggle), folds dwTotal
+  into gross (summary splits Measured work vs Dayworks), appends the dayworks
+  lines to the generated IPC, and allows a dayworks-only IPC (button gated on
+  grossWithDw, not measured gross). Existing measured-IPC flow unchanged.
+- Tests: dayworks domain +3; dayworks.provider +1 end-to-end (validated daywork →
+  pending 5000 → billed in an IPC → nets to 0 pending). All 51 existing IPC-gen
+  tests (Commercial/EpcRarParity/DlpFinalBill) pass unchanged.
+- Gate (chunked): domain+data 76 files/571, screens+components 22/193, root 17/95
+  + 16/85 = 131 files, 991 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- Dayworks now complete end to end: book T&M → validate → BOQ/EVM incurred cost →
+  bill to client via IPC, netting off what was already certified.
+- NEXT: contract revisions as retained versions (R0/R1/R2 with diff).
+
+2026-07-30 (q) — contract revisions as retained versions (R0/R1/R2 with diff)
+- updateContractLines no longer overwrites silently: it retains revision history.
+  data/types.ts: ContractRevision {rev,at,by?,reason?,lines,value}; Contract gained
+  revisions?. On the FIRST revision the provider snapshots the pre-change state as
+  R0 (reason "Original") so the original survives even though it predates this
+  feature, then appends R1; each further revise appends R2, R3… The current
+  lines/value always equal the latest revision. Still draft-only. Audited as
+  "revise · R<n>". Interface + both providers take optional by/reason.
+- ReviseContractBoq passes the acting role + a free-text reason (new input beside
+  Apply). The full line snapshots are kept, so the diff between any two revisions
+  is recomputable (diffContractLines).
+- ContractDetailModal gained a Revisions tab (shown when revisions exist): R0..Rn
+  with when/by/reason, line count, value, and Δ vs previous (+added/−removed/
+  ~changed from the recomputed diff).
+- Tests: data/contractRevisions.test.ts (4) — R0 snapshot + R1 append; each prior
+  revision retained across multiple revises; non-draft refused; audit carries the
+  R-number. NEW screens/commercial/ContractRevisions.test.tsx (1) — revise a draft,
+  open the detail, the Revisions tab lists R0/R1 with the reason. Existing contract
+  + revise tests pass unchanged.
+- Gate (chunked): domain+data 77 files/575, screens+components 23/194, root 17/95
+  + 16/85 = 133 files, 1000 tests, all passing. Server 9; typecheck clean;
+  local + api builds green.
+- Both remaining backlog items now done: dayworks→IPC (turn p) and contract
+  revisions as versions (this turn). The pending-suggestions list from the start
+  of the project is fully cleared.

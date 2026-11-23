@@ -34,7 +34,7 @@ describe('navigation & command dashboards', () => {
   it('root redirects to the HQ NLC command dashboard with a roll-up', async () => {
     renderAt('/');
     expect(await screen.findByRole('heading', { name: 'HQ NLC' })).toBeInTheDocument();
-    expect(screen.getByText('Projects').closest('.kpi')).toHaveTextContent('20');
+    expect(screen.getByText('Projects').closest('.kpi')).toHaveTextContent('25');
   });
 
   it('shows a PD-HQ breakdown with its child projects', async () => {
@@ -83,7 +83,7 @@ describe('Phase 2 #6–#8 — panels, filter, comments', () => {
     const user = userEvent.setup();
     renderAt('/node/hq-nlc');
     await screen.findByRole('heading', { name: 'HQ NLC' });
-    expect(screen.getByText('Projects').closest('.kpi')).toHaveTextContent('20');
+    expect(screen.getByText('Projects').closest('.kpi')).toHaveTextContent('25');
     await user.type(screen.getByRole('searchbox', { name: /search/i }), 'Gwadar');
     await waitFor(() =>
       expect(screen.getByText('Projects').closest('.kpi')).toHaveTextContent('1'),

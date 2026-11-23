@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { AppLayout } from './components/AppLayout';
 import { NodeScreen } from './screens/NodeScreen';
 import { Worklist } from './screens/Worklist';
+import { AttentionScreen } from './screens/AttentionScreen';
 import { Settings } from './screens/Settings';
 import { useUiState } from './state/UiState';
 
@@ -20,6 +21,8 @@ export function AppRoutes() {
         <Route path="node/:nodeId/:tab" element={<NodeScreen />} />
         <Route path="settings" element={<Settings />} />
         <Route path="worklist" element={<Worklist />} />
+        <Route path="attention" element={<AttentionScreen />} />
+        <Route path="attention/:nodeId" element={<AttentionScreen />} />
         <Route path="*" element={<HomeRedirect />} />
       </Route>
     </Routes>

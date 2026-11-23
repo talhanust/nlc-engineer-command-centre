@@ -49,9 +49,11 @@ interface Seed {
 // generated commercial data — so real projects are created by the user. Under
 // vitest (import.meta.env.MODE === 'test') the demo is generated so the
 // commercial-engine regression suite keeps its data; in every real build
-// (dev / local / api) the seed is disabled and the app comes up empty.
-// setDemoSeed(true|false) overrides at runtime — used only by clean-slate tests.
-let demoSeedEnabled = import.meta.env.MODE === 'test';
+// The demo portfolio (25 projects with hypothetical data) ships ENABLED so the
+// command centre comes up populated. A real deployment that wants to start empty
+// builds with VITE_DEMO_SEED=off. setDemoSeed(true|false) overrides at runtime
+// (used by clean-slate tests). Test mode always has it on.
+let demoSeedEnabled = import.meta.env.MODE === 'test' || import.meta.env.VITE_DEMO_SEED !== 'off';
 const DEMO_SEED: Seed[] = [
   { id: 'proj-f14f15', name: 'F-14/F-15 Islamabad', pdHqId: 'pd-north', client: 'FGEHA', cv: '19284461163', billed: '11200000000', received: '9800000000', planned: 62, actual: 58 },
   { id: 'proj-bahria', name: 'Bahria Enclave Roads', pdHqId: 'pd-north', client: 'Bahria Town', cv: '12450000000', billed: '7100000000', received: '6500000000', planned: 55, actual: 54 },
@@ -2741,7 +2743,7 @@ const ENTITY_KEYS = [
 // pick up newly-seeded projects and nodes without losing user-created data.
 // v12 (clean-slate): the delivered app ships no demo portfolio, so this upgrade
 // also PURGES any previously-seeded demo projects from an existing store.
-const SEED_VERSION = '2026-07-30.v16-five-per-pd';
+const SEED_VERSION = '2026-07-30.v17-demo-seed-on';
 
 /** Merge any newly-seeded projects/nodes into an already-persisted store and
  *  backfill date/coordinate fields on seeded projects. Runs once per version. */

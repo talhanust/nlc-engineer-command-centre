@@ -1,4 +1,5 @@
 import type { BoqItem, Distribution, ProgressUpdate, DistributionMode } from '../data/types';
+import { lineType } from './boqLineType';
 
 export type BoqStatus = 'unassigned' | 'not_started' | 'in_progress' | 'complete';
 
@@ -27,7 +28,7 @@ export function buildBoqRows(
   items: BoqItem[],
   distributions: Distribution[],
   progress: ProgressUpdate[],
-  opts?: { vetted?: Record<string, number>; paid?: Record<string, number> },
+  opts?: { vetted?: Record<string, number>; paid?: Record<string, number>; dayworkValue?: Record<string, number> },
 ): BoqRow[] {
   const distByItem = new Map(distributions.map((d) => [d.boqItemId, d]));
   const execByItem = new Map<string, number>();
@@ -36,13 +37,22 @@ export function buildBoqRows(
   return items.map((item) => {
     const mode = distByItem.get(item.id)?.mode ?? 'unassigned';
     const executedQty = execByItem.get(item.id) ?? 0;
-    const executedValue = executedQty * item.rate;
+    // A dayworks line is not remeasured from a quantity — its executed value is
+    // the validated daywork-sheet total booked against it (supplied by the caller).
+    const isDaywork = lineType(item) === 'dayworks';
+    const dwValue = opts?.dayworkValue?.[item.id] ?? 0;
+    const executedValue = isDaywork ? dwValue : executedQty * item.rate;
     const vettedValue = opts?.vetted?.[item.id] ?? 0;
     const paidValue = opts?.paid?.[item.id] ?? 0;
     const receivableValue = Math.max(0, vettedValue - paidValue);
-    const pct = item.qty > 0 ? Math.min(1, executedQty / item.qty) : 0;
+    const pct = isDaywork
+      ? (item.amount > 0 ? Math.min(1, dwValue / item.amount) : (dwValue > 0 ? 1 : 0))
+      : (item.qty > 0 ? Math.min(1, executedQty / item.qty) : 0);
     let status: BoqStatus;
-    if (mode === 'unassigned') status = 'unassigned';
+    // Dayworks are incurred cost, not distributed work — their status follows the
+    // booked value, independent of any distribution mode.
+    if (isDaywork) status = dwValue <= 0 ? 'not_started' : (pct >= 1 ? 'complete' : 'in_progress');
+    else if (mode === 'unassigned') status = 'unassigned';
     else if (executedQty <= 0) status = 'not_started';
     else if (pct >= 1) status = 'complete';
     else status = 'in_progress';

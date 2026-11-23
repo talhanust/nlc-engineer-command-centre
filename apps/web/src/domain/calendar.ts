@@ -28,7 +28,10 @@ function sev(days: number): CalSeverity {
   return 'later';
 }
 function addDays(date: string, n: number): string {
-  return new Date(new Date(`${date}T00:00:00`).getTime() + n * 86_400_000).toISOString().slice(0, 10);
+  // Parse as UTC midnight and format back in UTC, so the result never shifts a day
+  // depending on the runner's timezone (local-midnight + toISOString dropped a day
+  // in any zone ahead of UTC).
+  return new Date(new Date(`${date}T00:00:00Z`).getTime() + n * 86_400_000).toISOString().slice(0, 10);
 }
 
 /** Forward calendar of bank-guarantee expiries and scheduled retention releases. */

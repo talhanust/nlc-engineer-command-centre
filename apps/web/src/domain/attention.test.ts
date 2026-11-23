@@ -84,3 +84,16 @@ describe('rollUpAttention — level-wise aggregation', () => {
     expect(r.projectCount).toBe(1); // p3 exists, just no alerts
   });
 });
+
+describe('alertCategory', () => {
+  it('classifies by id prefix', async () => {
+    const { alertCategory } = await import('./attention');
+    expect(alertCategory({ id: 'bg-123' })).toBe('guarantee');
+    expect(alertCategory({ id: 'ag-9' })).toBe('aging');
+    expect(alertCategory({ id: 'dov-x' })).toBe('directive');
+    expect(alertCategory({ id: 'oc-code' })).toBe('over-claim');
+    expect(alertCategory({ id: 'dv-1' })).toBe('divergence');
+    expect(alertCategory({ id: 'um-boq' })).toBe('unmapped');
+    expect(alertCategory({ id: 'weird' })).toBe('other');
+  });
+});

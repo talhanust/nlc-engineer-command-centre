@@ -65,3 +65,31 @@ describe('boqrollup', () => {
     expect(filterBoqRows(rows, { search: '', bill: 'all', status: 'unassigned' }).map((r) => r.item.id)).toEqual(['b']);
   });
 });
+
+describe('buildBoqRows — dayworks value', () => {
+  const dwItem: BoqItem = { id: 'dw1', projectId: 'p', billNo: '9', billName: 'Dayworks', section: '', code: 'DW-1', description: 'Dayworks', unit: 'DW', qty: 1, rate: 0, amount: 0, lineType: 'dayworks' };
+  const measured: BoqItem = { id: 'm1', projectId: 'p', billNo: '1', billName: 'B', section: '', code: '101', description: 'Earth', unit: 'CM', qty: 1000, rate: 100, amount: 100000 };
+
+  it('uses the supplied validated daywork value as the dayworks line executed value', () => {
+    const rows = buildBoqRows([dwItem, measured], [], [], { dayworkValue: { dw1: 42000 } });
+    const dw = rows.find((r) => r.item.id === 'dw1')!;
+    expect(dw.executedValue).toBe(42000);
+    expect(dw.executedQty).toBe(0); // dayworks are not a quantity
+    expect(dw.status).toBe('complete'); // amount 0, value > 0 → fully booked
+  });
+
+  it('a dayworks line with no booked value is not started', () => {
+    const rows = buildBoqRows([dwItem], [], []);
+    const dw = rows.find((r) => r.item.id === 'dw1')!;
+    expect(dw.executedValue).toBe(0);
+    expect(dw.status).toBe('not_started');
+  });
+
+  it('leaves measured lines unchanged (back-compatible)', () => {
+    const progress = [{ id: 'pr1', projectId: 'p', boqItemId: 'm1', period: 'M1', executedQty: 500, status: 'validated' as const }];
+    const withDw = buildBoqRows([measured], [], progress, { dayworkValue: { dw1: 999 } });
+    const withoutDw = buildBoqRows([measured], [], progress);
+    expect(withDw[0].executedValue).toBe(withoutDw[0].executedValue);
+    expect(withDw[0].executedValue).toBe(500 * 100);
+  });
+});

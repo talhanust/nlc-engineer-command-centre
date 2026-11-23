@@ -134,3 +134,27 @@ export function rollUpAttention(
     byProject,
   };
 }
+
+/** A human category for an alert, derived from its stable id prefix — the facet
+ *  the cross-project Attention desk filters by. */
+export type AlertCategory = 'guarantee' | 'aging' | 'directive' | 'over-claim' | 'divergence' | 'unmapped' | 'other';
+
+export const ALERT_CATEGORY_LABEL: Record<AlertCategory, string> = {
+  guarantee: 'Bank guarantee',
+  aging: 'Aging',
+  directive: 'Directive',
+  'over-claim': 'Over-claim',
+  divergence: 'Schedule divergence',
+  unmapped: 'Unmapped BOQ',
+  other: 'Other',
+};
+
+export function alertCategory(a: { id: string }): AlertCategory {
+  if (a.id.startsWith('bg-')) return 'guarantee';
+  if (a.id.startsWith('ag-')) return 'aging';
+  if (a.id.startsWith('dov-')) return 'directive';
+  if (a.id.startsWith('oc-')) return 'over-claim';
+  if (a.id.startsWith('dv-')) return 'divergence';
+  if (a.id.startsWith('um-')) return 'unmapped';
+  return 'other';
+}

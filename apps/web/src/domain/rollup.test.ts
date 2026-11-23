@@ -20,7 +20,7 @@ describe('computeNodeRollup', () => {
     const nodes = await provider.listNodes();
     const projects = await provider.listProjects();
     const r = computeNodeRollup(nodes, projects, 'hq-nlc')!;
-    expect(r.totals.projectCount).toBe(20);
+    expect(r.totals.projectCount).toBe(25);
     // Total contract value equals the sum of all seeded projects.
     const sum = projects.reduce((a, p) => a + Number(p.contractValue), 0);
     expect(Math.round(r.totals.contractValue)).toBe(Math.round(sum));
@@ -60,7 +60,7 @@ describe('org helpers', () => {
   it('collects descendant projects of a branch', async () => {
     const nodes = await provider.listNodes();
     expect(descendantProjectIds(nodes, 'pd-kpk').sort()).toEqual(
-      ['proj-d-i-khan', 'proj-hazara-exp', 'proj-m2-rehab', 'proj-swat-expr'].sort(),
+      ['proj-d-i-khan', 'proj-hazara-exp', 'proj-kohat-tunnel', 'proj-m2-rehab', 'proj-swat-expr'].sort(),
     );
   });
 });

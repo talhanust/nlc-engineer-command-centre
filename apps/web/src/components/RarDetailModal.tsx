@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { DetailDrawer } from './DetailDrawer';
 import { useData } from '../data/DataContext';
 import { formatMoney } from '../domain/money';
 import { RAR_STATUS_LABEL } from '../domain/rar';
@@ -16,7 +17,7 @@ import type { Rar, RarRecovery, RarRecoveryKind, Subcontractor, Advance, BoqItem
 
 const newId = () => `rec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-export function RarDetailModal({ projectId, rar, onClose }: { projectId: string; rar: Rar; onClose: () => void }) {
+export function RarDetailModal({ projectId, rar, onClose, onPrev, onNext, position }: { projectId: string; rar: Rar; onClose: () => void; onPrev?: () => void; onNext?: () => void; position?: string }) {
   const { provider } = useData();
   const { can } = useRole();
   const [subs, setSubs] = useState<Subcontractor[]>([]);
@@ -110,13 +111,16 @@ export function RarDetailModal({ projectId, rar, onClose }: { projectId: string;
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose} role="dialog" aria-label={`RAR ${cur.rarNo} detail`} aria-modal="true">
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <div className="section-head">
-          <h3>{cur.rarNo} · {cur.period}{cur.isFinal && <span className="muted"> · Final bill</span>}</h3>
-          <span className={`status-pill st-${cur.status}`}>{RAR_STATUS_LABEL[cur.status]}</span>
-        </div>
-
+    <DetailDrawer
+      title={<>RAR {cur.rarNo} · {cur.period}{cur.isFinal && <span className="muted"> · Final bill</span>}</>}
+      ariaLabel={`RAR ${cur.rarNo} detail`}
+      pill={<span className={`status-pill st-${cur.status}`}>{RAR_STATUS_LABEL[cur.status]}</span>}
+      width="full"
+      onPrev={onPrev}
+      onNext={onNext}
+      position={position}
+      onClose={onClose}
+    >
         <div className="kpi-grid">
           <div className="kpi"><div className="kpi-label">Gross</div><div className="kpi-value">{formatMoney(cur.gross)}</div></div>
           <div className="kpi"><div className="kpi-label">Recoveries</div><div className="kpi-value">{formatMoney(settle.recoveryTotal)}</div></div>
@@ -283,8 +287,6 @@ export function RarDetailModal({ projectId, rar, onClose }: { projectId: string;
 
         <div style={{ marginTop: 14 }}><Attachments projectId={projectId} entity="RAR" reference={cur.rarNo} /></div>
         <div style={{ marginTop: 14 }}><AuditTrail entity="RAR" reference={cur.rarNo} /></div>
-        <div className="modal-actions"><button className="btn" onClick={onClose}>Close</button></div>
-      </div>
-    </div>
+    </DetailDrawer>
   );
 }

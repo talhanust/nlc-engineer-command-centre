@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useData } from '../data/DataContext';
 import { formatMoney } from '../domain/money';
 import { contractBoqView } from '../domain/contractBoqView';
+import { diffContractLines } from '../domain/contractLineDiff';
 import { RAR_STATUS_LABEL } from '../domain/rar';
 import { AuditTrail } from './AuditTrail';
 import { DetailDrawer, ProgressMeter, type DrawerTab } from './DetailDrawer';
@@ -11,7 +12,7 @@ const STATUS_LABEL: Record<Contract['status'], string> = {
   draft: 'Draft', awarded: 'Awarded', in_progress: 'In progress', completed: 'Completed', closed: 'Closed', terminated: 'Terminated',
 };
 
-export function ContractDetailModal({ projectId, contract, onClose }: { projectId: string; contract: Contract; onClose: () => void }) {
+export function ContractDetailModal({ projectId, contract, onClose, onPrev, onNext, position }: { projectId: string; contract: Contract; onClose: () => void; onPrev?: () => void; onNext?: () => void; position?: string }) {
   const { provider } = useData();
   const [boq, setBoq] = useState<BoqItem[]>([]);
   const [progress, setProgress] = useState<ProgressUpdate[]>([]);
@@ -148,9 +149,42 @@ export function ContractDetailModal({ projectId, contract, onClose }: { projectI
     )
   );
 
+  const revisions = contract.revisions ?? [];
+  const revisionsTab = revisions.length === 0 ? (
+    <p className="muted">No revisions recorded. A draft contract's BOQ edits are retained here as R0, R1, R2…</p>
+  ) : (
+    <div>
+      <p className="muted small">Each revision of this draft contract is kept — what changed, by whom and why.</p>
+      <table className="data-table" aria-label="Contract revisions">
+        <thead><tr><th>Rev</th><th>When</th><th>By</th><th>Reason</th><th className="num">Lines</th><th className="num">Value</th><th className="num">Δ vs prev</th></tr></thead>
+        <tbody>
+          {revisions.map((r, i) => {
+            const prev = i > 0 ? revisions[i - 1] : null;
+            const d = prev ? diffContractLines(prev.lines, r.lines, boq) : null;
+            const delta = prev ? r.value - prev.value : 0;
+            return (
+              <tr key={r.rev}>
+                <td className="mono">R{r.rev}</td>
+                <td className="small">{r.at.slice(0, 10)}</td>
+                <td className="small">{r.by ?? '—'}</td>
+                <td className="small">{r.reason ?? (r.rev === 0 ? 'Original' : '—')}</td>
+                <td className="num small">{r.lines.length}</td>
+                <td className="num">{formatMoney(r.value)}</td>
+                <td className={`num small ${delta > 0 ? 'pos' : delta < 0 ? 'neg' : ''}`}>
+                  {prev ? `${delta >= 0 ? '+' : ''}${formatMoney(delta)}` : '—'}
+                  {d ? <div className="muted" style={{ fontSize: 10 }}>+{d.added.length} / −{d.removed.length} / ~{d.changed.length}</div> : null}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
   const tabs: DrawerTab[] = [
     { id: 'boq', label: 'Bill of Quantities', badge: rows.length, content: boqTab },
     { id: 'rars', label: 'RARs', badge: myRars.length, content: rarsTab },
+    ...(revisions.length > 0 ? [{ id: 'revisions', label: 'Revisions', badge: revisions.length, content: revisionsTab }] : []),
     { id: 'audit', label: 'History', content: <AuditTrail entity="Contract" reference={contract.contractNo} /> },
   ];
 
@@ -162,6 +196,9 @@ export function ContractDetailModal({ projectId, contract, onClose }: { projectI
       hero={hero}
       tabs={tabs}
       width="full"
+      onPrev={onPrev}
+      onNext={onNext}
+      position={position}
       onClose={onClose}
     />
   );

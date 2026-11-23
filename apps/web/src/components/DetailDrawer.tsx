@@ -27,7 +27,8 @@ export interface DrawerTab {
  *    for dense records like a subcontract. Pass `tabs` to get the tabbed shell.
  */
 export function DetailDrawer({
-  open = true, title, subtitle, badge, pill, onClose, actions, hero, tabs, initialTab, width = 'wide', children,
+  open = true, title, subtitle, badge, pill, onClose, actions, hero, tabs, initialTab, width = 'wide',
+  onPrev, onNext, position, ariaLabel, children,
 }: {
   open?: boolean;
   title: ReactNode;
@@ -49,6 +50,14 @@ export function DetailDrawer({
    * choice is theirs per moment, not fixed.
    */
   width?: 'full' | 'wide' | 'narrow';
+  /** Step to the previous/next record in the list without closing (J/K, ‹ ›).
+   *  Omit to hide the controls (a standalone record). */
+  onPrev?: () => void;
+  onNext?: () => void;
+  /** e.g. "3 / 12" — shown between the step arrows. */
+  position?: string;
+  /** Accessible name when `title` is not a plain string. */
+  ariaLabel?: string;
   children?: ReactNode;
 }) {
   const [active, setActive] = useState(initialTab ?? tabs?.[0]?.id);
@@ -57,10 +66,17 @@ export function DetailDrawer({
 
   useEffect(() => {
     if (!open) return;
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') { onClose(); return; }
+      // Don't hijack keys while the user is typing in a field.
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+      if ((e.key === 'j' || e.key === 'J') && onNext) { e.preventDefault(); onNext(); }
+      if ((e.key === 'k' || e.key === 'K') && onPrev) { e.preventDefault(); onPrev(); }
+    }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, onPrev, onNext]);
 
   if (!open) return null;
 
@@ -71,7 +87,7 @@ export function DetailDrawer({
   return createPortal(
     <div className={`drawer-backdrop ${isFull ? 'drawer-backdrop-full' : ''}`} onClick={onClose}>
       <aside className={`drawer drawer-${size}`} role="dialog"
-        aria-label={typeof title === 'string' ? title : 'Detail'} aria-modal="true"
+        aria-label={ariaLabel ?? (typeof title === 'string' ? title : 'Detail')} aria-modal="true"
         onClick={(e) => e.stopPropagation()}>
         <header className="drawer-head">
           <div className="drawer-head-text">
@@ -82,6 +98,13 @@ export function DetailDrawer({
             {subtitle && <p className="muted small drawer-sub">{subtitle}</p>}
           </div>
           {badge}
+          {(onPrev || onNext) && (
+            <div className="drawer-step" role="group" aria-label="Step through records">
+              <button className="drawer-step-btn" onClick={onPrev} disabled={!onPrev} aria-label="Previous record (K)" title="Previous — K">‹</button>
+              {position && <span className="drawer-step-pos">{position}</span>}
+              <button className="drawer-step-btn" onClick={onNext} disabled={!onNext} aria-label="Next record (J)" title="Next — J">›</button>
+            </div>
+          )}
           {canResize && (
             <button className="drawer-resize" onClick={() => setSize(isFull ? 'wide' : 'full')}
               aria-label={isFull ? 'Collapse to side panel' : 'Expand to full window'}

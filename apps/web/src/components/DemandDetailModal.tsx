@@ -2,16 +2,21 @@ import { formatMoney } from '../domain/money';
 import { ROLE_LABEL } from '../domain/chains';
 import { ChainProgress } from '../screens/procurement/ProcurementTab';
 import { AuditTrail } from './AuditTrail';
+import { DetailDrawer } from './DetailDrawer';
 import type { Demand } from '../data/types';
 
-export function DemandDetailModal({ demand, onClose }: { demand: Demand; onClose: () => void }) {
+export function DemandDetailModal({ demand, onClose, onPrev, onNext, position }: { demand: Demand; onClose: () => void; onPrev?: () => void; onNext?: () => void; position?: string }) {
   return (
-    <div className="modal-backdrop" onClick={onClose} role="dialog" aria-label={`Demand ${demand.demandNo} detail`} aria-modal="true">
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="section-head">
-          <h3>{demand.demandNo} · {demand.type}</h3>
-          <span className="muted">{formatMoney(demand.totalEstimated)}</span>
-        </div>
+    <DetailDrawer
+      title={`${demand.demandNo} · ${demand.type}`}
+      ariaLabel={`Demand ${demand.demandNo} detail`}
+      badge={<span className="muted">{formatMoney(demand.totalEstimated)}</span>}
+      width="wide"
+      onPrev={onPrev}
+      onNext={onNext}
+      position={position}
+      onClose={onClose}
+    >
         <p className="muted small">{demand.justification}</p>
 
         <h3>Approval chain</h3>
@@ -50,8 +55,6 @@ export function DemandDetailModal({ demand, onClose }: { demand: Demand; onClose
         )}
 
         <div style={{ marginTop: 14 }}><AuditTrail entity="Demand" reference={demand.demandNo} /></div>
-        <div className="modal-actions"><button className="btn" onClick={onClose}>Close</button></div>
-      </div>
-    </div>
+    </DetailDrawer>
   );
 }

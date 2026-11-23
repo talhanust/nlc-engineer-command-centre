@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useData } from '../data/DataContext';
+import { useRole } from '../state/Role';
+import { typeSalient, relativeUpdated } from '../domain/salientValue';
 import type { Salient } from '../data/types';
 
 interface Draft { id?: string; label: string; value: string; }
@@ -15,6 +17,7 @@ interface Draft { id?: string; label: string; value: string; }
  */
 export function SalientsCard({ projectId }: { projectId: string }) {
   const { provider } = useData();
+  const { role } = useRole();
   const [salients, setSalients] = useState<Salient[]>([]);
   const [editing, setEditing] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -56,7 +59,7 @@ export function SalientsCard({ projectId }: { projectId: string }) {
       for (const d of keep) {
         const original = d.id ? salients.find((s) => s.id === d.id) : undefined;
         if (!original || original.label !== d.label.trim() || original.value !== d.value.trim()) {
-          await provider.upsertSalient(projectId, { id: d.id, label: d.label.trim(), value: d.value.trim() });
+          await provider.upsertSalient(projectId, { id: d.id, label: d.label.trim(), value: d.value.trim(), by: role });
         }
       }
       await reload();
@@ -92,7 +95,20 @@ export function SalientsCard({ projectId }: { projectId: string }) {
             {salients.map((s) => (
               <div className="fact-row" key={s.id}>
                 <dt>{s.label}</dt>
-                <dd>{s.value}</dd>
+                <dd>{(() => {
+                  const t = typeSalient(s.label, s.value);
+                  const when = relativeUpdated(s.updatedAt);
+                  return (
+                    <span className="fact-value">
+                      {t.type === 'percent' && t.pct != null ? (
+                        <span className="fact-pct"><span className="fact-pct-bar" aria-hidden><span className="fact-pct-fill" style={{ width: `${t.pct}%` }} /></span>{t.display}</span>
+                      ) : (
+                        <span className={`fact-${t.type}`}>{t.display}</span>
+                      )}
+                      {when && <span className="fact-prov muted" title={`Updated ${when}${s.updatedBy ? ` by ${s.updatedBy}` : ''}`}>· {when}</span>}
+                    </span>
+                  );
+                })()}</dd>
               </div>
             ))}
           </dl>

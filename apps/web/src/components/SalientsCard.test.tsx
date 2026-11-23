@@ -51,3 +51,44 @@ describe('SalientsCard — read/edit/save', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Edit salients' })).toBeInTheDocument());
   });
 });
+
+describe('SalientsCard — typed values + provenance', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('renders a percentage fact with a progress bar', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15');
+    await screen.findByLabelText('Salients');
+    // Add a percentage fact.
+    await user.click(screen.getByRole('button', { name: 'Edit salients' }));
+    await user.click(screen.getByRole('button', { name: 'Add salient row' }));
+    const labels = screen.getAllByLabelText(/Salient label \d+/);
+    const values = screen.getAllByLabelText(/Salient value \d+/);
+    await user.type(labels[labels.length - 1], 'Works progress pct');
+    await user.type(values[values.length - 1], '62%');
+    await user.click(screen.getByRole('button', { name: 'Save salients' }));
+
+    const sheet = await screen.findByLabelText('Salients');
+    const row = within(sheet).getByText('Works progress pct').closest('.fact-row')!;
+    expect(row.querySelector('.fact-pct-fill')).toBeTruthy();
+    expect(within(row as HTMLElement).getByText('62%')).toBeInTheDocument();
+  });
+
+  it('stamps provenance on save and shows an "updated" note', async () => {
+    const user = userEvent.setup();
+    renderAt('/node/proj-f14f15');
+    await screen.findByLabelText('Salients');
+    await user.click(screen.getByRole('button', { name: 'Edit salients' }));
+    await user.click(screen.getByRole('button', { name: 'Add salient row' }));
+    const labels = screen.getAllByLabelText(/Salient label \d+/);
+    const values = screen.getAllByLabelText(/Salient value \d+/);
+    await user.type(labels[labels.length - 1], 'EOT status');
+    await user.type(values[values.length - 1], '45 days approved');
+    await user.click(screen.getByRole('button', { name: 'Save salients' }));
+
+    const sheet = await screen.findByLabelText('Salients');
+    const row = within(sheet).getByText('EOT status').closest('.fact-row')!;
+    // A just-saved fact shows a "just now" provenance note.
+    expect(within(row as HTMLElement).getByText(/just now|m ago|^· /)).toBeInTheDocument();
+  });
+});

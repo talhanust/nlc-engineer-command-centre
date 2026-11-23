@@ -5,11 +5,12 @@ import { ipcDeductionBreakdown, deductionsFromConfig, IPC_STATUS_LABEL, DEFAULT_
 import { measurementSheet } from '../domain/measurement';
 import { AuditTrail } from './AuditTrail';
 import { Attachments } from './Attachments';
+import { DetailDrawer } from './DetailDrawer';
 import type { Ipc, BoqItem, CommercialConfig } from '../data/types';
 
 const qty = (n: number) => (n ? n.toLocaleString('en-PK', { maximumFractionDigits: 2 }) : '—');
 
-export function IpcDetailModal({ projectId, ipc, onClose }: { projectId: string; ipc: Ipc; onClose: () => void }) {
+export function IpcDetailModal({ projectId, ipc, onClose, onPrev, onNext, position }: { projectId: string; ipc: Ipc; onClose: () => void; onPrev?: () => void; onNext?: () => void; position?: string }) {
   const { provider } = useData();
   const [boq, setBoq] = useState<BoqItem[]>([]);
   const [ipcs, setIpcs] = useState<Ipc[]>([]);
@@ -31,13 +32,15 @@ export function IpcDetailModal({ projectId, ipc, onClose }: { projectId: string;
   const cumPct = sheet.boqTotal > 0 ? sheet.cumGross / sheet.boqTotal : 0;
 
   return (
-    <div className="modal-backdrop" onClick={onClose} role="dialog" aria-label={`${ipc.ipcNo} detail`} aria-modal="true">
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <div className="section-head">
-          <h3>{ipc.ipcNo} · {ipc.period}</h3>
-          <span className={`status-pill st-${ipc.status}`}>{IPC_STATUS_LABEL[ipc.status]}</span>
-        </div>
-
+    <DetailDrawer
+      title={`${ipc.ipcNo} · ${ipc.period}`}
+      pill={<span className={`status-pill st-${ipc.status}`}>{IPC_STATUS_LABEL[ipc.status]}</span>}
+      width="full"
+      onPrev={onPrev}
+      onNext={onNext}
+      position={position}
+      onClose={onClose}
+    >
         <div className="kpi-grid">
           <div className="kpi"><div className="kpi-label">This IPC (gross)</div><div className="kpi-value">{formatMoney(sheet.thisGross || ipc.gross)}</div></div>
           <div className="kpi"><div className="kpi-label">Previous</div><div className="kpi-value">{formatMoney(sheet.prevGross)}</div></div>
@@ -108,9 +111,6 @@ export function IpcDetailModal({ projectId, ipc, onClose }: { projectId: string;
 
         <div style={{ marginTop: 14 }}><Attachments projectId={projectId} entity="IPC" reference={ipc.ipcNo} /></div>
         <div style={{ marginTop: 14 }}><AuditTrail entity="IPC" reference={ipc.ipcNo} /></div>
-
-        <div className="modal-actions"><button className="btn" onClick={onClose}>Close</button></div>
-      </div>
-    </div>
+    </DetailDrawer>
   );
 }

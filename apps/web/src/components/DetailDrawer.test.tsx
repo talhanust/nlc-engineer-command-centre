@@ -116,3 +116,38 @@ describe('DetailDrawer — escapes the content area', () => {
     expect(screen.getByRole('button', { name: 'Collapse to side panel' })).toBeInTheDocument();
   });
 });
+
+describe('DetailDrawer — stepping through records', () => {
+  it('shows prev/next controls with a position and calls the handlers', async () => {
+    const user = userEvent.setup();
+    const onPrev = vi.fn(); const onNext = vi.fn();
+    render(<DetailDrawer title="SC-02" width="wide" tabs={tabs} position="2 / 5" onPrev={onPrev} onNext={onNext} onClose={() => {}} />);
+    expect(screen.getByText('2 / 5')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Next record (J)' }));
+    expect(onNext).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'Previous record (K)' }));
+    expect(onPrev).toHaveBeenCalledTimes(1);
+  });
+
+  it('J and K step next/previous from the keyboard', async () => {
+    const user = userEvent.setup();
+    const onPrev = vi.fn(); const onNext = vi.fn();
+    render(<DetailDrawer title="SC-02" tabs={tabs} onPrev={onPrev} onNext={onNext} onClose={() => {}} />);
+    await user.keyboard('j');
+    expect(onNext).toHaveBeenCalledTimes(1);
+    await user.keyboard('k');
+    expect(onPrev).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables the arrow at the ends of the list', () => {
+    render(<DetailDrawer title="First" tabs={tabs} position="1 / 5" onNext={() => {}} onClose={() => {}} />);
+    // No onPrev at the first record → the ‹ button is disabled.
+    expect(screen.getByRole('button', { name: 'Previous record (K)' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Next record (J)' })).toBeEnabled();
+  });
+
+  it('shows no step controls for a standalone record', () => {
+    render(<DetailDrawer title="Solo" tabs={tabs} onClose={() => {}} />);
+    expect(screen.queryByRole('button', { name: /record \(/ })).toBeNull();
+  });
+});

@@ -14,9 +14,9 @@ function memKv(seed: Record<string, unknown> = {}): KvStore {
 describe('seed reconcile', () => {
   beforeEach(() => setKvStore(memKv()));
 
-  it('serves all 20 projects from a fresh store', async () => {
+  it('serves all 25 projects from a fresh store', async () => {
     const p = new LocalDataProvider();
-    expect((await p.listProjects()).length).toBe(20);
+    expect((await p.listProjects()).length).toBe(25);
   });
 
   it('upgrades a stale cache (old roster) without losing user data', async () => {
@@ -30,10 +30,10 @@ describe('seed reconcile', () => {
     }));
     const p = new LocalDataProvider();
     const projects = await p.listProjects();
-    // 20 seeded + 1 user-made, deduped on the shared flagship id
+    // 25 seeded + 1 user-made, deduped on the shared flagship id
     expect(projects.some((x) => x.id === 'proj-user-made')).toBe(true);     // user data kept
     expect(projects.some((x) => x.id === 'proj-dha-ph8')).toBe(true);        // new seed merged in
-    expect(projects.length).toBe(21);
+    expect(projects.length).toBe(26);
     // flagship date fields backfilled by the reconcile
     expect(projects.find((x) => x.id === 'proj-f14f15')?.completionDate).toBeTruthy();
   });

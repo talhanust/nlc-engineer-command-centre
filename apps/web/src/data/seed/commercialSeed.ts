@@ -1,4 +1,4 @@
-import type { BoqItem, Distribution, ProgressUpdate, Ipc, IpcLine, Rar, Variation, BankGuarantee, Subcontractor, ScheduleActivity, Resource, OverheadLine, FinancialReceipt, FinancialPayment, FinancialLiability, Supplier, Demand, Salient, ProductionRun, MaterialIssue, MachineryUsage, BoqMaterialLink, MaterialMaster, InventoryItem, PolRecord, FixedAsset, Contract } from '../types';
+import type { BoqItem, Distribution, ProgressUpdate, Ipc, IpcLine, Rar, Variation, BankGuarantee, Subcontractor, ScheduleActivity, Resource, OverheadLine, FinancialReceipt, FinancialPayment, FinancialLiability, Supplier, Demand, Salient, ProductionRun, MaterialIssue, MachineryUsage, BoqMaterialLink, MaterialMaster, InventoryItem, PolRecord, FixedAsset, Contract, DayworkSheet } from '../types';
 import type { EscalationComponent } from '../../domain/escalation';
 import { DEFAULT_PBS_COMPONENTS } from '../../domain/escalation';
 import { computeNet } from '../../domain/ipc';
@@ -15,6 +15,7 @@ export interface SeedProfile {
 
 export interface GeneratedSeed {
   boq: BoqItem[];
+  dayworks: DayworkSheet[];
   subs: Subcontractor[];
   distributions: Distribution[];
   progress: ProgressUpdate[];
@@ -320,7 +321,7 @@ function build(profile: SeedProfile): GeneratedSeed {
     { id: `fa-${pid}-3`, projectId: pid, category: 'Survey & IT', description: 'Survey instruments & site IT', value: round(profile.cv * 0.001), acquired: addMonths(profile.start, 1) },
   ];
 
-  return { boq, subs, distributions, progress, ipcs, rars, variations, bgs, escalation, schedule, resources, overheads, receipts, payments, liabilities, suppliers, demands, salients, production, issues, machinery, matLinks, materialMaster, inventory, pol, fixedAssets, contracts };
+  return { boq, dayworks: [], subs, distributions, progress, ipcs, rars, variations, bgs, escalation, schedule, resources, overheads, receipts, payments, liabilities, suppliers, demands, salients, production, issues, machinery, matLinks, materialMaster, inventory, pol, fixedAssets, contracts };
 }
 
 const cache = new Map<string, GeneratedSeed>();

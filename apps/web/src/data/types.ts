@@ -104,6 +104,33 @@ export interface NodeComment {
  */
 export type BoqLineType = 'measured' | 'lump_sum' | 'provisional' | 'prime_cost' | 'dayworks';
 
+/** A resource line on a daywork sheet — time-and-materials, costed directly. */
+export type DayworkKind = 'labour' | 'plant' | 'material';
+export interface DayworkResource {
+  kind: DayworkKind;
+  description: string;
+  unit: string;   // hr, day, each, kg, m3 …
+  qty: number;
+  rate: number;
+}
+/**
+ * A daywork sheet: actual labour, plant and materials booked against a dayworks
+ * BOQ line. Dayworks are not remeasured from a quantity — their value is the sum
+ * of validated sheets, which is how incurred time-and-materials enters the account.
+ */
+export interface DayworkSheet {
+  id: string;
+  projectId: string;
+  boqItemId: string;       // the dayworks BOQ line this is booked against
+  date: string;            // ISO date of the work
+  ref?: string;            // site daywork-sheet reference
+  description: string;
+  resources: DayworkResource[];
+  status: 'draft' | 'validated';
+  enteredBy?: string;
+  validatedBy?: string;
+}
+
 export interface BoqItem {
   id: string;
   projectId: string;
@@ -244,6 +271,17 @@ export interface ContractLine {
 
 export type ContractKind = 'sublet' | 'labor';
 
+/** A retained snapshot of a contract's BOQ at one revision (R0 = original). The
+ *  full line set is kept so the diff to any other revision can be recomputed. */
+export interface ContractRevision {
+  rev: number;         // 0 = original, then 1, 2, …
+  at: string;          // ISO timestamp
+  by?: string;         // acting role
+  reason?: string;     // why it was revised
+  lines: ContractLine[];
+  value: number;
+}
+
 export interface Contract {
   id: string;
   projectId: string;
@@ -254,6 +292,9 @@ export interface Contract {
   /** The subcontractor's BOQ. Present on contracts created via the sublet flow;
    *  absent on legacy/scope-only contracts, which fall back to scopeBills. */
   lines?: ContractLine[];
+  /** Retained revision history (R0, R1, …). Appended each time a draft's lines are
+   *  revised; the current `lines`/`value` always equal the latest revision. */
+  revisions?: ContractRevision[];
   kind?: ContractKind;
   value: number;
   awardDate?: string;
@@ -1056,6 +1097,10 @@ export interface Salient {
   projectId: string;
   label: string;
   value: string;
+  /** Provenance — set whenever the fact is saved, so a PM can tell a current
+   *  figure from a stale one at a glance. */
+  updatedAt?: string;
+  updatedBy?: string;
 }
 
 export interface DataProvider {
@@ -1097,6 +1142,10 @@ export interface DataProvider {
   ): Promise<BoqItem[]>;
   /** Set one BOQ item's line type (measured / lump sum / provisional / …). */
   setBoqLineType(projectId: string, boqItemId: string, lineType: BoqLineType): Promise<BoqItem[]>;
+  listDayworks(projectId: string): Promise<DayworkSheet[]>;
+  upsertDaywork(projectId: string, input: Omit<DayworkSheet, 'id' | 'projectId' | 'status' | 'validatedBy'> & { id?: string }): Promise<DayworkSheet>;
+  validateDaywork(projectId: string, id: string, by: string): Promise<DayworkSheet[]>;
+  deleteDaywork(projectId: string, id: string): Promise<void>;
   getBoqWorkflow(projectId: string): Promise<BoqWorkflowState>;
   advanceBoqWorkflow(projectId: string, role: string): Promise<BoqWorkflowState>;
   raiseBoqVo(projectId: string): Promise<BoqWorkflowState>;
@@ -1148,7 +1197,7 @@ export interface DataProvider {
     awardDate?: string;
     retentionPct?: number;
   }): Promise<Contract>;
-  updateContractLines(projectId: string, contractId: string, lines: ContractLine[]): Promise<Contract>;
+  updateContractLines(projectId: string, contractId: string, lines: ContractLine[], by?: string, reason?: string): Promise<Contract>;
   /** Remove a contract from the register. Refuses when RARs are billed against it —
    *  deleting would orphan those payment records. Releases any locked BOQ lines. */
   deleteContract(projectId: string, contractId: string): Promise<Contract[]>;
@@ -1255,7 +1304,7 @@ export interface DataProvider {
   amendMapping(projectId: string): Promise<BaselineWorkflowState>;
   // Salients
   listSalients(projectId: string): Promise<Salient[]>;
-  upsertSalient(projectId: string, input: { id?: string; label: string; value: string }): Promise<Salient>;
+  upsertSalient(projectId: string, input: { id?: string; label: string; value: string; by?: string }): Promise<Salient>;
   deleteSalient(projectId: string, id: string): Promise<void>;
   // Audited reverse
   reverseIpc(projectId: string, ipcNo: string): Promise<Ipc>;

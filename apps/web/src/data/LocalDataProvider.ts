@@ -29,7 +29,7 @@ import { canDeleteContract } from '../domain/contractDelete';
 import { computeTermination, executedByItem, checkDetermination } from '../domain/contractTermination';
 import { inferLineType } from '../domain/boqLineType';
 import { rollUpAttention, projectsUnder, projectActiveAlerts, type AttentionRollup } from '../domain/attention';
-import type { BoqLineType } from './types';
+import type { BoqLineType, DayworkSheet } from './types';
 import { synthSeries } from '../domain/scurve';
 import { DEMAND_CHAIN, checkAdvance } from '../domain/chains';
 
@@ -73,6 +73,12 @@ const DEMO_SEED: Seed[] = [
   { id: 'proj-khi-northern', name: 'Karachi Northern Bypass', pdHqId: 'pd-sindh', client: 'NHA', cv: '26800000000', billed: '11400000000', received: '9600000000', planned: 45, actual: 40 },
   { id: 'proj-rcd-hwy', name: 'RCD Highway Reconstruction', pdHqId: 'pd-bln', client: 'NHA', cv: '33100000000', billed: '12000000000', received: '9500000000', planned: 36, actual: 28 },
   { id: 'proj-quetta-wss', name: 'Quetta Water Supply Scheme', pdHqId: 'pd-bln', client: 'PHED Bln', cv: '9700000000', billed: '3300000000', received: '2500000000', planned: 34, actual: 27 },
+  // --- Balancing the portfolio to five projects per PD HQ ------------------
+  { id: 'proj-kohat-tunnel', name: 'Kohat Tunnel Rehabilitation', pdHqId: 'pd-kpk', client: 'NHA', cv: '11800000000', billed: '4600000000', received: '3900000000', planned: 42, actual: 38 },
+  { id: 'proj-sukkur-moto', name: 'Sukkur–Hyderabad Motorway Section', pdHqId: 'pd-sindh', client: 'NHA', cv: '61500000000', billed: '18200000000', received: '14900000000', planned: 33, actual: 26 },
+  { id: 'proj-sukkur-barrage', name: 'Sukkur Barrage Rehabilitation', pdHqId: 'pd-sindh', client: 'SID Sindh', cv: '19400000000', billed: '12600000000', received: '10800000000', planned: 68, actual: 63 },
+  { id: 'proj-khuzdar-basima', name: 'Khuzdar–Basima Road (N-30)', pdHqId: 'pd-bln', client: 'NHA', cv: '28700000000', billed: '8100000000', received: '6300000000', planned: 31, actual: 24 },
+  { id: 'proj-makran-coastal', name: 'Makran Coastal Highway Repair', pdHqId: 'pd-bln', client: 'NHA', cv: '15200000000', billed: '9700000000', received: '8400000000', planned: 64, actual: 60 },
 ];
 
 // Ids of the demo portfolio — retained even when the seed is off so a seed-
@@ -121,6 +127,11 @@ const COORDS: Record<string, { lat: number; lng: number; location: string }> = {
   'proj-khi-northern': { lat: 25.05, lng: 67.10, location: 'Karachi' },
   'proj-rcd-hwy': { lat: 27.50, lng: 65.50, location: 'RCD Highway, Balochistan' },
   'proj-quetta-wss': { lat: 30.18, lng: 66.98, location: 'Quetta' },
+  'proj-kohat-tunnel': { lat: 33.58, lng: 71.44, location: 'Kohat' },
+  'proj-sukkur-moto': { lat: 27.05, lng: 68.30, location: 'Sukkur' },
+  'proj-sukkur-barrage': { lat: 27.68, lng: 68.85, location: 'Sukkur' },
+  'proj-khuzdar-basima': { lat: 27.81, lng: 66.61, location: 'Khuzdar' },
+  'proj-makran-coastal': { lat: 25.28, lng: 64.02, location: 'Makran Coast' },
 };
 const DATES: Record<string, { start: string; finish: string }> = {
   'proj-f14f15': { start: '2025-01-15', finish: '2026-08-31' },
@@ -143,6 +154,11 @@ const DATES: Record<string, { start: string; finish: string }> = {
   'proj-khi-northern': { start: '2024-09-15', finish: '2027-06-30' },
   'proj-rcd-hwy': { start: '2025-01-01', finish: '2028-06-30' },
   'proj-quetta-wss': { start: '2025-06-15', finish: '2027-12-31' },
+  'proj-kohat-tunnel': { start: '2025-02-01', finish: '2026-12-31' },
+  'proj-sukkur-moto': { start: '2025-05-01', finish: '2028-08-31' },
+  'proj-sukkur-barrage': { start: '2024-10-01', finish: '2027-03-31' },
+  'proj-khuzdar-basima': { start: '2025-04-01', finish: '2028-01-31' },
+  'proj-makran-coastal': { start: '2024-12-01', finish: '2026-11-30' },
 };
 const LIFECYCLE_SEED: Record<string, { stage: ProjectStage; tocDate?: string; financialCloseDate?: string }> = {
   // TOC issued — in the Recovery section, receivable being collected.
@@ -923,18 +939,30 @@ export class LocalDataProvider implements DataProvider {
     audit(projectId, 'create', 'Contract', c.contractNo, `${lines.length} lines · PKR ${Math.round(value).toLocaleString('en-PK')}`);
     return c;
   }
-  async updateContractLines(projectId: string, contractId: string, lines: import('./types').ContractLine[]): Promise<Contract> {
+  async updateContractLines(projectId: string, contractId: string, lines: import('./types').ContractLine[], by?: string, reason?: string): Promise<Contract> {
     const all = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? [])));
     const c = all.find((x) => x.id === contractId);
     if (!c) throw new Error('Contract not found.');
     // Once a contract is awarded/in-progress its lines are frozen — variations,
     // not silent edits, change committed quantities.
     if (c.status !== 'draft') throw new Error('Only a draft contract can have its lines edited.');
+
+    const prevLines = (c.lines ?? []).map((l) => ({ ...l }));
+    const prevValue = c.value;
+    // Retain history. On the first revision, snapshot the pre-change state as R0,
+    // so the original is never lost even though it predates this feature.
+    if (!c.revisions || c.revisions.length === 0) {
+      c.revisions = [{ rev: 0, at: c.awardDate ?? new Date().toISOString(), lines: prevLines, value: prevValue, reason: 'Original' }];
+    }
+
     c.lines = lines.filter((l) => l.qty > 0 && l.rate >= 0);
     c.value = c.lines.reduce((t, l) => t + l.qty * l.rate, 0);
+    const nextRev = c.revisions[c.revisions.length - 1].rev + 1;
+    c.revisions.push({ rev: nextRev, at: new Date().toISOString(), by, reason, lines: c.lines.map((l) => ({ ...l })), value: c.value });
+
     writeJson(contractsRegKey(projectId), all);
     this.syncContractPlan(projectId, c);
-    audit(projectId, 'update', 'Contract', c.contractNo, `${c.lines.length} lines · PKR ${Math.round(c.value).toLocaleString('en-PK')}`);
+    audit(projectId, 'revise', 'Contract', c.contractNo, `R${nextRev} · ${c.lines.length} lines · PKR ${Math.round(c.value).toLocaleString('en-PK')}${reason ? ` · ${reason}` : ''}`);
     return c;
   }
   async deleteContract(projectId: string, contractId: string): Promise<Contract[]> {
@@ -1022,6 +1050,38 @@ export class LocalDataProvider implements DataProvider {
     const it = items.find((x) => x.id === boqItemId);
     if (it) { it.lineType = lineType; writeJson(boqKey(projectId), items); audit(projectId, 'update', 'BoqItem', it.code, `line type → ${lineType}`); }
     return items;
+  }
+  async listDayworks(projectId: string): Promise<DayworkSheet[]> {
+    return readJson<DayworkSheet[]>(dayworkKey(projectId), () => ((gen(projectId)?.dayworks ?? [])));
+  }
+  async upsertDaywork(projectId: string, input: Omit<DayworkSheet, 'id' | 'projectId' | 'status' | 'validatedBy'> & { id?: string }): Promise<DayworkSheet> {
+    const all = readJson<DayworkSheet[]>(dayworkKey(projectId), () => ((gen(projectId)?.dayworks ?? [])));
+    let sheet: DayworkSheet;
+    if (input.id && all.some((d) => d.id === input.id)) {
+      sheet = all.find((d) => d.id === input.id)!;
+      // Editing resets a sheet to draft — a changed sheet must be re-validated.
+      sheet.boqItemId = input.boqItemId; sheet.date = input.date; sheet.ref = input.ref;
+      sheet.description = input.description; sheet.resources = input.resources;
+      sheet.status = 'draft'; sheet.validatedBy = undefined; sheet.enteredBy = input.enteredBy;
+    } else {
+      sheet = { ...input, id: input.id ?? `dw-${projectId}-${Date.now()}`, projectId, status: 'draft' };
+      all.push(sheet);
+    }
+    writeJson(dayworkKey(projectId), all);
+    audit(projectId, 'daywork', 'Daywork', sheet.ref ?? sheet.id, `booked ${sheet.resources.length} line(s)`);
+    return sheet;
+  }
+  async validateDaywork(projectId: string, id: string, by: string): Promise<DayworkSheet[]> {
+    const all = readJson<DayworkSheet[]>(dayworkKey(projectId), () => ((gen(projectId)?.dayworks ?? [])));
+    const d = all.find((x) => x.id === id);
+    if (d) { d.status = 'validated'; d.validatedBy = by; writeJson(dayworkKey(projectId), all); audit(projectId, 'validate', 'Daywork', d.ref ?? d.id, 'validated'); }
+    return all;
+  }
+  async deleteDaywork(projectId: string, id: string): Promise<void> {
+    const all = readJson<DayworkSheet[]>(dayworkKey(projectId), () => ((gen(projectId)?.dayworks ?? [])));
+    const d = all.find((x) => x.id === id);
+    writeJson(dayworkKey(projectId), all.filter((x) => x.id !== id));
+    if (d) audit(projectId, 'delete', 'Daywork', d.ref ?? d.id, 'removed');
   }
   async setContractStatus(projectId: string, contractId: string, status: Contract['status']): Promise<void> {
     const all = readJson<Contract[]>(contractsRegKey(projectId), () => ((gen(projectId)?.contracts ?? [])));
@@ -1995,16 +2055,17 @@ export class LocalDataProvider implements DataProvider {
   async listSalients(projectId: string): Promise<Salient[]> {
     return readJson(salientKey(projectId), () => ((gen(projectId)?.salients ?? [])));
   }
-  async upsertSalient(projectId: string, input: { id?: string; label: string; value: string }): Promise<Salient> {
+  async upsertSalient(projectId: string, input: { id?: string; label: string; value: string; by?: string }): Promise<Salient> {
     const all = readJson<Salient[]>(salientKey(projectId), () => ((gen(projectId)?.salients ?? [])));
     const label = sanitize(input.label), value = sanitize(input.value);
+    const stamp = { updatedAt: new Date().toISOString(), updatedBy: input.by };
     let s: Salient;
     if (input.id) {
       s = all.find((x) => x.id === input.id)!;
-      if (s) { s.label = label; s.value = value; }
-      else { s = { id: input.id, projectId, label, value }; all.push(s); }
+      if (s) { s.label = label; s.value = value; s.updatedAt = stamp.updatedAt; s.updatedBy = stamp.updatedBy; }
+      else { s = { id: input.id, projectId, label, value, ...stamp }; all.push(s); }
     } else {
-      s = { id: `sal-${projectId}-${Date.now()}`, projectId, label, value };
+      s = { id: `sal-${projectId}-${Date.now()}`, projectId, label, value, ...stamp };
       all.push(s);
     }
     writeJson(salientKey(projectId), all);
@@ -2630,6 +2691,7 @@ const SEED_TRANSFERS: HrTransfer[] = demoSeedEnabled ? [
   },
 ] : [];
 const ipcKey = (pid: string) => `nlc-ecc.ipcs.${pid}`;
+const dayworkKey = (pid: string) => `nlc-ecc.dayworks.${pid}`;
 const subKey = (pid: string) => `nlc-ecc.subs.${pid}`;
 const rarKey = (pid: string) => `nlc-ecc.rars.${pid}`;
 const linkKey = (pid: string) => `nlc-ecc.rarlinks.${pid}`;
@@ -2679,7 +2741,7 @@ const ENTITY_KEYS = [
 // pick up newly-seeded projects and nodes without losing user-created data.
 // v12 (clean-slate): the delivered app ships no demo portfolio, so this upgrade
 // also PURGES any previously-seeded demo projects from an existing store.
-const SEED_VERSION = '2026-07-23.v15-sync-contract-plans';
+const SEED_VERSION = '2026-07-30.v16-five-per-pd';
 
 /** Merge any newly-seeded projects/nodes into an already-persisted store and
  *  backfill date/coordinate fields on seeded projects. Runs once per version. */

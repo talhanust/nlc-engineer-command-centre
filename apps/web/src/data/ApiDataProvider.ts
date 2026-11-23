@@ -260,8 +260,8 @@ export class ApiDataProvider implements DataProvider {
   async createSubletContract(projectId: string, input: Parameters<DataProvider['createSubletContract']>[1]): Promise<Contract> {
     return this.send<Contract>(`/api/projects/${projectId}/contracts/sublet`, 'POST', input);
   }
-  async updateContractLines(projectId: string, contractId: string, lines: import('./types').ContractLine[]): Promise<Contract> {
-    return this.send<Contract>(`/api/projects/${projectId}/contracts/${contractId}/lines`, 'PUT', { lines });
+  async updateContractLines(projectId: string, contractId: string, lines: import('./types').ContractLine[], by?: string, reason?: string): Promise<Contract> {
+    return this.send<Contract>(`/api/projects/${projectId}/contracts/${contractId}/lines`, 'PUT', { lines, by, reason });
   }
   async deleteContract(projectId: string, contractId: string): Promise<Contract[]> {
     return this.send<Contract[]>(`/api/projects/${projectId}/contracts/${contractId}`, 'DELETE', {});
@@ -271,6 +271,18 @@ export class ApiDataProvider implements DataProvider {
   }
   async attentionFor(nodeId: string): Promise<import('../domain/attention').AttentionRollup> {
     return this.send(`/api/nodes/${nodeId}/attention`, 'GET', undefined);
+  }
+  async listDayworks(projectId: string): Promise<import('./types').DayworkSheet[]> {
+    return this.send(`/api/projects/${projectId}/dayworks`, 'GET', undefined);
+  }
+  async upsertDaywork(projectId: string, input: Omit<import('./types').DayworkSheet, 'id' | 'projectId' | 'status' | 'validatedBy'> & { id?: string }): Promise<import('./types').DayworkSheet> {
+    return this.send(`/api/projects/${projectId}/dayworks`, 'POST', input);
+  }
+  async validateDaywork(projectId: string, id: string, by: string): Promise<import('./types').DayworkSheet[]> {
+    return this.send(`/api/projects/${projectId}/dayworks/${id}/validate`, 'POST', { by });
+  }
+  async deleteDaywork(projectId: string, id: string): Promise<void> {
+    await this.send(`/api/projects/${projectId}/dayworks/${id}`, 'DELETE', undefined);
   }
   async setBoqLineType(projectId: string, boqItemId: string, lineType: import('./types').BoqLineType): Promise<import('./types').BoqItem[]> {
     return this.send(`/api/projects/${projectId}/boq/${boqItemId}/line-type`, 'POST', { lineType });
@@ -784,7 +796,7 @@ export class ApiDataProvider implements DataProvider {
   async listSalients(projectId: string): Promise<Salient[]> {
     return (await this.get<{ items: Salient[] }>(`/api/projects/${projectId}/salients`)).items;
   }
-  async upsertSalient(projectId: string, input: { id?: string; label: string; value: string }): Promise<Salient> {
+  async upsertSalient(projectId: string, input: { id?: string; label: string; value: string; by?: string }): Promise<Salient> {
     return this.send<Salient>(`/api/projects/${projectId}/salients`, 'POST', input);
   }
   async deleteSalient(projectId: string, id: string): Promise<void> {
